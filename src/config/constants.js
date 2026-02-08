@@ -1,0 +1,36 @@
+export const TILE_SIZE = 32;
+
+export const GRID_WIDTH = 96;
+export const GRID_HEIGHT = 96;
+
+export const INITIAL_SEED = "20260208";
+
+export const ROOM_COUNT_MIN = 9;
+export const ROOM_COUNT_MAX = 12;
+
+export const MAIN_PATH_MIN = 5;
+export const MAIN_PATH_MAX = 7;
+
+export const BRANCH_COUNT_MIN = 2;
+export const BRANCH_COUNT_MAX = 3;
+
+export const BRANCH_LENGTH_MIN = 1;
+export const BRANCH_LENGTH_MAX = 2;
+
+export const ROOM_SIZE_MIN = 6;
+export const ROOM_SIZE_MAX = 11;
+
+export const TALL_WALL_TILE_HEIGHT = 5;
+export const CORRIDOR_WALKABLE_HEIGHT = 1;
+export const HORIZONTAL_CORRIDOR_HEIGHT = TALL_WALL_TILE_HEIGHT + CORRIDOR_WALKABLE_HEIGHT;
+export const VERTICAL_CORRIDOR_WIDTH = 2;
+export const CORRIDOR_WIDTH = VERTICAL_CORRIDOR_WIDTH;
+export const MIN_ROOM_GAP = TALL_WALL_TILE_HEIGHT;
+
+export const MAX_GENERATION_ATTEMPTS = 300;
+
+export const ROOM_TYPE = {
+  START: "start",
+  STAIRS: "stairs",
+  NORMAL: "normal",
+};

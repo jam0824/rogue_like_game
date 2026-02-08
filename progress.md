@@ -1,0 +1,17 @@
+Original prompt: specの中に仕様が入っているので読んでください。まずは最小限で、ダンジョンの自動生成を行い画面に表示するコードを書いてください。ダンジョンの仕様は「ダンジョン仕様_v1.md」に書いています。ダンジョンタイルの置き方の例は「ダンジョンタイル設定.md」に書いています。map_tipはmap_tip/dungeon_01の中に入っています。コードは責務ごとにファイルを分けるなど可読性を高めてください。
+
+- 2026-02-08: Initial implementation start. Using static HTML + ES Modules.
+- 2026-02-08: Scope locked to v1 minimal generation + tile rendering with A-L symbols.
+- 2026-02-08: Added core modules (rng/grid/generator/validator) and rendering/UI modules.
+- 2026-02-08: Added static entrypoint (index.html), stylesheet, and seed-driven regenerate controls.
+- 2026-02-08: Added generation check script and Playwright idle action payload.
+- 2026-02-08: Validation complete: `node scripts/check_generation.mjs` passed 100/100.
+- 2026-02-08: Playwright checks complete on local server: initial load, state JSON output, and random regenerate button behavior verified; no console error artifacts produced.
+- TODO: Add gameplay entities (enemy/trap/chest placement) on top of current room metadata.
+- TODO: Add camera/player and interaction loop after static map rendering baseline.
+- 2026-02-08: Cleaned test artifacts from repository (`output/`).
+- 2026-02-08: Fixed wall symbol conversion so A/C reliably become F/G.
+- 2026-02-08: Fixed tall-wall overlap by clipping B/F/G draw height to contiguous floor depth below each wall tile.
+- 2026-02-08: Swapped F/G mapping direction to match expected corner orientation.
+- 2026-02-08: Updated corridor generation to reserve 5-tile wall height + 1-tile walkway for horizontal paths, and restored full 160px rendering for B/F/G.
+- 2026-02-08: Fixed H/J conversion logic to use bottom+inner-side wall continuity, reducing K/L leakage on lower inner corners.

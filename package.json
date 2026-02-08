@@ -1,0 +1,8 @@
+{
+  "name": "rogue-like-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:generation": "node scripts/check_generation.mjs"
+  }
+}
