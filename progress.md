@@ -17,3 +17,5 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Fixed H/J conversion logic to use bottom+inner-side wall continuity, reducing K/L leakage on lower inner corners.
 - 2026-02-08: Swapped H/J assignment for inner-bottom corners to match visual orientation.
 - 2026-02-08: Refactored wall symbol resolver into clear stages (floor adjacency, primary symbol, secondary corner conversion) without behavior changes.
+- 2026-02-08: Adjusted K/L -> J/H conversion to also treat out-of-bounds below as corner-valid when side wall continuity exists.
+- 2026-02-08: Refined K/L -> J/H conversion: prefer below-wall continuation, with boundary fallback using side-wall continuity.

@@ -65,7 +65,7 @@ function decideSecondarySymbol(symbolGrid, x, y) {
   if (symbol === "K") {
     const below = getSymbol(symbolGrid, x, y + 1);
     const left = getSymbol(symbolGrid, x - 1, y);
-    if (isWallSymbol(below) && isWallSymbol(left)) {
+    if (isWallSymbol(below) || (below === null && isWallSymbol(left))) {
       return "J";
     }
     return symbol;
@@ -73,7 +73,7 @@ function decideSecondarySymbol(symbolGrid, x, y) {
   if (symbol === "L") {
     const below = getSymbol(symbolGrid, x, y + 1);
     const right = getSymbol(symbolGrid, x + 1, y);
-    if (isWallSymbol(below) && isWallSymbol(right)) {
+    if (isWallSymbol(below) || (below === null && isWallSymbol(right))) {
       return "H";
     }
     return symbol;
