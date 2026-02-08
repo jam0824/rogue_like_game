@@ -34,3 +34,14 @@ export const ROOM_TYPE = {
   STAIRS: "stairs",
   NORMAL: "normal",
 };
+
+export const PLAYER_WIDTH = 32;
+export const PLAYER_HEIGHT = 64;
+export const PLAYER_FOOT_HITBOX_HEIGHT = 32;
+
+export const PLAYER_SPEED_TILES_PER_SEC = 4.5;
+export const PLAYER_SPEED_PX_PER_SEC = PLAYER_SPEED_TILES_PER_SEC * TILE_SIZE;
+
+export const PLAYER_ANIM_FPS = 8;
+export const PLAYER_IDLE_FRAME_COL = 1;
+export const PLAYER_ANIM_SEQUENCE = [0, 1, 2, 1];

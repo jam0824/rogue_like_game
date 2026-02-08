@@ -19,3 +19,24 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Refactored wall symbol resolver into clear stages (floor adjacency, primary symbol, secondary corner conversion) without behavior changes.
 - 2026-02-08: Adjusted K/L -> J/H conversion to also treat out-of-bounds below as corner-valid when side wall continuity exists.
 - 2026-02-08: Refined K/L -> J/H conversion: prefer below-wall continuation, with boundary fallback using side-wall continuity.
+- 2026-02-08: Added player movement system (mouse hold-follow movement, 32x32 feet-only collision, stop on wall hit, no wall-slide).
+- 2026-02-08: Added player sprite loading (`graphic/player/player_tip/char_p_hero_m03a.png`) and directional animation rows with loop sequence A->B->C->B (idle=B).
+- 2026-02-08: Switched renderer to cached dungeon backdrop + per-frame player composite rendering.
+- 2026-02-08: Added fixed-step game loop (`1/60`) and updated `window.advanceTime(ms)` to step simulation deterministically.
+- 2026-02-08: Added pointer controller with capture-based drag tracking (down/move/up/cancel).
+- 2026-02-08: Extended `render_game_to_text` with player state (`x,y,width,height,feetHitbox,facing,isMoving,target`).
+- 2026-02-08: Added auto camera follow using `#canvas-scroll` centered on player feet.
+- 2026-02-08: Added Playwright action payloads for move and wall-stop checks (`tests/actions/player_move_click.json`, `tests/actions/player_wall_stop.json`).
+- 2026-02-08: Validation complete: `npm run check:generation` passed 100/100 after movement integration.
+- 2026-02-08: Playwright checks complete: player moved to right/left targets, wall-stop kept feet hitbox on floor tiles, and no `errors-*.json` console artifacts were generated.
+- 2026-02-08: Verified drag-follow behavior: while pointer held, changing cursor from right target to left target flipped facing (`right` -> `left`) and updated `player.target`; releasing pointer set `target=null` and stopped movement.
+- 2026-02-08: Verified camera follow with small viewport (`360x280`): `#canvas-scroll.scrollLeft` changed `284 -> 348` during rightward movement, keeping player in view.
+- 2026-02-08: Verified animation sequence logic in `getPlayerFrame`: moving frame columns cycle `[0,1,2,1]` and idle frame column remains `1`.
+- 2026-02-08: Fixed collision mismatch for tall top walls (`B/F/G`, 32x160). Added `walkableGrid` that blocks the full 5-tile covered area below tall-wall symbols.
+- 2026-02-08: Updated player movement collision to use `walkableGrid` (fallback to `floorGrid`), preventing entry into visually covered wall area.
+- 2026-02-08: Added spawn fallback in start room to avoid spawning into blocked tall-wall coverage; picks nearest valid tile if center is blocked.
+- 2026-02-08: Updated Playwright action coordinates for the new blocked-area behavior (`player_move_click.json`, `player_wall_stop.json`).
+- 2026-02-08: Re-verified with Playwright: move case reached `(x=512.02,y=1489.73)` and wall-stop case stayed at `(x=448,y=1440)` with no console error artifacts.
+- 2026-02-08: Increased player move speed slightly from `4.0` to `4.5` tiles/sec (`128 -> 144 px/sec`) in `src/config/constants.js`.
+- TODO: Add gameplay entities (enemy/trap/chest placement) on top of current room metadata.
+- TODO: Consider adding an automated assertion script for animation frame transitions (A/B/C/B) to complement screenshot-based verification.

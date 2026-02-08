@@ -1,15 +1,31 @@
-import { INITIAL_SEED } from "./config/constants.js";
+import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./config/constants.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
-import { renderDungeon } from "./render/canvasRenderer.js";
+import { createPointerController } from "./input/pointerController.js";
+import { createPlayerState, getPlayerFeetHitbox, getPlayerFrame, setPointerTarget, updatePlayer } from "./player/playerSystem.js";
+import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
+import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
+import { loadPlayerAsset } from "./player/playerAsset.js";
+
+const FIXED_DT = 1 / 60;
+const FRAME_MS = 1000 / 60;
 
 const appState = createAppState(INITIAL_SEED);
 const canvas = document.querySelector("#dungeon-canvas");
+const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
 
 function makeRandomSeed() {
   return `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
@@ -41,6 +57,24 @@ function buildStatsRows(dungeon) {
   ];
 }
 
+function buildPlayerTextState(player) {
+  return {
+    x: round2(player.x),
+    y: round2(player.y),
+    width: PLAYER_WIDTH,
+    height: PLAYER_HEIGHT,
+    feetHitbox: getPlayerFeetHitbox(player),
+    facing: player.facing,
+    isMoving: player.isMoving,
+    target: player.target
+      ? {
+          x: round2(player.target.x),
+          y: round2(player.target.y),
+        }
+      : null,
+  };
+}
+
 function toTextState() {
   if (appState.error) {
     return JSON.stringify(
@@ -54,7 +88,7 @@ function toTextState() {
     );
   }
 
-  if (!appState.dungeon) {
+  if (!appState.dungeon || !appState.player) {
     return JSON.stringify(
       {
         mode: "loading",
@@ -84,6 +118,7 @@ function toTextState() {
         height: dungeon.gridHeight,
       },
       stats: dungeon.stats,
+      player: buildPlayerTextState(appState.player),
       startRoom: startRoom
         ? {
             id: startRoom.id,
@@ -120,7 +155,38 @@ function toTextState() {
   );
 }
 
-const assets = await loadTileAssets();
+function renderErrorScreen(message) {
+  const ctx = canvas.getContext("2d");
+  canvas.width = 960;
+  canvas.height = 540;
+  ctx.fillStyle = "#090b12";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffb3b3";
+  ctx.font = "16px monospace";
+  ctx.fillText(`Generation failed: ${message}`, 20, 40);
+}
+
+function followPlayerInView() {
+  if (!appState.player || !appState.backdrop) {
+    return;
+  }
+
+  const viewWidth = canvasScroll.clientWidth;
+  const viewHeight = canvasScroll.clientHeight;
+  if (viewWidth <= 0 || viewHeight <= 0) {
+    return;
+  }
+
+  const feetCenterX = appState.player.x + PLAYER_WIDTH / 2;
+  const feetCenterY = appState.player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
+  const maxLeft = Math.max(0, appState.backdrop.widthPx - viewWidth);
+  const maxTop = Math.max(0, appState.backdrop.heightPx - viewHeight);
+
+  canvasScroll.scrollLeft = clamp(feetCenterX - viewWidth / 2, 0, maxLeft);
+  canvasScroll.scrollTop = clamp(feetCenterY - viewHeight / 2, 0, maxTop);
+}
+
+const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
   onApplySeed: (seedInputValue) => {
@@ -133,6 +199,59 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   },
 });
 
+createPointerController(canvas, {
+  onPointerTarget: (active, worldX, worldY) => {
+    if (!appState.player || appState.error) {
+      return;
+    }
+    setPointerTarget(appState.player, active, worldX, worldY);
+  },
+});
+
+function renderCurrentFrame() {
+  if (appState.error) {
+    renderErrorScreen(appState.error);
+    return;
+  }
+
+  if (!appState.backdrop || !appState.player) {
+    return;
+  }
+
+  renderFrame(canvas, appState.backdrop, playerAsset, getPlayerFrame(appState.player), appState.player);
+}
+
+function stepSimulation(dt) {
+  if (!appState.dungeon || !appState.player || appState.error) {
+    return;
+  }
+
+  updatePlayer(appState.player, appState.dungeon, dt);
+  followPlayerInView();
+}
+
+let accumulator = 0;
+let lastTimestamp = performance.now();
+
+function resetLoopClock() {
+  accumulator = 0;
+  lastTimestamp = performance.now();
+}
+
+function runFrame(timestamp) {
+  const elapsed = Math.min(0.25, (timestamp - lastTimestamp) / 1000);
+  lastTimestamp = timestamp;
+  accumulator += elapsed;
+
+  while (accumulator >= FIXED_DT) {
+    stepSimulation(FIXED_DT);
+    accumulator -= FIXED_DT;
+  }
+
+  renderCurrentFrame();
+  requestAnimationFrame(runFrame);
+}
+
 function regenerate(seed) {
   const normalizedSeed = String(seed);
 
@@ -140,53 +259,48 @@ function regenerate(seed) {
     const dungeon = generateDungeon({ seed: normalizedSeed });
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
+    dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
+
+    const player = createPlayerState(dungeon);
+    const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
 
     setDungeonState(appState, {
       seed: normalizedSeed,
       dungeon,
       validation,
+      player,
+      backdrop,
     });
 
-    renderDungeon(canvas, assets, dungeon, {});
     debugPanel.setSeed(normalizedSeed);
     debugPanel.setStats(buildStatsRows(dungeon));
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
+
+    renderCurrentFrame();
+    followPlayerInView();
+    resetLoopClock();
   } catch (error) {
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
     debugPanel.setStats([]);
     debugPanel.setError(appState.error);
-
-    const ctx = canvas.getContext("2d");
-    canvas.width = 960;
-    canvas.height = 540;
-    ctx.fillStyle = "#090b12";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#ffb3b3";
-    ctx.font = "16px monospace";
-    ctx.fillText(`Generation failed: ${appState.error}`, 20, 40);
+    renderCurrentFrame();
+    resetLoopClock();
   }
 }
 
 window.render_game_to_text = toTextState;
 window.advanceTime = (ms = 0) => {
-  const frameMs = 1000 / 60;
-  const frames = Math.max(1, Math.round(Number(ms) / frameMs));
+  const duration = Number(ms);
+  const requestedMs = Number.isFinite(duration) && duration > 0 ? duration : FRAME_MS;
+  const frames = Math.max(1, Math.round(requestedMs / FRAME_MS));
 
-  return new Promise((resolve) => {
-    let remaining = frames;
+  for (let index = 0; index < frames; index += 1) {
+    stepSimulation(FIXED_DT);
+  }
 
-    function step() {
-      remaining -= 1;
-      if (remaining <= 0) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(step);
-    }
-
-    requestAnimationFrame(step);
-  });
+  renderCurrentFrame();
+  return Promise.resolve();
 };
 
 window.__regenDungeon = (seed) => {
@@ -199,3 +313,4 @@ window.__regenDungeon = (seed) => {
 };
 
 regenerate(INITIAL_SEED);
+requestAnimationFrame(runFrame);

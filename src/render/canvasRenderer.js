@@ -57,22 +57,11 @@ function drawRoomMarker(ctx, room, label, fillStyle, textStyle) {
   ctx.fillText(label, px + pw / 2, py + ph / 2);
 }
 
-/**
- * @param {HTMLCanvasElement} canvas
- * @param {Record<string, {image:HTMLImageElement}>} assets
- * @param {import("../generation/dungeonGenerator.js").DungeonResult & {symbolGrid:(string|null)[][]}} dungeon
- * @param {{}} [_view]
- */
-export function renderDungeon(canvas, assets, dungeon, _view = {}) {
+function drawDungeonBase(ctx, assets, dungeon) {
   const widthPx = dungeon.gridWidth * TILE_SIZE;
   const heightPx = dungeon.gridHeight * TILE_SIZE;
 
-  canvas.width = widthPx;
-  canvas.height = heightPx;
-
-  const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
-
   ctx.fillStyle = "#050609";
   ctx.fillRect(0, 0, widthPx, heightPx);
 
@@ -90,4 +79,68 @@ export function renderDungeon(canvas, assets, dungeon, _view = {}) {
   if (stairsRoom) {
     drawRoomMarker(ctx, stairsRoom, "STAIRS", "rgba(244, 180, 0, 0.22)", "#ffd166");
   }
+}
+
+/**
+ * @param {Record<string, {image:HTMLImageElement}>} assets
+ * @param {import("../generation/dungeonGenerator.js").DungeonResult & {symbolGrid:(string|null)[][]}} dungeon
+ */
+export function buildDungeonBackdrop(assets, dungeon) {
+  const widthPx = dungeon.gridWidth * TILE_SIZE;
+  const heightPx = dungeon.gridHeight * TILE_SIZE;
+  const surface = document.createElement("canvas");
+  surface.width = widthPx;
+  surface.height = heightPx;
+
+  const ctx = surface.getContext("2d");
+  drawDungeonBase(ctx, assets, dungeon);
+
+  return {
+    canvas: surface,
+    widthPx,
+    heightPx,
+  };
+}
+
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {{canvas:HTMLCanvasElement,widthPx:number,heightPx:number}} backdrop
+ * @param {{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null} playerAsset
+ * @param {{row:number,col:number}|null} playerFrame
+ * @param {{x:number,y:number}|null} player
+ */
+export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player) {
+  if (!backdrop) {
+    return;
+  }
+
+  if (canvas.width !== backdrop.widthPx || canvas.height !== backdrop.heightPx) {
+    canvas.width = backdrop.widthPx;
+    canvas.height = backdrop.heightPx;
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(backdrop.canvas, 0, 0);
+
+  if (!playerAsset || !playerFrame || !player) {
+    return;
+  }
+
+  const sx = playerFrame.col * playerAsset.frameWidth;
+  const sy = playerFrame.row * playerAsset.frameHeight;
+  const dx = Math.round(player.x);
+  const dy = Math.round(player.y);
+
+  ctx.drawImage(
+    playerAsset.image,
+    sx,
+    sy,
+    playerAsset.frameWidth,
+    playerAsset.frameHeight,
+    dx,
+    dy,
+    playerAsset.frameWidth,
+    playerAsset.frameHeight
+  );
 }
