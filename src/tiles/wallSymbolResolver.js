@@ -1,17 +1,24 @@
 import { createSymbolGrid, isFloor } from "../core/grid.js";
 
+const FLOOR_SYMBOL = " ";
 const WALL_SYMBOL_SET = new Set(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]);
 
-function hasAdjacentFloor(grid, x, y) {
-  return (
-    isFloor(grid, x, y - 1) ||
-    isFloor(grid, x + 1, y) ||
-    isFloor(grid, x, y + 1) ||
-    isFloor(grid, x - 1, y)
-  );
+function getFloorAdjacency(floorGrid, x, y) {
+  return {
+    up: isFloor(floorGrid, x, y - 1),
+    right: isFloor(floorGrid, x + 1, y),
+    down: isFloor(floorGrid, x, y + 1),
+    left: isFloor(floorGrid, x - 1, y),
+  };
 }
 
-function decideBaseSymbol(up, right, down, left) {
+function hasAdjacentFloor(adjacency) {
+  return adjacency.up || adjacency.right || adjacency.down || adjacency.left;
+}
+
+function decidePrimarySymbol(adjacency) {
+  const { up, right, down, left } = adjacency;
+
   if (down && right && !up && !left) return "A";
   if (down && left && !up && !right) return "C";
   if (up && right && !down && !left) return "K";
@@ -39,32 +46,50 @@ function isWallSymbol(symbol) {
   return WALL_SYMBOL_SET.has(symbol);
 }
 
-function applySecondaryCornerRules(symbolGrid) {
-  const height = symbolGrid.length;
-  const width = symbolGrid[0].length;
-  const output = symbolGrid.map((row) => [...row]);
+function getSymbol(symbolGrid, x, y) {
+  if (y < 0 || y >= symbolGrid.length || x < 0 || x >= symbolGrid[0].length) {
+    return null;
+  }
+  return symbolGrid[y][x];
+}
+
+function decideSecondarySymbol(symbolGrid, x, y) {
+  const symbol = symbolGrid[y][x];
+
+  if (symbol === "A") {
+    return "G";
+  }
+  if (symbol === "C") {
+    return "F";
+  }
+  if (symbol === "K") {
+    const below = getSymbol(symbolGrid, x, y + 1);
+    const left = getSymbol(symbolGrid, x - 1, y);
+    if (isWallSymbol(below) && isWallSymbol(left)) {
+      return "J";
+    }
+    return symbol;
+  }
+  if (symbol === "L") {
+    const below = getSymbol(symbolGrid, x, y + 1);
+    const right = getSymbol(symbolGrid, x + 1, y);
+    if (isWallSymbol(below) && isWallSymbol(right)) {
+      return "H";
+    }
+    return symbol;
+  }
+
+  return symbol;
+}
+
+function applySecondaryCornerRules(primaryGrid) {
+  const height = primaryGrid.length;
+  const width = primaryGrid[0].length;
+  const output = primaryGrid.map((row) => [...row]);
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      const symbol = symbolGrid[y][x];
-
-      if (symbol === "A") {
-        output[y][x] = "G";
-      } else if (symbol === "C") {
-        output[y][x] = "F";
-      } else if (symbol === "K") {
-        const below = symbolGrid[y + 1]?.[x];
-        const left = symbolGrid[y]?.[x - 1];
-        if (isWallSymbol(below) && isWallSymbol(left)) {
-          output[y][x] = "J";
-        }
-      } else if (symbol === "L") {
-        const below = symbolGrid[y + 1]?.[x];
-        const right = symbolGrid[y]?.[x + 1];
-        if (isWallSymbol(below) && isWallSymbol(right)) {
-          output[y][x] = "H";
-        }
-      }
+      output[y][x] = decideSecondarySymbol(primaryGrid, x, y);
     }
   }
 
@@ -78,27 +103,23 @@ function applySecondaryCornerRules(symbolGrid) {
 export function resolveWallSymbols(floorGrid) {
   const height = floorGrid.length;
   const width = floorGrid[0].length;
-  const symbolGrid = createSymbolGrid(width, height, null);
+  const primaryGrid = createSymbolGrid(width, height, null);
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       if (isFloor(floorGrid, x, y)) {
-        symbolGrid[y][x] = " ";
+        primaryGrid[y][x] = FLOOR_SYMBOL;
         continue;
       }
 
-      if (!hasAdjacentFloor(floorGrid, x, y)) {
+      const adjacency = getFloorAdjacency(floorGrid, x, y);
+      if (!hasAdjacentFloor(adjacency)) {
         continue;
       }
 
-      const up = isFloor(floorGrid, x, y - 1);
-      const right = isFloor(floorGrid, x + 1, y);
-      const down = isFloor(floorGrid, x, y + 1);
-      const left = isFloor(floorGrid, x - 1, y);
-
-      symbolGrid[y][x] = decideBaseSymbol(up, right, down, left);
+      primaryGrid[y][x] = decidePrimarySymbol(adjacency);
     }
   }
 
-  return applySecondaryCornerRules(symbolGrid);
+  return applySecondaryCornerRules(primaryGrid);
 }
