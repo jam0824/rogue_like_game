@@ -2,7 +2,7 @@
     "name_key": "name_bat01",
     "type": "fly",
     "tip_file_name": "char_m_bat01.png",
-    "width": 32,
+    "width": 64,
     "height": 64,
     "notice_distance": 8,
     "giveup_distance": 16,

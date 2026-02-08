@@ -27,7 +27,20 @@ function getWalkableGrid(dungeon) {
   return dungeon.walkableGrid ?? dungeon.floorGrid;
 }
 
-function buildCollisionProfile(width, height) {
+function getFlyPassableGrid(dungeon) {
+  if (dungeon.flyPassableGrid) {
+    return dungeon.flyPassableGrid;
+  }
+
+  const symbolGrid = dungeon.symbolGrid ?? dungeon.floorGrid.map((row) => row.map(() => null));
+  dungeon.flyPassableGrid = dungeon.floorGrid.map((row, y) =>
+    row.map((isFloor, x) => isFloor === true || symbolGrid[y][x] !== null)
+  );
+
+  return dungeon.flyPassableGrid;
+}
+
+function buildCollisionProfileForWalk(width, height) {
   if (height >= 64) {
     return {
       offsetX: (width - TALL_ENEMY_COLLISION_SIZE) / 2,
@@ -46,6 +59,10 @@ function buildCollisionProfile(width, height) {
 }
 
 function getWallHitboxAt(enemy, x, y) {
+  if (!enemy.collision) {
+    return null;
+  }
+
   return {
     x: x + enemy.collision.offsetX,
     y: y + enemy.collision.offsetY,
@@ -54,9 +71,22 @@ function getWallHitboxAt(enemy, x, y) {
   };
 }
 
-function isRectWalkable(walkableGrid, rect) {
-  const maxY = walkableGrid.length - 1;
-  const maxX = walkableGrid[0].length - 1;
+function getCollisionProbeRect(enemy, x, y) {
+  if (enemy.type === "fly") {
+    return {
+      x: x + enemy.width / 2,
+      y: y + enemy.height / 2,
+      width: 1,
+      height: 1,
+    };
+  }
+
+  return getWallHitboxAt(enemy, x, y);
+}
+
+function isRectWalkable(grid, rect) {
+  const maxY = grid.length - 1;
+  const maxX = grid[0].length - 1;
 
   const minTileX = Math.floor(rect.x / TILE_SIZE);
   const maxTileX = Math.floor((rect.x + rect.width - 1) / TILE_SIZE);
@@ -69,7 +99,7 @@ function isRectWalkable(walkableGrid, rect) {
 
   for (let y = minTileY; y <= maxTileY; y += 1) {
     for (let x = minTileX; x <= maxTileX; x += 1) {
-      if (!walkableGrid[y][x]) {
+      if (!grid[y][x]) {
         return false;
       }
     }
@@ -78,28 +108,37 @@ function isRectWalkable(walkableGrid, rect) {
   return true;
 }
 
-function isEnemyPositionWalkable(enemy, nextX, nextY, walkableGrid) {
-  return isRectWalkable(walkableGrid, getWallHitboxAt(enemy, nextX, nextY));
+function isEnemyPositionPassable(enemy, nextX, nextY, dungeon) {
+  const probeRect = getCollisionProbeRect(enemy, nextX, nextY);
+  if (!probeRect) {
+    return false;
+  }
+
+  if (enemy.type === "fly") {
+    return isRectWalkable(getFlyPassableGrid(dungeon), probeRect);
+  }
+
+  return isRectWalkable(getWalkableGrid(dungeon), probeRect);
 }
 
 function sampleDirectionDuration(enemyRng) {
   return ENEMY_DIRECTION_MIN_SECONDS + enemyRng.float() * (ENEMY_DIRECTION_MAX_SECONDS - ENEMY_DIRECTION_MIN_SECONDS);
 }
 
-function pickWalkDirection(enemy, walkableGrid) {
+function pickWalkDirection(enemy, dungeon) {
   const candidateDirections = enemy.rng.shuffle(WALK_DIRECTIONS);
   for (const direction of candidateDirections) {
     const probeX = enemy.x + direction.dx;
     const probeY = enemy.y + direction.dy;
-    if (isEnemyPositionWalkable(enemy, probeX, probeY, walkableGrid)) {
+    if (isEnemyPositionPassable(enemy, probeX, probeY, dungeon)) {
       return direction;
     }
   }
   return null;
 }
 
-function refreshWalkIntent(enemy, walkableGrid) {
-  enemy.walkDirection = pickWalkDirection(enemy, walkableGrid);
+function refreshWalkIntent(enemy, dungeon) {
+  enemy.walkDirection = pickWalkDirection(enemy, dungeon);
   enemy.directionTimer = sampleDirectionDuration(enemy.rng);
   if (enemy.walkDirection) {
     enemy.facing = enemy.walkDirection.facing;
@@ -126,8 +165,8 @@ function createEnemyState(definition, x, y, collision, rng, enemyId) {
   };
 }
 
-function findSpawnForRoom(room, definition, walkableGrid, spawnRng) {
-  const collision = buildCollisionProfile(definition.width, definition.height);
+function findSpawnForRoom(room, definition, dungeon, spawnRng) {
+  const collision = definition.type === "walk" ? buildCollisionProfileForWalk(definition.width, definition.height) : null;
   const roomTiles = [];
 
   for (let tileY = room.y; tileY < room.y + room.h; tileY += 1) {
@@ -138,10 +177,13 @@ function findSpawnForRoom(room, definition, walkableGrid, spawnRng) {
 
   const shuffledTiles = spawnRng.shuffle(roomTiles);
   for (const tile of shuffledTiles) {
-    const x = tile.tileX * TILE_SIZE - collision.offsetX;
-    const y = tile.tileY * TILE_SIZE - collision.offsetY;
-    const candidate = { x, y, collision };
-    if (isEnemyPositionWalkable(candidate, x, y, walkableGrid)) {
+    const centerX = tile.tileX * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = tile.tileY * TILE_SIZE + TILE_SIZE / 2;
+    const x = centerX - definition.width / 2;
+    const y = centerY - definition.height / 2;
+    const candidate = { type: definition.type, width: definition.width, height: definition.height, collision };
+
+    if (isEnemyPositionPassable(candidate, x, y, dungeon)) {
       return { x, y, collision };
     }
   }
@@ -149,23 +191,30 @@ function findSpawnForRoom(room, definition, walkableGrid, spawnRng) {
   return null;
 }
 
-export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
-  if (!Array.isArray(walkEnemyDefinitions) || walkEnemyDefinitions.length === 0) {
+function chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOrder) {
+  if (index < guaranteedOrder.length) {
+    return guaranteedOrder[index];
+  }
+  return spawnRng.pick(enemyDefinitions);
+}
+
+export function createEnemies(dungeon, enemyDefinitions, seed) {
+  if (!Array.isArray(enemyDefinitions) || enemyDefinitions.length === 0) {
     return [];
   }
 
-  const walkableGrid = getWalkableGrid(dungeon);
   const spawnRng = createRng(deriveSeed(seed ?? dungeon.seed, "enemy-spawn"));
   const spawnRooms = dungeon.rooms.filter((room) => room.id !== dungeon.startRoomId);
+  const guaranteedOrder = spawnRng.shuffle(enemyDefinitions);
   const enemies = [];
 
   for (let index = 0; index < spawnRooms.length; index += 1) {
     const room = spawnRooms[index];
-    const definition = spawnRng.pick(walkEnemyDefinitions);
-    const spawn = findSpawnForRoom(room, definition, walkableGrid, spawnRng);
+    const definition = chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOrder);
+    const spawn = findSpawnForRoom(room, definition, dungeon, spawnRng);
 
     if (!spawn) {
-      throw new Error(`Failed to spawn walk enemy in room ${room.id}`);
+      throw new Error(`Failed to spawn enemy in room ${room.id} (type=${definition.type})`);
     }
 
     const enemyRng = createRng(deriveSeed(seed ?? dungeon.seed, `enemy-${room.id}-${index}`));
@@ -177,7 +226,12 @@ export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
   return enemies;
 }
 
-function updateEnemy(enemy, walkableGrid, dt) {
+export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
+  const onlyWalkDefinitions = (walkEnemyDefinitions ?? []).filter((definition) => definition.type === "walk");
+  return createEnemies(dungeon, onlyWalkDefinitions, seed);
+}
+
+function updateEnemy(enemy, dungeon, dt) {
   const travelDistance = enemy.speedPxPerSec * dt;
   const substeps = Math.max(1, Math.ceil(travelDistance / MAX_SUBSTEP_PIXELS));
   const stepDistance = travelDistance / substeps;
@@ -187,7 +241,7 @@ function updateEnemy(enemy, walkableGrid, dt) {
 
   for (let index = 0; index < substeps; index += 1) {
     if (!enemy.walkDirection || enemy.directionTimer <= 0) {
-      refreshWalkIntent(enemy, walkableGrid);
+      refreshWalkIntent(enemy, dungeon);
     }
 
     if (!enemy.walkDirection) {
@@ -197,7 +251,7 @@ function updateEnemy(enemy, walkableGrid, dt) {
     const nextX = enemy.x + enemy.walkDirection.dx * stepDistance;
     const nextY = enemy.y + enemy.walkDirection.dy * stepDistance;
 
-    if (isEnemyPositionWalkable(enemy, nextX, nextY, walkableGrid)) {
+    if (isEnemyPositionPassable(enemy, nextX, nextY, dungeon)) {
       enemy.x = nextX;
       enemy.y = nextY;
       movedDistance += stepDistance;
@@ -232,9 +286,8 @@ export function updateEnemies(enemies, dungeon, dt) {
     return;
   }
 
-  const walkableGrid = getWalkableGrid(dungeon);
   for (const enemy of enemies) {
-    updateEnemy(enemy, walkableGrid, dt);
+    updateEnemy(enemy, dungeon, dt);
   }
 }
 
@@ -260,6 +313,10 @@ export function getEnemyFrame(enemy) {
 
 export function getEnemyWallHitbox(enemy) {
   const hitbox = getWallHitboxAt(enemy, enemy.x, enemy.y);
+  if (!hitbox) {
+    return null;
+  }
+
   return {
     x: round2(hitbox.x),
     y: round2(hitbox.y),

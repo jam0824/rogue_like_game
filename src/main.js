@@ -1,7 +1,7 @@
 import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./config/constants.js";
 import { loadEnemyAssets } from "./enemy/enemyAsset.js";
-import { loadWalkEnemyDefinitions } from "./enemy/enemyDb.js";
-import { createWalkEnemies, getEnemyFrame, getEnemyWallHitbox, updateEnemies } from "./enemy/enemySystem.js";
+import { loadEnemyDefinitions } from "./enemy/enemyDb.js";
+import { createEnemies, getEnemyFrame, getEnemyWallHitbox, updateEnemies } from "./enemy/enemySystem.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
@@ -204,21 +204,25 @@ function followPlayerInView() {
   canvasScroll.scrollTop = clamp(feetCenterY - viewHeight / 2, 0, maxTop);
 }
 
-const walkEnemyDefinitions = await loadWalkEnemyDefinitions();
-const [tileAssets, playerAsset, enemyAssets] = await Promise.all([
-  loadTileAssets(),
-  loadPlayerAsset(),
-  loadEnemyAssets(walkEnemyDefinitions),
-]);
+const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
+let enemyDefinitions = [];
+let enemyAssets = {};
+
+async function refreshEnemyResources() {
+  const definitions = await loadEnemyDefinitions();
+  const assets = await loadEnemyAssets(definitions);
+  enemyDefinitions = definitions;
+  enemyAssets = assets;
+}
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
   onApplySeed: (seedInputValue) => {
     const nextSeed = seedInputValue.trim() || appState.seed;
-    regenerate(nextSeed);
+    void regenerate(nextSeed);
   },
   onRegenerate: () => {
     const nextSeed = makeRandomSeed();
-    regenerate(nextSeed);
+    void regenerate(nextSeed);
   },
 });
 
@@ -282,17 +286,25 @@ function runFrame(timestamp) {
   requestAnimationFrame(runFrame);
 }
 
-function regenerate(seed) {
+let regenerateRequestId = 0;
+
+async function regenerate(seed) {
   const normalizedSeed = String(seed);
+  const requestId = (regenerateRequestId += 1);
 
   try {
+    await refreshEnemyResources();
+    if (requestId !== regenerateRequestId) {
+      return;
+    }
+
     const dungeon = generateDungeon({ seed: normalizedSeed });
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
 
     const player = createPlayerState(dungeon);
-    const enemies = createWalkEnemies(dungeon, walkEnemyDefinitions, normalizedSeed);
+    const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
 
     setDungeonState(appState, {
@@ -308,10 +320,18 @@ function regenerate(seed) {
     debugPanel.setStats(buildStatsRows(dungeon));
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
 
+    if (requestId !== regenerateRequestId) {
+      return;
+    }
+
     renderCurrentFrame();
     followPlayerInView();
     resetLoopClock();
   } catch (error) {
+    if (requestId !== regenerateRequestId) {
+      return;
+    }
+
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
     debugPanel.setStats([]);
@@ -337,12 +357,12 @@ window.advanceTime = (ms = 0) => {
 
 window.__regenDungeon = (seed) => {
   if (seed === undefined || seed === null || seed === "") {
-    regenerate(makeRandomSeed());
+    void regenerate(makeRandomSeed());
     return;
   }
 
-  regenerate(String(seed));
+  void regenerate(String(seed));
 };
 
-regenerate(INITIAL_SEED);
+void regenerate(INITIAL_SEED);
 requestAnimationFrame(runFrame);

@@ -49,3 +49,11 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Updated enemy DB loader to discover `db/enemy_db/*.json` from directory listing with fallback list, keeping `type=walk` filter.
 - 2026-02-08: Validation complete: `npm run check:generation` and `npm run check:enemy-walk` both passed after enemy integration.
 - 2026-02-08: Playwright check complete for idle enemy walk (`tests/actions/enemy_idle_walk.json`): 3 screenshots + state JSON captured, `enemies` present in text state, no `errors-*.json` artifacts.
+- 2026-02-08: Added `type=fly` support by generalizing enemy creation to `createEnemies` and loading all enemy DB records.
+- 2026-02-08: Implemented fly pass-through behavior (ignores wall collision), with fly collision probe using center point over a passable grid (`floor || symbol`).
+- 2026-02-08: Updated text state for fly enemies (`wallHitbox: null`) while keeping walk enemies' wall hitbox output.
+- 2026-02-08: Added `npm run check:enemy-fly` (`scripts/check_enemy_fly.mjs`) to verify fly spawn/movement and wall-pass behavior.
+- 2026-02-08: Playwright verification complete for mixed walk+fly enemies (`output/web-game-enemy-fly`): `type=fly` present in state JSON and no `errors-*.json` artifacts.
+- 2026-02-08: Fixed enemy DB refresh behavior: regeneration now re-reads enemy definitions/assets each time (`regenerate` async + `refreshEnemyResources`).
+- 2026-02-08: Fixed stale JSON cache issue by fetching enemy DB directory/files with `cache: "no-store"` and cache-bust query (`cb=`) in `src/enemy/enemyDb.js`.
+- 2026-02-08: Verified hot-reload behavior without page refresh: changing `bat01.json` width while page open and calling `window.__regenDungeon(...)` updated fly width `64 -> 32 -> 64`.

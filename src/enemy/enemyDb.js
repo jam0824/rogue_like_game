@@ -60,9 +60,13 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
   };
 }
 
-async function loadEnemyFile(fileName) {
-  const url = new URL(`../../db/enemy_db/${fileName}`, import.meta.url).href;
-  const response = await fetch(url);
+async function loadEnemyFile(fileName, cacheBustKey) {
+  const url = new URL(`../../db/enemy_db/${fileName}`, import.meta.url);
+  if (cacheBustKey) {
+    url.searchParams.set("cb", String(cacheBustKey));
+  }
+
+  const response = await fetch(url.href, { cache: "no-store" });
 
   if (!response.ok) {
     throw new Error(`Failed to load enemy DB file ${fileName}: HTTP ${response.status}`);
@@ -95,11 +99,14 @@ function extractEnemyJsonFileNamesFromDirectoryHtml(html) {
   return Array.from(fileNames).sort();
 }
 
-async function discoverEnemyDbFileNames() {
-  const directoryUrl = new URL("../../db/enemy_db/", import.meta.url).href;
+async function discoverEnemyDbFileNames(cacheBustKey) {
+  const directoryUrl = new URL("../../db/enemy_db/", import.meta.url);
+  if (cacheBustKey) {
+    directoryUrl.searchParams.set("cb", String(cacheBustKey));
+  }
 
   try {
-    const response = await fetch(directoryUrl);
+    const response = await fetch(directoryUrl.href, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -122,8 +129,15 @@ async function discoverEnemyDbFileNames() {
 }
 
 export async function loadWalkEnemyDefinitions() {
-  const fileNames = await discoverEnemyDbFileNames();
-  const allEnemies = await Promise.all(fileNames.map((fileName) => loadEnemyFile(fileName)));
+  const cacheBustKey = Date.now();
+  const fileNames = await discoverEnemyDbFileNames(cacheBustKey);
+  const allEnemies = await Promise.all(fileNames.map((fileName) => loadEnemyFile(fileName, cacheBustKey)));
 
   return allEnemies.filter((enemy) => enemy.type === "walk");
+}
+
+export async function loadEnemyDefinitions() {
+  const cacheBustKey = Date.now();
+  const fileNames = await discoverEnemyDbFileNames(cacheBustKey);
+  return Promise.all(fileNames.map((fileName) => loadEnemyFile(fileName, cacheBustKey)));
 }
