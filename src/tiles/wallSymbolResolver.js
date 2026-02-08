@@ -56,13 +56,13 @@ function applySecondaryCornerRules(symbolGrid) {
         const below = symbolGrid[y + 1]?.[x];
         const left = symbolGrid[y]?.[x - 1];
         if (isWallSymbol(below) && isWallSymbol(left)) {
-          output[y][x] = "H";
+          output[y][x] = "J";
         }
       } else if (symbol === "L") {
         const below = symbolGrid[y + 1]?.[x];
         const right = symbolGrid[y]?.[x + 1];
         if (isWallSymbol(below) && isWallSymbol(right)) {
-          output[y][x] = "J";
+          output[y][x] = "H";
         }
       }
     }

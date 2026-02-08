@@ -15,3 +15,4 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Swapped F/G mapping direction to match expected corner orientation.
 - 2026-02-08: Updated corridor generation to reserve 5-tile wall height + 1-tile walkway for horizontal paths, and restored full 160px rendering for B/F/G.
 - 2026-02-08: Fixed H/J conversion logic to use bottom+inner-side wall continuity, reducing K/L leakage on lower inner corners.
+- 2026-02-08: Swapped H/J assignment for inner-bottom corners to match visual orientation.
