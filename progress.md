@@ -38,5 +38,7 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Updated Playwright action coordinates for the new blocked-area behavior (`player_move_click.json`, `player_wall_stop.json`).
 - 2026-02-08: Re-verified with Playwright: move case reached `(x=512.02,y=1489.73)` and wall-stop case stayed at `(x=448,y=1440)` with no console error artifacts.
 - 2026-02-08: Increased player move speed slightly from `4.0` to `4.5` tiles/sec (`128 -> 144 px/sec`) in `src/config/constants.js`.
+- 2026-02-08: Added wall-slide behavior: when diagonal movement hits a wall, movement now falls back to X-only or Y-only step if either axis is walkable.
+- 2026-02-08: Verified wall-slide fallback with targeted simulation (`updatePlayer` + mocked walkable grid): diagonal input against top wall produced `dx>0, dy=0` as expected.
 - TODO: Add gameplay entities (enemy/trap/chest placement) on top of current room metadata.
 - TODO: Consider adding an automated assertion script for animation frame transitions (A/B/C/B) to complement screenshot-based verification.

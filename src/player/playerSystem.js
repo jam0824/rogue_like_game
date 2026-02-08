@@ -24,6 +24,10 @@ function getWalkableGrid(dungeon) {
   return dungeon.walkableGrid ?? dungeon.floorGrid;
 }
 
+function hasStepMovement(fromX, fromY, toX, toY) {
+  return Math.hypot(toX - fromX, toY - fromY) > MOVE_EPSILON;
+}
+
 function getPlayerBoundsPx(dungeon) {
   const widthPx = dungeon.gridWidth * TILE_SIZE;
   const heightPx = dungeon.gridHeight * TILE_SIZE;
@@ -107,6 +111,44 @@ function clampTarget(target, dungeon) {
 
 function findStartRoom(dungeon) {
   return dungeon.rooms.find((room) => room.id === dungeon.startRoomId) ?? null;
+}
+
+function isWalkableStep(fromX, fromY, toX, toY, walkableGrid) {
+  if (!hasStepMovement(fromX, fromY, toX, toY)) {
+    return false;
+  }
+
+  const feetRect = getFeetRect(toX, toY);
+  return isFeetRectWalkable(walkableGrid, feetRect);
+}
+
+function resolveMoveStep(player, dungeon, walkableGrid, desiredDx, desiredDy) {
+  const fromX = player.x;
+  const fromY = player.y;
+
+  const combined = clampPlayerToBounds(fromX + desiredDx, fromY + desiredDy, dungeon);
+  if (isWalkableStep(fromX, fromY, combined.x, combined.y, walkableGrid)) {
+    return combined;
+  }
+
+  const xOnly = clampPlayerToBounds(fromX + desiredDx, fromY, dungeon);
+  const yOnly = clampPlayerToBounds(fromX, fromY + desiredDy, dungeon);
+  const canMoveX = isWalkableStep(fromX, fromY, xOnly.x, xOnly.y, walkableGrid);
+  const canMoveY = isWalkableStep(fromX, fromY, yOnly.x, yOnly.y, walkableGrid);
+
+  if (canMoveX && canMoveY) {
+    return Math.abs(desiredDx) >= Math.abs(desiredDy) ? xOnly : yOnly;
+  }
+
+  if (canMoveX) {
+    return xOnly;
+  }
+
+  if (canMoveY) {
+    return yOnly;
+  }
+
+  return null;
 }
 
 function findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, walkableGrid) {
@@ -253,10 +295,8 @@ export function updatePlayer(player, dungeon, dt) {
   for (let index = 0; index < substeps; index += 1) {
     const prevX = player.x;
     const prevY = player.y;
-    const candidate = clampPlayerToBounds(player.x + stepX, player.y + stepY, dungeon);
-    const feetRect = getFeetRect(candidate.x, candidate.y);
-
-    if (!isFeetRectWalkable(walkableGrid, feetRect)) {
+    const candidate = resolveMoveStep(player, dungeon, walkableGrid, stepX, stepY);
+    if (!candidate) {
       break;
     }
 
