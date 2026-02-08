@@ -1,0 +1,16 @@
+{
+    "name_key": "name_rabbit",
+    "type": "walk",
+    "tip_file_name": "rabbit.png",
+    "width": 32,
+    "height": 32,
+    "notice_distance": 8,
+    "giveup_distance": 16,
+    "vit": 10,
+    "for": 10,
+    "agi": 10,
+    "pow": 10,
+    "tec": 10,
+    "arc": 10,
+    "description_key": "description_rabbit"
+}
