@@ -89,6 +89,10 @@ function buildEnemyTextState(enemy) {
     wallHitbox: getEnemyWallHitbox(enemy),
     facing: enemy.facing,
     isMoving: enemy.isMoving,
+    behaviorMode: enemy.behaviorMode,
+    noticeRadiusPx: round2(enemy.noticeRadiusPx ?? 0),
+    giveupRadiusPx: round2(enemy.giveupRadiusPx ?? 0),
+    isChasing: enemy.isChasing === true,
   };
 }
 
@@ -260,7 +264,7 @@ function stepSimulation(dt) {
   }
 
   updatePlayer(appState.player, appState.dungeon, dt);
-  updateEnemies(appState.enemies, appState.dungeon, dt);
+  updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
   followPlayerInView();
 }
 
