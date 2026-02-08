@@ -63,3 +63,4 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Added `scripts/check_enemy_notice_giveup.mjs` and npm script `check:enemy-notice-giveup`; verified notice/LOS/giveup/speed-ratio cases pass.
 - 2026-02-08: Reworked Playwright payload `tests/actions/enemy_notice_giveup.json` to a deterministic visible-route sequence; verified `state-0.json` contains chasing enemies and no `errors-*.json`.
 - TODO: If we need a Playwright artifact that proves both notice and giveup in one run, extend the client to emit per-step state snapshots (current script only writes end-of-iteration state).
+- 2026-02-08: Updated spec documents for enemy chase behavior details: added notice/giveup state-machine rules (walk LOS / fly no LOS, distance basis, 1.3x chase speed) and v1 enemy placement notes in `spec/` and `spec_logic/`.
