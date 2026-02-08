@@ -5,6 +5,7 @@
   "scripts": {
     "check:generation": "node scripts/check_generation.mjs",
     "check:enemy-walk": "node scripts/check_enemy_walk.mjs",
-    "check:enemy-fly": "node scripts/check_enemy_fly.mjs"
+    "check:enemy-fly": "node scripts/check_enemy_fly.mjs",
+    "check:enemy-notice-giveup": "node scripts/check_enemy_notice_giveup.mjs"
   }
 }

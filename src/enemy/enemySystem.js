@@ -1,6 +1,7 @@
 import {
   ENEMY_ANIM_FPS,
   ENEMY_ANIM_SEQUENCE,
+  ENEMY_CHASE_SPEED_MULTIPLIER,
   ENEMY_DIRECTION_MAX_SECONDS,
   ENEMY_DIRECTION_MIN_SECONDS,
   ENEMY_IDLE_FRAME_COL,
@@ -12,6 +13,12 @@ import { createRng, deriveSeed } from "../core/rng.js";
 const MOVE_EPSILON = 0.001;
 const MAX_SUBSTEP_PIXELS = 4;
 const TALL_ENEMY_COLLISION_SIZE = 32;
+
+const BEHAVIOR_MODE = {
+  RANDOM_WALK: "random_walk",
+  CHASE: "chase",
+};
+
 const WALK_DIRECTIONS = [
   { dx: 0, dy: 1, facing: "down" },
   { dx: -1, dy: 0, facing: "left" },
@@ -84,7 +91,11 @@ function getCollisionProbeRect(enemy, x, y) {
   return getWallHitboxAt(enemy, x, y);
 }
 
-function isRectWalkable(grid, rect) {
+function isRectPassable(grid, rect) {
+  if (!rect) {
+    return false;
+  }
+
   const maxY = grid.length - 1;
   const maxX = grid[0].length - 1;
 
@@ -110,23 +121,146 @@ function isRectWalkable(grid, rect) {
 
 function isEnemyPositionPassable(enemy, nextX, nextY, dungeon) {
   const probeRect = getCollisionProbeRect(enemy, nextX, nextY);
-  if (!probeRect) {
-    return false;
-  }
 
   if (enemy.type === "fly") {
-    return isRectWalkable(getFlyPassableGrid(dungeon), probeRect);
+    return isRectPassable(getFlyPassableGrid(dungeon), probeRect);
   }
 
-  return isRectWalkable(getWalkableGrid(dungeon), probeRect);
+  return isRectPassable(getWalkableGrid(dungeon), probeRect);
+}
+
+function getEnemyCenter(enemy) {
+  return {
+    x: enemy.x + enemy.width / 2,
+    y: enemy.y + enemy.height / 2,
+  };
+}
+
+function getPlayerFeetCenter(player) {
+  const width = Number.isFinite(player.width) ? player.width : 32;
+  const height = Number.isFinite(player.height) ? player.height : 64;
+  const footHitboxHeight = Number.isFinite(player.footHitboxHeight) ? player.footHitboxHeight : 32;
+
+  return {
+    x: player.x + width / 2,
+    y: player.y + height - footHitboxHeight / 2,
+  };
+}
+
+function getDistanceToPlayer(enemy, player) {
+  const enemyCenter = getEnemyCenter(enemy);
+  const playerFeetCenter = getPlayerFeetCenter(player);
+  return Math.hypot(playerFeetCenter.x - enemyCenter.x, playerFeetCenter.y - enemyCenter.y);
+}
+
+function toTileCoordinate(point) {
+  return {
+    x: Math.floor(point.x / TILE_SIZE),
+    y: Math.floor(point.y / TILE_SIZE),
+  };
+}
+
+function buildLineTiles(startX, startY, endX, endY) {
+  const tiles = [];
+  let x = startX;
+  let y = startY;
+  const dx = Math.abs(endX - startX);
+  const dy = Math.abs(endY - startY);
+  const stepX = startX < endX ? 1 : -1;
+  const stepY = startY < endY ? 1 : -1;
+  let error = dx - dy;
+
+  while (true) {
+    tiles.push({ x, y });
+    if (x === endX && y === endY) {
+      break;
+    }
+
+    const error2 = 2 * error;
+    if (error2 > -dy) {
+      error -= dy;
+      x += stepX;
+    }
+    if (error2 < dx) {
+      error += dx;
+      y += stepY;
+    }
+  }
+
+  return tiles;
+}
+
+function hasWalkLineOfSight(enemy, player, dungeon) {
+  const walkableGrid = getWalkableGrid(dungeon);
+  const enemyTile = toTileCoordinate(getEnemyCenter(enemy));
+  const playerTile = toTileCoordinate(getPlayerFeetCenter(player));
+  const lineTiles = buildLineTiles(enemyTile.x, enemyTile.y, playerTile.x, playerTile.y);
+
+  for (let index = 1; index < lineTiles.length - 1; index += 1) {
+    const tile = lineTiles[index];
+    if (
+      tile.y < 0 ||
+      tile.y >= walkableGrid.length ||
+      tile.x < 0 ||
+      tile.x >= walkableGrid[0].length ||
+      walkableGrid[tile.y][tile.x] === false
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function canNoticePlayer(enemy, player, dungeon) {
+  if (enemy.type !== "walk") {
+    return true;
+  }
+
+  return hasWalkLineOfSight(enemy, player, dungeon);
+}
+
+function switchBehaviorMode(enemy, nextMode) {
+  if (enemy.behaviorMode === nextMode) {
+    enemy.isChasing = nextMode === BEHAVIOR_MODE.CHASE;
+    return;
+  }
+
+  enemy.behaviorMode = nextMode;
+  enemy.isChasing = nextMode === BEHAVIOR_MODE.CHASE;
+  enemy.walkDirection = null;
+  enemy.directionTimer = 0;
+}
+
+function updateBehaviorMode(enemy, dungeon, player) {
+  if (!player) {
+    switchBehaviorMode(enemy, BEHAVIOR_MODE.RANDOM_WALK);
+    enemy.distanceToPlayerPx = null;
+    return;
+  }
+
+  const distanceToPlayerPx = getDistanceToPlayer(enemy, player);
+  enemy.distanceToPlayerPx = distanceToPlayerPx;
+
+  if (enemy.behaviorMode === BEHAVIOR_MODE.CHASE) {
+    if (distanceToPlayerPx > enemy.giveupRadiusPx) {
+      switchBehaviorMode(enemy, BEHAVIOR_MODE.RANDOM_WALK);
+    }
+    return;
+  }
+
+  if (distanceToPlayerPx <= enemy.noticeRadiusPx && canNoticePlayer(enemy, player, dungeon)) {
+    switchBehaviorMode(enemy, BEHAVIOR_MODE.CHASE);
+  }
 }
 
 function sampleDirectionDuration(enemyRng) {
   return ENEMY_DIRECTION_MIN_SECONDS + enemyRng.float() * (ENEMY_DIRECTION_MAX_SECONDS - ENEMY_DIRECTION_MIN_SECONDS);
 }
 
-function pickWalkDirection(enemy, dungeon) {
+function pickRandomWalkDirection(enemy, dungeon) {
   const candidateDirections = enemy.rng.shuffle(WALK_DIRECTIONS);
+
   for (const direction of candidateDirections) {
     const probeX = enemy.x + direction.dx;
     const probeY = enemy.y + direction.dy;
@@ -134,18 +268,149 @@ function pickWalkDirection(enemy, dungeon) {
       return direction;
     }
   }
+
   return null;
 }
 
 function refreshWalkIntent(enemy, dungeon) {
-  enemy.walkDirection = pickWalkDirection(enemy, dungeon);
+  enemy.walkDirection = pickRandomWalkDirection(enemy, dungeon);
   enemy.directionTimer = sampleDirectionDuration(enemy.rng);
   if (enemy.walkDirection) {
     enemy.facing = enemy.walkDirection.facing;
   }
 }
 
+function updateFacing(enemy, dx, dy) {
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    enemy.facing = dx >= 0 ? "right" : "left";
+    return;
+  }
+
+  enemy.facing = dy >= 0 ? "down" : "up";
+}
+
+function resolveWalkChaseStep(enemy, dungeon, desiredDx, desiredDy) {
+  const fromX = enemy.x;
+  const fromY = enemy.y;
+
+  const combined = {
+    x: fromX + desiredDx,
+    y: fromY + desiredDy,
+  };
+
+  if (isEnemyPositionPassable(enemy, combined.x, combined.y, dungeon)) {
+    return combined;
+  }
+
+  const xOnly = {
+    x: fromX + desiredDx,
+    y: fromY,
+  };
+  const yOnly = {
+    x: fromX,
+    y: fromY + desiredDy,
+  };
+
+  const canMoveX = isEnemyPositionPassable(enemy, xOnly.x, xOnly.y, dungeon);
+  const canMoveY = isEnemyPositionPassable(enemy, yOnly.x, yOnly.y, dungeon);
+
+  if (canMoveX && canMoveY) {
+    return Math.abs(desiredDx) >= Math.abs(desiredDy) ? xOnly : yOnly;
+  }
+
+  if (canMoveX) {
+    return xOnly;
+  }
+
+  if (canMoveY) {
+    return yOnly;
+  }
+
+  return null;
+}
+
+function moveRandomWalkStep(enemy, dungeon, stepDistance, stepDuration) {
+  if (!enemy.walkDirection || enemy.directionTimer <= 0) {
+    refreshWalkIntent(enemy, dungeon);
+  }
+
+  if (!enemy.walkDirection) {
+    return { dx: 0, dy: 0, moved: false };
+  }
+
+  const nextX = enemy.x + enemy.walkDirection.dx * stepDistance;
+  const nextY = enemy.y + enemy.walkDirection.dy * stepDistance;
+
+  if (!isEnemyPositionPassable(enemy, nextX, nextY, dungeon)) {
+    enemy.walkDirection = null;
+    enemy.directionTimer = 0;
+    return { dx: 0, dy: 0, moved: false };
+  }
+
+  enemy.x = nextX;
+  enemy.y = nextY;
+  enemy.directionTimer -= stepDuration;
+
+  return {
+    dx: enemy.walkDirection.dx * stepDistance,
+    dy: enemy.walkDirection.dy * stepDistance,
+    moved: true,
+  };
+}
+
+function moveChaseStep(enemy, dungeon, player, stepDistance) {
+  const enemyCenter = getEnemyCenter(enemy);
+  const playerFeetCenter = getPlayerFeetCenter(player);
+  const toTargetX = playerFeetCenter.x - enemyCenter.x;
+  const toTargetY = playerFeetCenter.y - enemyCenter.y;
+  const distance = Math.hypot(toTargetX, toTargetY);
+
+  if (distance <= MOVE_EPSILON) {
+    return { dx: 0, dy: 0, moved: false };
+  }
+
+  const desiredDx = (toTargetX / distance) * stepDistance;
+  const desiredDy = (toTargetY / distance) * stepDistance;
+
+  if (enemy.type === "walk") {
+    const candidate = resolveWalkChaseStep(enemy, dungeon, desiredDx, desiredDy);
+    if (!candidate) {
+      return { dx: 0, dy: 0, moved: false };
+    }
+
+    const movedDx = candidate.x - enemy.x;
+    const movedDy = candidate.y - enemy.y;
+    enemy.x = candidate.x;
+    enemy.y = candidate.y;
+
+    return {
+      dx: movedDx,
+      dy: movedDy,
+      moved: Math.hypot(movedDx, movedDy) > MOVE_EPSILON,
+    };
+  }
+
+  const nextX = enemy.x + desiredDx;
+  const nextY = enemy.y + desiredDy;
+  if (!isEnemyPositionPassable(enemy, nextX, nextY, dungeon)) {
+    return { dx: 0, dy: 0, moved: false };
+  }
+
+  enemy.x = nextX;
+  enemy.y = nextY;
+
+  return {
+    dx: desiredDx,
+    dy: desiredDy,
+    moved: true,
+  };
+}
+
 function createEnemyState(definition, x, y, collision, rng, enemyId) {
+  const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
+  const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
+  const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
+
   return {
     id: enemyId,
     dbId: definition.id,
@@ -159,9 +424,15 @@ function createEnemyState(definition, x, y, collision, rng, enemyId) {
     animTime: 0,
     walkDirection: null,
     directionTimer: 0,
-    speedPxPerSec: ENEMY_WALK_SPEED_PX_PER_SEC,
     collision,
     rng,
+    behaviorMode: BEHAVIOR_MODE.RANDOM_WALK,
+    isChasing: false,
+    distanceToPlayerPx: null,
+    noticeRadiusPx,
+    giveupRadiusPx,
+    baseSpeedPxPerSec: ENEMY_WALK_SPEED_PX_PER_SEC,
+    chaseSpeedPxPerSec: ENEMY_WALK_SPEED_PX_PER_SEC * ENEMY_CHASE_SPEED_MULTIPLIER,
   };
 }
 
@@ -231,39 +502,37 @@ export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
   return createEnemies(dungeon, onlyWalkDefinitions, seed);
 }
 
-function updateEnemy(enemy, dungeon, dt) {
-  const travelDistance = enemy.speedPxPerSec * dt;
+function updateEnemy(enemy, dungeon, dt, player) {
+  updateBehaviorMode(enemy, dungeon, player);
+
+  const speedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
+  const travelDistance = speedPxPerSec * dt;
   const substeps = Math.max(1, Math.ceil(travelDistance / MAX_SUBSTEP_PIXELS));
   const stepDistance = travelDistance / substeps;
   const stepDuration = dt / substeps;
   const wasMoving = enemy.isMoving;
-  let movedDistance = 0;
+
+  let movedX = 0;
+  let movedY = 0;
 
   for (let index = 0; index < substeps; index += 1) {
-    if (!enemy.walkDirection || enemy.directionTimer <= 0) {
-      refreshWalkIntent(enemy, dungeon);
-    }
+    let stepResult;
 
-    if (!enemy.walkDirection) {
-      continue;
-    }
-
-    const nextX = enemy.x + enemy.walkDirection.dx * stepDistance;
-    const nextY = enemy.y + enemy.walkDirection.dy * stepDistance;
-
-    if (isEnemyPositionPassable(enemy, nextX, nextY, dungeon)) {
-      enemy.x = nextX;
-      enemy.y = nextY;
-      movedDistance += stepDistance;
+    if (enemy.behaviorMode === BEHAVIOR_MODE.CHASE && player) {
+      stepResult = moveChaseStep(enemy, dungeon, player, stepDistance);
     } else {
-      enemy.walkDirection = null;
-      enemy.directionTimer = 0;
+      stepResult = moveRandomWalkStep(enemy, dungeon, stepDistance, stepDuration);
+    }
+
+    if (!stepResult.moved) {
       continue;
     }
 
-    enemy.directionTimer -= stepDuration;
+    movedX += stepResult.dx;
+    movedY += stepResult.dy;
   }
 
+  const movedDistance = Math.hypot(movedX, movedY);
   if (movedDistance <= MOVE_EPSILON) {
     enemy.isMoving = false;
     enemy.animTime = 0;
@@ -271,13 +540,15 @@ function updateEnemy(enemy, dungeon, dt) {
   }
 
   enemy.isMoving = true;
+  updateFacing(enemy, movedX, movedY);
+
   if (!wasMoving) {
     enemy.animTime = 0;
   }
   enemy.animTime += dt;
 }
 
-export function updateEnemies(enemies, dungeon, dt) {
+export function updateEnemies(enemies, dungeon, dt, player = null) {
   if (!Array.isArray(enemies) || !enemies.length) {
     return;
   }
@@ -287,7 +558,7 @@ export function updateEnemies(enemies, dungeon, dt) {
   }
 
   for (const enemy of enemies) {
-    updateEnemy(enemy, dungeon, dt);
+    updateEnemy(enemy, dungeon, dt, player);
   }
 }
 

@@ -57,3 +57,10 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Fixed enemy DB refresh behavior: regeneration now re-reads enemy definitions/assets each time (`regenerate` async + `refreshEnemyResources`).
 - 2026-02-08: Fixed stale JSON cache issue by fetching enemy DB directory/files with `cache: "no-store"` and cache-bust query (`cb=`) in `src/enemy/enemyDb.js`.
 - 2026-02-08: Verified hot-reload behavior without page refresh: changing `bat01.json` width while page open and calling `window.__regenDungeon(...)` updated fly width `64 -> 32 -> 64`.
+- 2026-02-08: Added enemy notice/giveup behavior (`random_walk` <-> `chase`) for walk+fly in `src/enemy/enemySystem.js`; chase speed multiplier set to `1.3x` and `updateEnemies` now accepts optional `player`.
+- 2026-02-08: Added LOS-gated notice for `walk` enemies using Bresenham tile checks over `dungeon.walkableGrid`; `fly` notice remains distance-only.
+- 2026-02-08: Extended `render_game_to_text` enemy payload with `behaviorMode`, `noticeRadiusPx`, `giveupRadiusPx`, and `isChasing`.
+- 2026-02-08: Added `scripts/check_enemy_notice_giveup.mjs` and npm script `check:enemy-notice-giveup`; verified notice/LOS/giveup/speed-ratio cases pass.
+- 2026-02-08: Reworked Playwright payload `tests/actions/enemy_notice_giveup.json` to a deterministic visible-route sequence; verified `state-0.json` contains chasing enemies and no `errors-*.json`.
+- TODO: If we need a Playwright artifact that proves both notice and giveup in one run, extend the client to emit per-step state snapshots (current script only writes end-of-iteration state).
+- 2026-02-08: Updated spec documents for enemy chase behavior details: added notice/giveup state-machine rules (walk LOS / fly no LOS, distance basis, 1.3x chase speed) and v1 enemy placement notes in `spec/` and `spec_logic/`.
