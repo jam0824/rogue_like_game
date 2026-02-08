@@ -42,3 +42,10 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Verified wall-slide fallback with targeted simulation (`updatePlayer` + mocked walkable grid): diagonal input against top wall produced `dx>0, dy=0` as expected.
 - TODO: Add gameplay entities (enemy/trap/chest placement) on top of current room metadata.
 - TODO: Consider adding an automated assertion script for animation frame transitions (A/B/C/B) to complement screenshot-based verification.
+- 2026-02-08: Added enemy loading pipeline for `type=walk` (`src/enemy/enemyDb.js`, `src/enemy/enemyAsset.js`) and validated required DB keys before use.
+- 2026-02-08: Added walk enemy system (`src/enemy/enemySystem.js`) with per-room spawn (excluding start room), height-based wall hitbox rules, and 4-direction random walk.
+- 2026-02-08: Integrated enemies into app state, simulation loop, renderer z-sort, and `render_game_to_text` output (`enemies` with wall hitbox/facing/movement).
+- 2026-02-08: Added automated enemy behavior check script (`npm run check:enemy-walk`) and Playwright action payload `tests/actions/enemy_idle_walk.json`.
+- 2026-02-08: Updated enemy DB loader to discover `db/enemy_db/*.json` from directory listing with fallback list, keeping `type=walk` filter.
+- 2026-02-08: Validation complete: `npm run check:generation` and `npm run check:enemy-walk` both passed after enemy integration.
+- 2026-02-08: Playwright check complete for idle enemy walk (`tests/actions/enemy_idle_walk.json`): 3 screenshots + state JSON captured, `enemies` present in text state, no `errors-*.json` artifacts.

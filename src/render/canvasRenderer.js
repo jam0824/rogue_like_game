@@ -102,14 +102,34 @@ export function buildDungeonBackdrop(assets, dungeon) {
   };
 }
 
+function drawSprite(ctx, asset, frame, entity) {
+  const sx = frame.col * asset.frameWidth;
+  const sy = frame.row * asset.frameHeight;
+  const dx = Math.round(entity.x);
+  const dy = Math.round(entity.y);
+
+  ctx.drawImage(
+    asset.image,
+    sx,
+    sy,
+    asset.frameWidth,
+    asset.frameHeight,
+    dx,
+    dy,
+    asset.frameWidth,
+    asset.frameHeight
+  );
+}
+
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {{canvas:HTMLCanvasElement,widthPx:number,heightPx:number}} backdrop
  * @param {{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null} playerAsset
  * @param {{row:number,col:number}|null} playerFrame
  * @param {{x:number,y:number}|null} player
+ * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null}>} enemyDrawables
  */
-export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player) {
+export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player, enemyDrawables = []) {
   if (!backdrop) {
     return;
   }
@@ -123,24 +143,32 @@ export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player) 
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(backdrop.canvas, 0, 0);
 
-  if (!playerAsset || !playerFrame || !player) {
-    return;
+  const drawQueue = [];
+
+  for (const drawable of enemyDrawables) {
+    if (!drawable.asset || !drawable.frame || !drawable.enemy) {
+      continue;
+    }
+
+    drawQueue.push({
+      feetY: drawable.enemy.y + drawable.enemy.height,
+      draw() {
+        drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy);
+      },
+    });
   }
 
-  const sx = playerFrame.col * playerAsset.frameWidth;
-  const sy = playerFrame.row * playerAsset.frameHeight;
-  const dx = Math.round(player.x);
-  const dy = Math.round(player.y);
+  if (playerAsset && playerFrame && player) {
+    drawQueue.push({
+      feetY: player.y + playerAsset.frameHeight,
+      draw() {
+        drawSprite(ctx, playerAsset, playerFrame, player);
+      },
+    });
+  }
 
-  ctx.drawImage(
-    playerAsset.image,
-    sx,
-    sy,
-    playerAsset.frameWidth,
-    playerAsset.frameHeight,
-    dx,
-    dy,
-    playerAsset.frameWidth,
-    playerAsset.frameHeight
-  );
+  drawQueue.sort((a, b) => a.feetY - b.feetY);
+  for (const item of drawQueue) {
+    item.draw();
+  }
 }

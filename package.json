@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check:generation": "node scripts/check_generation.mjs"
+    "check:generation": "node scripts/check_generation.mjs",
+    "check:enemy-walk": "node scripts/check_enemy_walk.mjs"
   }
 }

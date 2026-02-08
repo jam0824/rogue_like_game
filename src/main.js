@@ -1,4 +1,7 @@
 import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./config/constants.js";
+import { loadEnemyAssets } from "./enemy/enemyAsset.js";
+import { loadWalkEnemyDefinitions } from "./enemy/enemyDb.js";
+import { createWalkEnemies, getEnemyFrame, getEnemyWallHitbox, updateEnemies } from "./enemy/enemySystem.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
@@ -75,6 +78,20 @@ function buildPlayerTextState(player) {
   };
 }
 
+function buildEnemyTextState(enemy) {
+  return {
+    id: enemy.id,
+    type: enemy.type,
+    x: round2(enemy.x),
+    y: round2(enemy.y),
+    width: enemy.width,
+    height: enemy.height,
+    wallHitbox: getEnemyWallHitbox(enemy),
+    facing: enemy.facing,
+    isMoving: enemy.isMoving,
+  };
+}
+
 function toTextState() {
   if (appState.error) {
     return JSON.stringify(
@@ -119,6 +136,7 @@ function toTextState() {
       },
       stats: dungeon.stats,
       player: buildPlayerTextState(appState.player),
+      enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
       startRoom: startRoom
         ? {
             id: startRoom.id,
@@ -186,7 +204,12 @@ function followPlayerInView() {
   canvasScroll.scrollTop = clamp(feetCenterY - viewHeight / 2, 0, maxTop);
 }
 
-const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
+const walkEnemyDefinitions = await loadWalkEnemyDefinitions();
+const [tileAssets, playerAsset, enemyAssets] = await Promise.all([
+  loadTileAssets(),
+  loadPlayerAsset(),
+  loadEnemyAssets(walkEnemyDefinitions),
+]);
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
   onApplySeed: (seedInputValue) => {
@@ -218,7 +241,13 @@ function renderCurrentFrame() {
     return;
   }
 
-  renderFrame(canvas, appState.backdrop, playerAsset, getPlayerFrame(appState.player), appState.player);
+  const enemyDrawables = appState.enemies.map((enemy) => ({
+    enemy,
+    asset: enemyAssets[enemy.dbId] ?? null,
+    frame: getEnemyFrame(enemy),
+  }));
+
+  renderFrame(canvas, appState.backdrop, playerAsset, getPlayerFrame(appState.player), appState.player, enemyDrawables);
 }
 
 function stepSimulation(dt) {
@@ -227,6 +256,7 @@ function stepSimulation(dt) {
   }
 
   updatePlayer(appState.player, appState.dungeon, dt);
+  updateEnemies(appState.enemies, appState.dungeon, dt);
   followPlayerInView();
 }
 
@@ -262,6 +292,7 @@ function regenerate(seed) {
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
 
     const player = createPlayerState(dungeon);
+    const enemies = createWalkEnemies(dungeon, walkEnemyDefinitions, normalizedSeed);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
 
     setDungeonState(appState, {
@@ -269,6 +300,7 @@ function regenerate(seed) {
       dungeon,
       validation,
       player,
+      enemies,
       backdrop,
     });
 
