@@ -1,0 +1,31 @@
+{
+    "id": "formation_id_circle01",
+    "type": "circle",
+    "name_key": "formation_name_circle",
+    "description_key": "formation_desc_circle",
+    "tags": ["starter", "stable"],
+  
+    "radius_base": 2.2,
+    "angular_speed_base": 3.0,
+    "phase_style": "even",
+  
+    "bias_strength_mul": 1.1,
+    "bias_response_mul": 1.0,
+  
+    "clamp": {
+      "radius_min": 1.0,
+      "radius_max": 4.5,
+      "speed_min": 0.5,
+      "speed_max": 8.0,
+      "bias_offset_ratio_max": 0.6
+    },
+  
+    "params": {
+      "center_mode": "biased_center"
+    },
+  
+    "ui": {
+      "icon_file_name": "formation_circle01.png",
+      "sort_order": 10
+    }
+  }
