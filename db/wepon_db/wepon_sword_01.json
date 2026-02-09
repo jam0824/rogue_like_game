@@ -1,0 +1,21 @@
+{
+    "name_key": "name_wepon_sword_01",
+    "description_key": "description_wepon_sword_01",
+
+    "weapon_file_name": "wepon_sword_01.png",
+    "width": 32,
+    "height": 64,
+
+    "rarity": "rare",
+    "weapon_plus": 0,
+    "base_damage": 12,
+    "attack_cooldown_sec": 2.00,
+    "hit_num": 1,
+    "pierce_count": 0,
+    "chip_slot_count": 3,
+    "formation_id": "formation_id_circle01",
+    "skills": [
+        {"id": "skill_id_fire01", "plus": 0},
+        {"id": "skill_id_poison01", "plus": 3}
+    ]
+  }
