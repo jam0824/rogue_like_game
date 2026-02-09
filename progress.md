@@ -64,3 +64,13 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-08: Reworked Playwright payload `tests/actions/enemy_notice_giveup.json` to a deterministic visible-route sequence; verified `state-0.json` contains chasing enemies and no `errors-*.json`.
 - TODO: If we need a Playwright artifact that proves both notice and giveup in one run, extend the client to emit per-step state snapshots (current script only writes end-of-iteration state).
 - 2026-02-08: Updated spec documents for enemy chase behavior details: added notice/giveup state-machine rules (walk LOS / fly no LOS, distance basis, 1.3x chase speed) and v1 enemy placement notes in `spec/` and `spec_logic/`.
+- 2026-02-09: Added Vitest-based unit testing foundation (`devDependency: vitest`) and npm scripts `unit`, `test:checks`, `test`.
+- 2026-02-09: Added unit tests for high-risk uncovered modules:
+  - `tests/unit/playerSystem.test.js` (spawn/fallback, pointer target, update/movement/collision/slide, frame sequence, hitbox rounding)
+  - `tests/unit/pointerController.test.js` (left-click gating, active pointer filtering, coordinate scaling+clamp, release events, destroy cleanup)
+  - `tests/unit/appState.test.js` (init state, dungeon state transition, error state reset/stringification)
+- 2026-02-09: Validation complete:
+  - `npm run unit` -> PASS (3 files, 20 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup)
+  - `npm test` -> PASS (unit + checks)
+- 2026-02-09: Playwright smoke check executed with idle action payload using skill client (`tests/actions/idle.json`) against local server; screenshot + state JSON captured under `/tmp/rogue_like_game_playwright_smoke` and visually/state-checked with no console-error artifacts generated.
