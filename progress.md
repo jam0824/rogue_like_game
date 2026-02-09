@@ -127,3 +127,7 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - observed `state-22.json`: same popup decayed to `alpha=0.19` and higher Y (upward movement).
   - observed subsequent state: popup removed after lifetime; no `errors-*.json` artifacts generated.
 - TODO: For clearer visual QA, consider a temporary debug zoom/marker mode around player combat area to make popup/flash easier to inspect in full-map captures.
+- 2026-02-09: Updated related specs to match implemented combat feedback and runtime values:
+  - `spec/武器システム仕様_v1_4.md`: added v1 feedback rules (weapon rotation angle convention, damage popups, enemy hit flash), reflected current starter weapon values (`wepon_sword_01`, `formation_id_circle01`, `pierce_count=10`), and documented `render_game_to_text` combat debug fields.
+  - `spec/敵キャラ仕様_v1_5.md`: added hit-flash runtime behavior (`hitFlashTimerSec`, `hitFlashDurationSec`, `hitFlashAlpha`) and updated weapon-spec reference link.
+  - aligned cross-document references from `武器システム仕様_v1.md` to `武器システム仕様_v1_4.md` in `spec/ゲーム概要_v2.md`, `spec/ステータス仕様_v1_3.md`, and `spec/ダンジョン仕様_v1.md`.
