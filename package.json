@@ -6,6 +6,12 @@
     "check:generation": "node scripts/check_generation.mjs",
     "check:enemy-walk": "node scripts/check_enemy_walk.mjs",
     "check:enemy-fly": "node scripts/check_enemy_fly.mjs",
-    "check:enemy-notice-giveup": "node scripts/check_enemy_notice_giveup.mjs"
+    "check:enemy-notice-giveup": "node scripts/check_enemy_notice_giveup.mjs",
+    "unit": "vitest run",
+    "test:checks": "npm run check:generation && npm run check:enemy-walk && npm run check:enemy-fly && npm run check:enemy-notice-giveup",
+    "test": "npm run unit && npm run test:checks"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }
