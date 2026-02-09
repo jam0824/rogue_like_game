@@ -185,6 +185,7 @@ function toTextState() {
     {
       mode: "dungeon",
       seed: dungeon.seed,
+      isPaused: appState.isPaused === true,
       coordinateSystem: {
         origin: "top-left",
         xAxis: "right-positive",
@@ -292,6 +293,22 @@ async function refreshWeaponResources() {
   weaponAssets = assets;
 }
 
+function syncPauseUi() {
+  debugPanel.setPaused(appState.isPaused);
+}
+
+function setPaused(paused) {
+  appState.isPaused = paused === true;
+  syncPauseUi();
+}
+
+function togglePause() {
+  if (!appState.dungeon || !appState.player || appState.error) {
+    return;
+  }
+  setPaused(!appState.isPaused);
+}
+
 const debugPanel = createDebugPanel(debugPanelRoot, {
   onApplySeed: (seedInputValue) => {
     const nextSeed = seedInputValue.trim() || appState.seed;
@@ -301,11 +318,18 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
     const nextSeed = makeRandomSeed();
     void regenerate(nextSeed);
   },
+  onTogglePause: () => {
+    togglePause();
+  },
 });
+syncPauseUi();
 
 createPointerController(canvas, {
   onPointerTarget: (active, worldX, worldY) => {
     if (!appState.player || appState.error) {
+      return;
+    }
+    if (appState.isPaused && active) {
       return;
     }
     setPointerTarget(appState.player, active, worldX, worldY);
@@ -348,7 +372,7 @@ function renderCurrentFrame() {
 }
 
 function stepSimulation(dt) {
-  if (!appState.dungeon || !appState.player || appState.error) {
+  if (!appState.dungeon || !appState.player || appState.error || appState.isPaused) {
     return;
   }
 
@@ -436,6 +460,7 @@ async function regenerate(seed) {
     debugPanel.setSeed(normalizedSeed);
     debugPanel.setStats(buildStatsRows(dungeon));
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
+    syncPauseUi();
 
     if (requestId !== regenerateRequestId) {
       return;
@@ -453,6 +478,7 @@ async function regenerate(seed) {
     debugPanel.setSeed(normalizedSeed);
     debugPanel.setStats([]);
     debugPanel.setError(appState.error);
+    syncPauseUi();
     renderCurrentFrame();
     resetLoopClock();
   }
@@ -464,8 +490,10 @@ window.advanceTime = (ms = 0) => {
   const requestedMs = Number.isFinite(duration) && duration > 0 ? duration : FRAME_MS;
   const frames = Math.max(1, Math.round(requestedMs / FRAME_MS));
 
-  for (let index = 0; index < frames; index += 1) {
-    stepSimulation(FIXED_DT);
+  if (!appState.isPaused) {
+    for (let index = 0; index < frames; index += 1) {
+      stepSimulation(FIXED_DT);
+    }
   }
 
   renderCurrentFrame();

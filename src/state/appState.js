@@ -1,6 +1,7 @@
 export function createAppState(initialSeed) {
   return {
     seed: String(initialSeed),
+    isPaused: false,
     dungeon: null,
     validation: null,
     player: null,
@@ -14,6 +15,7 @@ export function createAppState(initialSeed) {
 
 export function setDungeonState(state, payload) {
   state.seed = String(payload.seed);
+  state.isPaused = false;
   state.dungeon = payload.dungeon;
   state.validation = payload.validation;
   state.player = payload.player ?? null;
@@ -26,6 +28,7 @@ export function setDungeonState(state, payload) {
 
 export function setErrorState(state, seed, error) {
   state.seed = String(seed);
+  state.isPaused = false;
   state.dungeon = null;
   state.validation = null;
   state.player = null;

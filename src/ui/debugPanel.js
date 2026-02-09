@@ -12,6 +12,7 @@ export function createDebugPanel(root, handlers) {
   const seedInput = root.querySelector("#seed-input");
   const applySeedButton = root.querySelector("#apply-seed");
   const regenerateButton = root.querySelector("#regen-random");
+  const pauseToggleButton = root.querySelector("#pause-toggle");
   const statsList = root.querySelector("#debug-stats");
   const errorMessage = root.querySelector("#debug-error");
 
@@ -30,9 +31,18 @@ export function createDebugPanel(root, handlers) {
     handlers.onRegenerate();
   });
 
+  pauseToggleButton.addEventListener("click", () => {
+    handlers.onTogglePause();
+  });
+
   return {
     setSeed(seed) {
       seedInput.value = String(seed);
+    },
+    setPaused(paused) {
+      const nextPaused = paused === true;
+      pauseToggleButton.textContent = nextPaused ? "再開" : "一時停止";
+      pauseToggleButton.setAttribute("aria-pressed", nextPaused ? "true" : "false");
     },
     setStats(rows) {
       renderStatsList(statsList, rows);

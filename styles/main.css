@@ -87,7 +87,7 @@ body {
 
 .debug-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -104,6 +104,12 @@ button {
 
 button:hover {
   background: #233a63;
+}
+
+button[aria-pressed="true"] {
+  border-color: #7c9dff;
+  background: #2a3f74;
+  color: #f4f8ff;
 }
 
 .debug-stats {

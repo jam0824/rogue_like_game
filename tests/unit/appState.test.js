@@ -7,6 +7,7 @@ describe("appState", () => {
 
     expect(state).toEqual({
       seed: "12345",
+      isPaused: false,
       dungeon: null,
       validation: null,
       player: null,
@@ -21,6 +22,7 @@ describe("appState", () => {
   it("ダンジョン設定で状態を更新しエラーをクリアする", () => {
     const state = createAppState("old-seed");
     state.error = "old error";
+    state.isPaused = true;
 
     const payload = {
       seed: "new-seed",
@@ -36,6 +38,7 @@ describe("appState", () => {
     setDungeonState(state, payload);
 
     expect(state.seed).toBe("new-seed");
+    expect(state.isPaused).toBe(false);
     expect(state.dungeon).toEqual({ id: "dungeon" });
     expect(state.validation).toEqual({ ok: true });
     expect(state.player).toEqual({ id: "player" });
@@ -58,11 +61,13 @@ describe("appState", () => {
       damagePopups: [{ id: "popup" }],
       backdrop: { widthPx: 960, heightPx: 540 },
     });
+    state.isPaused = true;
 
     setErrorState(state, 999, new Error("boom"));
 
     expect(state).toEqual({
       seed: "999",
+      isPaused: false,
       dungeon: null,
       validation: null,
       player: null,

@@ -131,3 +131,22 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `spec/武器システム仕様_v1_4.md`: added v1 feedback rules (weapon rotation angle convention, damage popups, enemy hit flash), reflected current starter weapon values (`wepon_sword_01`, `formation_id_circle01`, `pierce_count=10`), and documented `render_game_to_text` combat debug fields.
   - `spec/敵キャラ仕様_v1_5.md`: added hit-flash runtime behavior (`hitFlashTimerSec`, `hitFlashDurationSec`, `hitFlashAlpha`) and updated weapon-spec reference link.
   - aligned cross-document references from `武器システム仕様_v1.md` to `武器システム仕様_v1_4.md` in `spec/ゲーム概要_v2.md`, `spec/ステータス仕様_v1_3.md`, and `spec/ダンジョン仕様_v1.md`.
+
+- 2026-02-09: Added pause toggle button to debug panel (`#pause-toggle`) with pressed-state styling and label switch (`一時停止` <-> `再開`).
+- 2026-02-09: Extended app state with `isPaused` and reset-to-false behavior in `setDungeonState`/`setErrorState` to guarantee auto-resume after Apply Seed/再生成.
+- 2026-02-09: Integrated pause control into main loop:
+  - `stepSimulation` now early-returns when paused.
+  - pointer input ignores new active targets while paused (release event still allowed).
+  - `window.advanceTime(ms)` no-ops simulation during pause.
+  - `render_game_to_text` now exports `isPaused` in dungeon mode.
+- 2026-02-09: Added unit test coverage for pause-related UI/state:
+  - updated `tests/unit/appState.test.js` for `isPaused` initialization/reset.
+  - added `tests/unit/debugPanel.test.js` for pause toggle handler + label/`aria-pressed` updates.
+- 2026-02-09: Validation complete for pause feature:
+  - `npm run unit` -> PASS (7 files, 34 tests)
+  - `npm test` -> PASS (unit + all check scripts)
+  - Playwright verification (`output/web-game-pause-verification/verification.json`) -> PASS:
+    - paused frames kept player/enemy state unchanged,
+    - resume re-enabled progression,
+    - regenerate while paused auto-reset `isPaused=false`,
+    - no console error artifacts.
