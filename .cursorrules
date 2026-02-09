@@ -1,0 +1,1 @@
+Generate commit messages in Japanese.
