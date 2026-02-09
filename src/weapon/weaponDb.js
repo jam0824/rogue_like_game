@@ -106,6 +106,29 @@ async function loadWeaponFile(fileName, cacheBustKey) {
   return normalizeWeaponRecord(rawWeapon, fileName);
 }
 
+async function loadWeaponRawFile(fileName, cacheBustKey) {
+  const url = new URL(`../../db/wepon_db/${fileName}`, import.meta.url);
+  if (cacheBustKey) {
+    url.searchParams.set("cb", String(cacheBustKey));
+  }
+
+  const response = await fetch(url.href, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load weapon DB file ${fileName}: HTTP ${response.status}`);
+  }
+
+  const rawWeapon = await response.json();
+  assertHasRequiredKeys(rawWeapon, fileName);
+  assertWeaponShape(rawWeapon, fileName);
+  return {
+    ...rawWeapon,
+    skills: rawWeapon.skills.map((skill) => ({
+      id: skill.id,
+      plus: Number.isFinite(skill.plus) ? skill.plus : 0,
+    })),
+  };
+}
+
 function extractWeaponJsonFileNamesFromDirectoryHtml(html) {
   const hrefPattern = /href\s*=\s*["']([^"']+)["']/gi;
   const fileNames = new Set();
@@ -164,4 +187,11 @@ export async function loadWeaponDefinitions() {
   const cacheBustKey = Date.now();
   const fileNames = await discoverWeaponDbFileNames(cacheBustKey);
   return Promise.all(fileNames.map((fileName) => loadWeaponFile(fileName, cacheBustKey)));
+}
+
+export async function loadWeaponRawRecord(fileName) {
+  if (typeof fileName !== "string" || !fileName.endsWith(".json")) {
+    throw new Error(`Invalid weapon DB file name: ${fileName}`);
+  }
+  return loadWeaponRawFile(fileName, Date.now());
 }

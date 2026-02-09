@@ -238,6 +238,27 @@ export function createPlayerState(dungeon) {
   };
 }
 
+export function tryRestorePlayerPosition(player, dungeon, savedPos) {
+  if (!player || !dungeon || !savedPos) {
+    return false;
+  }
+
+  if (!Number.isFinite(savedPos.x) || !Number.isFinite(savedPos.y)) {
+    return false;
+  }
+
+  const walkableGrid = getWalkableGrid(dungeon);
+  const clamped = clampPlayerToBounds(savedPos.x, savedPos.y, dungeon);
+  const feetRect = getFeetRect(clamped.x, clamped.y);
+  if (!isFeetRectWalkable(walkableGrid, feetRect)) {
+    return false;
+  }
+
+  player.x = clamped.x;
+  player.y = clamped.y;
+  return true;
+}
+
 export function setPointerTarget(player, active, worldX, worldY) {
   if (!active) {
     player.pointerActive = false;
