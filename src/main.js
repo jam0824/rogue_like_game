@@ -36,7 +36,7 @@ import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
-import { loadWeaponDefinitions, loadWeaponRawRecord } from "./weapon/weaponDb.js";
+import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
 import { loadFormationDefinitions } from "./weapon/formationDb.js";
 import { loadWeaponAssets } from "./weapon/weaponAsset.js";
 import {
@@ -49,7 +49,6 @@ import {
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "wepon_sword_01";
-const INITIAL_WEAPON_FILE = "wepon_sword_01.json";
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 
 const appState = createAppState(INITIAL_SEED);
@@ -309,7 +308,6 @@ let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
 let weaponAssets = {};
-let starterWeaponRaw = null;
 let damagePopupSeq = 0;
 
 async function refreshEnemyResources() {
@@ -320,29 +318,26 @@ async function refreshEnemyResources() {
 }
 
 async function refreshWeaponResources() {
-  const [definitions, formations, starterRaw] = await Promise.all([
-    loadWeaponDefinitions(),
-    loadFormationDefinitions(),
-    loadWeaponRawRecord(INITIAL_WEAPON_FILE),
-  ]);
+  const [definitions, formations] = await Promise.all([loadWeaponDefinitions(), loadFormationDefinitions()]);
   const assets = await loadWeaponAssets(definitions);
 
   weaponDefinitions = definitions;
   weaponDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
   formationDefinitionsById = Object.fromEntries(formations.map((formation) => [formation.id, formation]));
   weaponAssets = assets;
-  starterWeaponRaw = starterRaw;
 }
 
 function ensurePlayerStateLoaded() {
   if (appState.playerState) {
     return;
   }
-  if (starterWeaponRaw) {
+  const starterWeaponDef = weaponDefinitionsById[INITIAL_WEAPON_ID] ?? null;
+  if (starterWeaponDef) {
     appState.playerState = loadPlayerStateFromStorage(
       appStorage,
       PLAYER_STATE_STORAGE_KEY,
-      starterWeaponRaw,
+      weaponDefinitionsById,
+      INITIAL_WEAPON_ID,
       nowUnixSec()
     );
     return;
@@ -512,8 +507,34 @@ async function regenerate(seed) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
     const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
-    const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(appState.playerState, starterWeaponRaw);
-    const weaponDefinitionsForRun = restoredWeaponDefinitions;
+    const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(
+      appState.playerState,
+      weaponDefinitionsById,
+      INITIAL_WEAPON_ID
+    );
+    const fallbackFormationId = Object.keys(formationDefinitionsById)[0] ?? null;
+    const weaponDefinitionsForRun = restoredWeaponDefinitions.map((definition) => {
+      if (formationDefinitionsById?.[definition.formationId]) {
+        return definition;
+      }
+
+      const defaultFormationId = weaponDefinitionsById?.[definition.id]?.formationId;
+      if (defaultFormationId && formationDefinitionsById?.[defaultFormationId]) {
+        return {
+          ...definition,
+          formationId: defaultFormationId,
+        };
+      }
+
+      if (fallbackFormationId) {
+        return {
+          ...definition,
+          formationId: fallbackFormationId,
+        };
+      }
+
+      return definition;
+    });
     if (weaponDefinitionsForRun.length === 0) {
       throw new Error(`Initial weapon is missing in DB: ${INITIAL_WEAPON_ID}`);
     }

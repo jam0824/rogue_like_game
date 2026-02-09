@@ -182,3 +182,28 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 
 - TODO: If player HP runtime is introduced later, wire `playerState.run.hp` to true runtime HP source (currently synced from player if available, otherwise maintained default/saved value).
 - TODO: If multiple weapon DB entries and assets are added, ensure saved weapon IDs/file names are validated against available assets and decide fallback policy for missing sprites.
+- 2026-02-10: Updated weapon persistence model to spec-normalized WeaponDef + WeaponInstance split.
+- 2026-02-10: Reworked `src/player/playerStateStore.js` to store weapon instances as:
+  - `weapon_def_id`, `rarity`, `weapon_plus`, `formation_id`, `skills` (+ optional `stat_overrides`).
+  - Def fields like `weapon_file_name`, `width`, `base_damage`, `attack_cooldown_sec` are no longer saved in player_state.
+- 2026-02-10: Added strict legacy invalidation policy (no migration):
+  - If saved weapon object includes legacy def keys (e.g. `weapon_file_name`, `base_damage`) or lacks valid `weapon_def_id`, load path discards save and reinitializes default player state.
+- 2026-02-10: Changed player state load/resolve flow to use weapon definition map:
+  - `loadPlayerStateFromStorage(storage, key, weaponDefinitionsById, starterWeaponDefId, nowUnixSec)`
+  - `buildWeaponDefinitionsFromPlayerState(playerState, weaponDefinitionsById, starterWeaponDefId)` returns resolved runtime weapon definitions by merging WeaponDef + WeaponInstance.
+- 2026-02-10: Removed `loadWeaponRawRecord` dependency from `src/main.js` and removed unused raw-record loader export from `src/weapon/weaponDb.js`.
+- 2026-02-10: `src/main.js` now resolves runtime weapons via `weapon_def_id` and applies safe formation fallback:
+  - if saved `formation_id` is missing in current formation DB, fallback to weapon def's default formation, then first available formation.
+- 2026-02-10: Updated `tests/unit/playerStateStore.test.js` for new instance shape and behaviors:
+  - default state stores instance-only weapon fields,
+  - legacy save is discarded and reset,
+  - weapon_def_id resolution + formation override merge,
+  - runtime sync/save/apply does not mutate instance payload.
+- 2026-02-10: Validation complete:
+  - `npm run unit` -> PASS (8 files, 41 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/player-attack)
+  - Playwright skill-client run (`output/web-game-weapon-instance-spec`) confirmed state output includes `weapon_def_id` and excludes def-fixed fields.
+  - Legacy injection run (`output/web-game-weapon-instance-legacy-check`) confirmed old save payload is discarded and rewritten as normalized instance format.
+  - Formation override run (`output/web-game-weapon-instance-formation-check`) confirmed runtime remains stable with invalid saved formation id via fallback, while playerState keeps saved instance value.
+
+- TODO: When more formation files are introduced, decide whether to auto-normalize invalid saved `formation_id` inside persisted playerState (currently runtime fallback only).

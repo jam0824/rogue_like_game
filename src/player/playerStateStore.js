@@ -1,23 +1,20 @@
 export const PLAYER_STATE_SCHEMA_VERSION = "player_state_v1";
 export const PLAYER_STATE_STORAGE_KEY = "rogue_like_game.player_state_v1";
 
-const STAT_KEYS = ["vit", "for", "agi", "pow", "tec", "arc"];
-const WEAPON_REQUIRED_KEYS = [
+const DEFAULT_STARTER_WEAPON_DEF_ID = "wepon_sword_01";
+const LEGACY_WEAPON_DEF_KEYS = [
   "name_key",
   "description_key",
   "weapon_file_name",
   "width",
   "height",
-  "rarity",
-  "weapon_plus",
   "base_damage",
   "attack_cooldown_sec",
   "hit_num",
   "pierce_count",
   "chip_slot_count",
-  "formation_id",
-  "skills",
 ];
+const STAT_KEYS = ["vit", "for", "agi", "pow", "tec", "arc"];
 
 function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
@@ -56,39 +53,27 @@ function getDefaultRunStats() {
   };
 }
 
-function getDefaultWeapon() {
+function getFallbackWeaponDef() {
   return {
-    name_key: "name_wepon_sword_01",
-    description_key: "description_wepon_sword_01",
-    weapon_file_name: "wepon_sword_01.png",
+    id: DEFAULT_STARTER_WEAPON_DEF_ID,
+    nameKey: "name_wepon_sword_01",
+    descriptionKey: "description_wepon_sword_01",
+    weaponFileName: "wepon_sword_01.png",
     width: 32,
     height: 64,
     rarity: "rare",
-    weapon_plus: 0,
-    base_damage: 12,
-    attack_cooldown_sec: 2,
-    hit_num: 1,
-    pierce_count: 10,
-    chip_slot_count: 3,
-    formation_id: "formation_id_circle01",
+    weaponPlus: 0,
+    baseDamage: 12,
+    attackCooldownSec: 2,
+    hitNum: 1,
+    pierceCount: 10,
+    chipSlotCount: 3,
+    formationId: "formation_id_circle01",
     skills: [
       { id: "skill_id_fire01", plus: 0 },
       { id: "skill_id_poison01", plus: 3 },
     ],
   };
-}
-
-function hasWeaponRequiredKeys(rawWeapon) {
-  if (!rawWeapon || typeof rawWeapon !== "object") {
-    return false;
-  }
-
-  for (const key of WEAPON_REQUIRED_KEYS) {
-    if (!(key in rawWeapon)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 function sanitizeStats(rawStats, fallbackStats) {
@@ -117,58 +102,184 @@ function sanitizeSkills(rawSkills, fallbackSkills) {
     return result;
   }
 
-  return fallback.map((skill) => ({
-    id: skill.id,
-    plus: toNonNegativeInt(skill.plus, 0),
-  }));
+  return fallback
+    .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+    .map((skill) => ({
+      id: skill.id,
+      plus: toNonNegativeInt(skill.plus, 0),
+    }));
 }
 
-function sanitizeWeaponRaw(rawWeapon, starterWeaponRaw) {
-  const fallbackWeapon = hasWeaponRequiredKeys(starterWeaponRaw) ? starterWeaponRaw : getDefaultWeapon();
-  const sourceWeapon = hasWeaponRequiredKeys(rawWeapon) ? rawWeapon : fallbackWeapon;
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveStarterWeaponDefId(weaponDefinitionsById, preferredId = DEFAULT_STARTER_WEAPON_DEF_ID) {
+  if (preferredId && weaponDefinitionsById?.[preferredId]) {
+    return preferredId;
+  }
+
+  const ids = weaponDefinitionsById ? Object.keys(weaponDefinitionsById) : [];
+  if (ids.length > 0) {
+    return ids[0];
+  }
+
+  return DEFAULT_STARTER_WEAPON_DEF_ID;
+}
+
+function getWeaponDefById(weaponDefinitionsById, weaponDefId, starterWeaponDefId) {
+  if (weaponDefinitionsById?.[weaponDefId]) {
+    return weaponDefinitionsById[weaponDefId];
+  }
+
+  if (weaponDefinitionsById?.[starterWeaponDefId]) {
+    return weaponDefinitionsById[starterWeaponDefId];
+  }
+
+  return getFallbackWeaponDef();
+}
+
+function getDefaultWeaponInstance(starterWeaponDef) {
+  const weaponDef = starterWeaponDef ?? getFallbackWeaponDef();
 
   return {
-    name_key: typeof sourceWeapon.name_key === "string" ? sourceWeapon.name_key : fallbackWeapon.name_key,
-    description_key:
-      typeof sourceWeapon.description_key === "string"
-        ? sourceWeapon.description_key
-        : fallbackWeapon.description_key,
-    weapon_file_name:
-      typeof sourceWeapon.weapon_file_name === "string" && sourceWeapon.weapon_file_name.length > 0
-        ? sourceWeapon.weapon_file_name
-        : fallbackWeapon.weapon_file_name,
-    width: Math.max(1, toFiniteNumber(sourceWeapon.width, toFiniteNumber(fallbackWeapon.width, 1))),
-    height: Math.max(1, toFiniteNumber(sourceWeapon.height, toFiniteNumber(fallbackWeapon.height, 1))),
-    rarity: typeof sourceWeapon.rarity === "string" ? sourceWeapon.rarity : fallbackWeapon.rarity,
-    weapon_plus: toNonNegativeInt(sourceWeapon.weapon_plus, toNonNegativeInt(fallbackWeapon.weapon_plus, 0)),
-    base_damage: Math.max(0, toFiniteNumber(sourceWeapon.base_damage, toFiniteNumber(fallbackWeapon.base_damage, 0))),
-    attack_cooldown_sec: Math.max(
-      0.001,
-      toFiniteNumber(sourceWeapon.attack_cooldown_sec, toFiniteNumber(fallbackWeapon.attack_cooldown_sec, 1))
-    ),
-    hit_num: Math.max(1, toNonNegativeInt(sourceWeapon.hit_num, toNonNegativeInt(fallbackWeapon.hit_num, 1))),
-    pierce_count: Math.max(
-      0,
-      toNonNegativeInt(sourceWeapon.pierce_count, toNonNegativeInt(fallbackWeapon.pierce_count, 0))
-    ),
-    chip_slot_count: Math.max(
-      0,
-      toNonNegativeInt(sourceWeapon.chip_slot_count, toNonNegativeInt(fallbackWeapon.chip_slot_count, 0))
-    ),
+    weapon_def_id: weaponDef.id,
+    rarity: typeof weaponDef.rarity === "string" ? weaponDef.rarity : "rare",
+    weapon_plus: toNonNegativeInt(weaponDef.weaponPlus, 0),
     formation_id:
-      typeof sourceWeapon.formation_id === "string" && sourceWeapon.formation_id.length > 0
-        ? sourceWeapon.formation_id
-        : fallbackWeapon.formation_id,
-    skills: sanitizeSkills(sourceWeapon.skills, fallbackWeapon.skills),
+      typeof weaponDef.formationId === "string" && weaponDef.formationId.length > 0
+        ? weaponDef.formationId
+        : "formation_id_circle01",
+    skills: sanitizeSkills(weaponDef.skills, []),
   };
 }
 
-function sanitizeEquippedWeapons(rawEquippedWeapons, starterWeaponRaw) {
+function hasLegacyWeaponDefKeys(rawWeaponInstance) {
+  if (!isPlainObject(rawWeaponInstance)) {
+    return false;
+  }
+
+  return LEGACY_WEAPON_DEF_KEYS.some((key) => key in rawWeaponInstance);
+}
+
+function isValidWeaponInstanceShape(rawWeaponInstance, weaponDefinitionsById) {
+  if (!isPlainObject(rawWeaponInstance)) {
+    return false;
+  }
+
+  if (hasLegacyWeaponDefKeys(rawWeaponInstance)) {
+    return false;
+  }
+
+  if (typeof rawWeaponInstance.weapon_def_id !== "string" || rawWeaponInstance.weapon_def_id.length === 0) {
+    return false;
+  }
+
+  if (!weaponDefinitionsById?.[rawWeaponInstance.weapon_def_id]) {
+    return false;
+  }
+
+  if ("skills" in rawWeaponInstance && !Array.isArray(rawWeaponInstance.skills)) {
+    return false;
+  }
+
+  if ("formation_id" in rawWeaponInstance && typeof rawWeaponInstance.formation_id !== "string") {
+    return false;
+  }
+
+  if ("weapon_plus" in rawWeaponInstance && !Number.isFinite(rawWeaponInstance.weapon_plus)) {
+    return false;
+  }
+
+  if ("rarity" in rawWeaponInstance && typeof rawWeaponInstance.rarity !== "string") {
+    return false;
+  }
+
+  if ("stat_overrides" in rawWeaponInstance && !isPlainObject(rawWeaponInstance.stat_overrides)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isLegacyOrInvalidPlayerState(rawPlayerState, weaponDefinitionsById) {
+  if (!isPlainObject(rawPlayerState)) {
+    return true;
+  }
+
+  if (rawPlayerState.schema_version !== PLAYER_STATE_SCHEMA_VERSION) {
+    return true;
+  }
+
+  if (!isPlainObject(rawPlayerState.run)) {
+    return true;
+  }
+
+  const equipped = rawPlayerState.run.equipped_weapons;
+  if (!Array.isArray(equipped) || equipped.length === 0) {
+    return true;
+  }
+
+  for (const entry of equipped) {
+    if (!isPlainObject(entry)) {
+      return true;
+    }
+
+    if (!isPlainObject(entry.weapon)) {
+      return true;
+    }
+
+    if (hasLegacyWeaponDefKeys(entry.weapon)) {
+      return true;
+    }
+
+    if (!isValidWeaponInstanceShape(entry.weapon, weaponDefinitionsById)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function sanitizeWeaponInstance(rawWeaponInstance, weaponDefinitionsById, starterWeaponDefId) {
+  const source = isPlainObject(rawWeaponInstance) ? rawWeaponInstance : {};
+  const requestedWeaponDefId =
+    typeof source.weapon_def_id === "string" && source.weapon_def_id.length > 0
+      ? source.weapon_def_id
+      : starterWeaponDefId;
+
+  const weaponDef = getWeaponDefById(weaponDefinitionsById, requestedWeaponDefId, starterWeaponDefId);
+  const resolvedWeaponDefId = weaponDef.id;
+
+  const rarity = typeof source.rarity === "string" ? source.rarity : weaponDef.rarity;
+  const weaponPlus = toNonNegativeInt(source.weapon_plus, toNonNegativeInt(weaponDef.weaponPlus, 0));
+  const formationId =
+    typeof source.formation_id === "string" && source.formation_id.length > 0
+      ? source.formation_id
+      : weaponDef.formationId;
+
+  const instance = {
+    weapon_def_id: resolvedWeaponDefId,
+    rarity: typeof rarity === "string" ? rarity : "rare",
+    weapon_plus: weaponPlus,
+    formation_id:
+      typeof formationId === "string" && formationId.length > 0 ? formationId : weaponDef.formationId,
+    skills: sanitizeSkills(source.skills, weaponDef.skills),
+  };
+
+  if (isPlainObject(source.stat_overrides)) {
+    instance.stat_overrides = deepClone(source.stat_overrides);
+  }
+
+  return instance;
+}
+
+function sanitizeEquippedWeapons(rawEquippedWeapons, weaponDefinitionsById, starterWeaponDefId) {
   const source = Array.isArray(rawEquippedWeapons) ? rawEquippedWeapons : [];
   const entries = source
     .map((entry, index) => {
       const slot = Math.max(0, toNonNegativeInt(entry?.slot, index));
-      const weapon = sanitizeWeaponRaw(entry?.weapon, starterWeaponRaw);
+      const weapon = sanitizeWeaponInstance(entry?.weapon, weaponDefinitionsById, starterWeaponDefId);
 
       return {
         slot,
@@ -185,10 +296,12 @@ function sanitizeEquippedWeapons(rawEquippedWeapons, starterWeaponRaw) {
     return entries;
   }
 
+  const starterWeaponDef = getWeaponDefById(weaponDefinitionsById, starterWeaponDefId, starterWeaponDefId);
+
   return [
     {
       slot: 0,
-      weapon: sanitizeWeaponRaw(starterWeaponRaw, starterWeaponRaw),
+      weapon: getDefaultWeaponInstance(starterWeaponDef),
       runtime: {
         attack_seq: 0,
         cooldown_remaining_sec: 0,
@@ -197,10 +310,10 @@ function sanitizeEquippedWeapons(rawEquippedWeapons, starterWeaponRaw) {
   ];
 }
 
-function sanitizePlayerState(rawPlayerState, starterWeaponRaw, nowUnixSec) {
-  const source = rawPlayerState && typeof rawPlayerState === "object" ? rawPlayerState : {};
-  const base = source.base && typeof source.base === "object" ? source.base : {};
-  const run = source.run && typeof source.run === "object" ? source.run : {};
+function sanitizePlayerState(rawPlayerState, weaponDefinitionsById, starterWeaponDefId, nowUnixSec) {
+  const source = isPlainObject(rawPlayerState) ? rawPlayerState : {};
+  const base = isPlainObject(source.base) ? source.base : {};
+  const run = isPlainObject(source.run) ? source.run : {};
 
   return {
     schema_version: PLAYER_STATE_SCHEMA_VERSION,
@@ -233,44 +346,47 @@ function sanitizePlayerState(rawPlayerState, starterWeaponRaw, nowUnixSec) {
         x: toFiniteNumber(run.pos?.x, 0),
         y: toFiniteNumber(run.pos?.y, 0),
       },
-      equipped_weapons: sanitizeEquippedWeapons(run.equipped_weapons, starterWeaponRaw),
+      equipped_weapons: sanitizeEquippedWeapons(run.equipped_weapons, weaponDefinitionsById, starterWeaponDefId),
     },
   };
 }
 
-function toWeaponDefinition(rawWeapon, index) {
-  const weaponFileName =
-    typeof rawWeapon.weapon_file_name === "string" && rawWeapon.weapon_file_name.length > 0
-      ? rawWeapon.weapon_file_name
-      : `saved_weapon_${index}.png`;
-  const id = weaponFileName.replace(/\.[^/.]+$/, "") || `saved_weapon_${index}`;
-
+function mergeWeaponDefinitionWithInstance(weaponDef, weaponInstance) {
   return {
-    id,
-    nameKey: rawWeapon.name_key,
-    descriptionKey: rawWeapon.description_key,
-    weaponFileName,
-    width: Math.max(1, toFiniteNumber(rawWeapon.width, 1)),
-    height: Math.max(1, toFiniteNumber(rawWeapon.height, 1)),
-    rarity: rawWeapon.rarity,
-    weaponPlus: Math.max(0, toNonNegativeInt(rawWeapon.weapon_plus, 0)),
-    baseDamage: Math.max(0, toFiniteNumber(rawWeapon.base_damage, 0)),
-    attackCooldownSec: Math.max(0.001, toFiniteNumber(rawWeapon.attack_cooldown_sec, 1)),
-    hitNum: Math.max(1, toNonNegativeInt(rawWeapon.hit_num, 1)),
-    pierceCount: Math.max(0, toNonNegativeInt(rawWeapon.pierce_count, 0)),
-    chipSlotCount: Math.max(0, toNonNegativeInt(rawWeapon.chip_slot_count, 0)),
-    formationId: rawWeapon.formation_id,
-    skills: sanitizeSkills(rawWeapon.skills, []),
+    ...weaponDef,
+    id: weaponDef.id,
+    rarity: typeof weaponInstance.rarity === "string" ? weaponInstance.rarity : weaponDef.rarity,
+    weaponPlus: toNonNegativeInt(weaponInstance.weapon_plus, toNonNegativeInt(weaponDef.weaponPlus, 0)),
+    formationId:
+      typeof weaponInstance.formation_id === "string" && weaponInstance.formation_id.length > 0
+        ? weaponInstance.formation_id
+        : weaponDef.formationId,
+    skills: sanitizeSkills(weaponInstance.skills, weaponDef.skills),
   };
 }
 
-export function createDefaultPlayerState(starterWeaponRaw, nowUnixSec) {
-  return sanitizePlayerState(null, starterWeaponRaw, nowUnixSec);
+export function createDefaultPlayerState(starterWeaponDef, nowUnixSec) {
+  const starterDef = starterWeaponDef && typeof starterWeaponDef === "object" ? starterWeaponDef : getFallbackWeaponDef();
+  const starterWeaponDefId = resolveStarterWeaponDefId({ [starterDef.id]: starterDef }, starterDef.id);
+  return sanitizePlayerState(null, { [starterDef.id]: starterDef }, starterWeaponDefId, nowUnixSec);
 }
 
-export function loadPlayerStateFromStorage(storage, key, starterWeaponRaw, nowUnixSec) {
+export function loadPlayerStateFromStorage(
+  storage,
+  key,
+  weaponDefinitionsById,
+  starterWeaponDefId,
+  nowUnixSec
+) {
+  const resolvedStarterWeaponDefId = resolveStarterWeaponDefId(weaponDefinitionsById, starterWeaponDefId);
+  const starterWeaponDef = getWeaponDefById(
+    weaponDefinitionsById,
+    resolvedStarterWeaponDefId,
+    resolvedStarterWeaponDefId
+  );
+
   if (!storage || typeof storage.getItem !== "function") {
-    return createDefaultPlayerState(starterWeaponRaw, nowUnixSec);
+    return createDefaultPlayerState(starterWeaponDef, nowUnixSec);
   }
 
   const storageKey = typeof key === "string" && key.length > 0 ? key : PLAYER_STATE_STORAGE_KEY;
@@ -278,13 +394,17 @@ export function loadPlayerStateFromStorage(storage, key, starterWeaponRaw, nowUn
   try {
     const rawText = storage.getItem(storageKey);
     if (!rawText) {
-      return createDefaultPlayerState(starterWeaponRaw, nowUnixSec);
+      return createDefaultPlayerState(starterWeaponDef, nowUnixSec);
     }
 
     const parsed = JSON.parse(rawText);
-    return sanitizePlayerState(parsed, starterWeaponRaw, nowUnixSec);
+    if (isLegacyOrInvalidPlayerState(parsed, weaponDefinitionsById)) {
+      return createDefaultPlayerState(starterWeaponDef, nowUnixSec);
+    }
+
+    return sanitizePlayerState(parsed, weaponDefinitionsById, resolvedStarterWeaponDefId, nowUnixSec);
   } catch {
-    return createDefaultPlayerState(starterWeaponRaw, nowUnixSec);
+    return createDefaultPlayerState(starterWeaponDef, nowUnixSec);
   }
 }
 
@@ -304,7 +424,7 @@ export function savePlayerStateToStorage(storage, key, playerState) {
 }
 
 export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWeapons, nowUnixSec) {
-  if (!playerState || typeof playerState !== "object") {
+  if (!isPlainObject(playerState)) {
     return;
   }
 
@@ -312,7 +432,7 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
   playerState.saved_at = toNonNegativeInt(nowUnixSec, toNonNegativeInt(playerState.saved_at, 0));
   playerState.in_run = playerState.in_run !== false;
 
-  if (!playerState.run || typeof playerState.run !== "object") {
+  if (!isPlainObject(playerState.run)) {
     playerState.run = {};
   }
 
@@ -322,7 +442,7 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
   playerState.run.stat_run = sanitizeStats(playerState.run.stat_run, getDefaultRunStats());
   playerState.run.hp = Math.max(0, toFiniteNumber(playerState.run.hp, 100));
 
-  if (!playerState.run.pos || typeof playerState.run.pos !== "object") {
+  if (!isPlainObject(playerState.run.pos)) {
     playerState.run.pos = { x: 0, y: 0 };
   }
 
@@ -347,17 +467,20 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
       if (!slotEntry) {
         slotEntry = {
           slot: index,
-          weapon: {},
+          weapon: {
+            weapon_def_id: DEFAULT_STARTER_WEAPON_DEF_ID,
+            rarity: "rare",
+            weapon_plus: 0,
+            formation_id: typeof runtimeWeapon?.formationId === "string" ? runtimeWeapon.formationId : "formation_id_circle01",
+            skills: [],
+          },
           runtime: {},
         };
         equippedWeapons.push(slotEntry);
       }
 
       slotEntry.slot = Math.max(0, toNonNegativeInt(slotEntry.slot, index));
-      if (!slotEntry.weapon || typeof slotEntry.weapon !== "object") {
-        slotEntry.weapon = {};
-      }
-      if (!slotEntry.runtime || typeof slotEntry.runtime !== "object") {
+      if (!isPlainObject(slotEntry.runtime)) {
         slotEntry.runtime = {};
       }
 
@@ -369,12 +492,17 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
   playerState.run.equipped_weapons = equippedWeapons.sort((a, b) => a.slot - b.slot);
 }
 
-export function buildWeaponDefinitionsFromPlayerState(playerState, starterWeaponRaw) {
-  const normalized = sanitizePlayerState(playerState, starterWeaponRaw, 0);
+export function buildWeaponDefinitionsFromPlayerState(playerState, weaponDefinitionsById, starterWeaponDefId) {
+  const resolvedStarterWeaponDefId = resolveStarterWeaponDefId(weaponDefinitionsById, starterWeaponDefId);
+  const normalized = sanitizePlayerState(playerState, weaponDefinitionsById, resolvedStarterWeaponDefId, 0);
+
   return normalized.run.equipped_weapons
     .slice()
     .sort((a, b) => a.slot - b.slot)
-    .map((entry, index) => toWeaponDefinition(entry.weapon, index));
+    .map((entry) => {
+      const weaponDef = getWeaponDefById(weaponDefinitionsById, entry.weapon.weapon_def_id, resolvedStarterWeaponDefId);
+      return mergeWeaponDefinitionWithInstance(weaponDef, entry.weapon);
+    });
 }
 
 export function applySavedWeaponRuntime(playerState, runtimeWeapons) {
@@ -389,7 +517,7 @@ export function applySavedWeaponRuntime(playerState, runtimeWeapons) {
   for (let index = 0; index < runtimeWeapons.length; index += 1) {
     const runtimeWeapon = runtimeWeapons[index];
     const savedRuntime = equippedWeapons[index]?.runtime;
-    if (!savedRuntime || typeof savedRuntime !== "object") {
+    if (!isPlainObject(savedRuntime)) {
       continue;
     }
 
