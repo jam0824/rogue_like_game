@@ -7,8 +7,9 @@
     "check:enemy-walk": "node scripts/check_enemy_walk.mjs",
     "check:enemy-fly": "node scripts/check_enemy_fly.mjs",
     "check:enemy-notice-giveup": "node scripts/check_enemy_notice_giveup.mjs",
+    "check:player-attack": "node scripts/check_player_attack.mjs",
     "unit": "vitest run",
-    "test:checks": "npm run check:generation && npm run check:enemy-walk && npm run check:enemy-fly && npm run check:enemy-notice-giveup",
+    "test:checks": "npm run check:generation && npm run check:enemy-walk && npm run check:enemy-fly && npm run check:enemy-notice-giveup && npm run check:player-attack",
     "test": "npm run unit && npm run test:checks"
   },
   "devDependencies": {

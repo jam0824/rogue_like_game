@@ -74,3 +74,56 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup)
   - `npm test` -> PASS (unit + checks)
 - 2026-02-09: Playwright smoke check executed with idle action payload using skill client (`tests/actions/idle.json`) against local server; screenshot + state JSON captured under `/tmp/rogue_like_game_playwright_smoke` and visually/state-checked with no console-error artifacts generated.
+- 2026-02-09: Added player auto-attack v1 with initial weapon load (`wepon_sword_01`) + circle formation (`formation_circle_01`), including runtime weapon orbit, attack sequence cooldown, hit_set gating, hit_num, and pierce_count rules.
+- 2026-02-09: Added weapon data pipeline and assets:
+  - `src/weapon/weaponDb.js` (DB discovery + validation + normalization)
+  - `src/weapon/formationDb.js` (formation discovery + validation + normalization)
+  - `src/weapon/weaponAsset.js` (weapon sprite loading)
+  - `src/weapon/weaponSystem.js` (weapon runtime, circle+biased_center motion, AABB combat, enemy prune helper)
+- 2026-02-09: Extended app state with `weapons` and wired dungeon lifecycle to reset/populate weapon runtime.
+- 2026-02-09: Extended enemy definition normalization to include combat/stat fields (`vit/for/agi/pow/tec/arc/rank/role/tags`) with defaults.
+- 2026-02-09: Added enemy combat fields in runtime (`maxHp/hp/isDead/attackDamage/moveSpeed`) and combat hitbox export (`getEnemyCombatHitbox`); dead enemies are skipped during enemy updates.
+- 2026-02-09: Integrated combat update order into main loop:
+  - `updatePlayer -> updateEnemies -> updateWeaponsAndCombat -> removeDefeatedEnemies -> followPlayerInView`
+- 2026-02-09: Extended renderer to support weapon drawables in the shared feetY depth queue.
+- 2026-02-09: Extended `render_game_to_text` payload:
+  - `player.weapons[]` with position/attackSeq/cooldown/hitbox
+  - `enemies[]` with `hp/maxHp/isDead/attackDamage/moveSpeed`
+- 2026-02-09: Added tests:
+  - `tests/unit/weaponSystem.test.js` for attack_seq, hit_set reset, hit_num/pierce_count, and biased_center behavior.
+  - `tests/unit/enemySystem.test.js` for enemy stat initialization + combat hitbox.
+  - updated `tests/unit/appState.test.js` for `weapons` state.
+- 2026-02-09: Added combat check script `scripts/check_player_attack.mjs` and npm script `check:player-attack`; linked into `test:checks`.
+- 2026-02-09: Added Playwright action payload `tests/actions/player_attack_auto.json`.
+- 2026-02-09: Validation complete:
+  - `npm run unit` -> PASS (5 files, 27 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/player-attack)
+  - `npm test` -> PASS
+- 2026-02-09: Playwright verification run completed using skill client against local server with route movement action:
+  - output dir: `output/web-game-player-attack`
+  - `state-0.json` shows weapon runtime fields populated, enemy HP reduction (e.g. one enemy `173 -> 125`), and enemy count decrease (`8 -> 7`) confirming kill + prune.
+  - screenshot `shot-0.png` reviewed for on-screen weapon rendering and gameplay state.
+
+- TODO: Add dedicated deterministic Playwright scenario that guarantees a nearby enemy at spawn so "idle-only" auto-attack can always demonstrate HP drop without movement routing.
+- TODO: If we later add non-circle formations, extend `weaponSystem` with per-type trajectory resolvers and dedicated unit coverage per formation type.
+
+- 2026-02-09: Added combat feedback v1 visuals on top of auto-attack:
+  - weapon sprite rotation bound to orbit vector (`up=0°/right=90°/down=180°/left=270°`) via `rotationDeg/rotationRad` in weapon runtime.
+  - enemy hit flash timer + alpha decay (`hitFlashTimerSec`, `hitFlashDurationSec`, `getEnemyHitFlashAlpha`).
+  - damage popup lifecycle module (`src/combat/combatFeedbackSystem.js`) with rise/fade/expiry.
+- 2026-02-09: Main loop integration updated:
+  - `stepSimulation` now consumes `CombatEvent[]` from `updateWeaponsAndCombat`, spawns/updates `damagePopups`, and continues dead-enemy prune.
+  - `renderCurrentFrame` now passes `weapon.rotationRad`, enemy `flashAlpha`, and `damagePopups` to renderer.
+  - `render_game_to_text` now includes `player.weapons[].rotationDeg`, `enemies[].hitFlashAlpha`, and root `damagePopups[]`.
+- 2026-02-09: Added/updated tests for feedback behavior:
+  - `tests/unit/combatFeedbackSystem.test.js` (spawn, rise/fade, expiry)
+  - `tests/unit/weaponSystem.test.js` (rotation angle mapping + combat event and flash trigger)
+  - `tests/unit/enemySystem.test.js` (flash decay and alpha clamp)
+  - `tests/unit/appState.test.js` (damagePopups state wiring)
+- 2026-02-09: Updated check script `scripts/check_player_attack.mjs` to assert damage event emission, popup generation/decay, flash trigger/decay, and kill prune path.
+- 2026-02-09: Added Playwright action payload `tests/actions/player_attack_feedback.json` and verified feedback states with skill client:
+  - output dir: `/Users/mineo.matsuya/Desktop/code/rogue_like_game/output/web-game-player-attack-feedback`
+  - observed `state-21.json`: `damagePopups[0].alpha=0.81`, enemy `hitFlashAlpha=0.44`, weapon `rotationDeg=166.61`.
+  - observed `state-22.json`: same popup decayed to `alpha=0.19` and higher Y (upward movement).
+  - observed subsequent state: popup removed after lifetime; no `errors-*.json` artifacts generated.
+- TODO: For clearer visual QA, consider a temporary debug zoom/marker mode around player combat area to make popup/flash easier to inspect in full-map captures.

@@ -13,6 +13,13 @@ import { createRng, deriveSeed } from "../core/rng.js";
 const MOVE_EPSILON = 0.001;
 const MAX_SUBSTEP_PIXELS = 4;
 const TALL_ENEMY_COLLISION_SIZE = 32;
+const ENEMY_HP_BASE = 30;
+const ENEMY_HP_PER_VIT = 12;
+const ENEMY_HP_PER_FOR = 0.015;
+const ENEMY_ATTACK_BASE = 8;
+const ENEMY_ATTACK_PER_POW = 1.8;
+const ENEMY_MOVE_PER_AGI = 0.01;
+const ENEMY_HIT_FLASH_DURATION_SEC = 0.12;
 
 const BEHAVIOR_MODE = {
   RANDOM_WALK: "random_walk",
@@ -28,6 +35,14 @@ const WALK_DIRECTIONS = [
 
 function round2(value) {
   return Math.round(value * 100) / 100;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toFiniteNumber(value, fallback) {
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function getWalkableGrid(dungeon) {
@@ -410,11 +425,23 @@ function createEnemyState(definition, x, y, collision, rng, enemyId) {
   const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
   const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
   const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
+  const vit = toFiniteNumber(definition.vit, 10);
+  const fortitude = toFiniteNumber(definition.for, 10);
+  const agi = toFiniteNumber(definition.agi, 10);
+  const pow = toFiniteNumber(definition.pow, 10);
+  const hpRaw = ENEMY_HP_BASE + vit * ENEMY_HP_PER_VIT;
+  const toughMult = 1 + fortitude * ENEMY_HP_PER_FOR;
+  const maxHp = Math.max(1, Math.round(hpRaw * toughMult));
+  const attackDamage = Math.max(1, Math.round(ENEMY_ATTACK_BASE + pow * ENEMY_ATTACK_PER_POW));
+  const moveSpeed = ENEMY_WALK_SPEED_PX_PER_SEC * (1 + agi * ENEMY_MOVE_PER_AGI);
 
   return {
     id: enemyId,
     dbId: definition.id,
     type: definition.type,
+    rank: definition.rank ?? "normal",
+    role: definition.role ?? "chaser",
+    tags: Array.isArray(definition.tags) ? definition.tags.slice() : [],
     x,
     y,
     width: definition.width,
@@ -431,8 +458,15 @@ function createEnemyState(definition, x, y, collision, rng, enemyId) {
     distanceToPlayerPx: null,
     noticeRadiusPx,
     giveupRadiusPx,
-    baseSpeedPxPerSec: ENEMY_WALK_SPEED_PX_PER_SEC,
-    chaseSpeedPxPerSec: ENEMY_WALK_SPEED_PX_PER_SEC * ENEMY_CHASE_SPEED_MULTIPLIER,
+    maxHp,
+    hp: maxHp,
+    isDead: false,
+    hitFlashTimerSec: 0,
+    hitFlashDurationSec: ENEMY_HIT_FLASH_DURATION_SEC,
+    attackDamage,
+    moveSpeed,
+    baseSpeedPxPerSec: moveSpeed,
+    chaseSpeedPxPerSec: moveSpeed * ENEMY_CHASE_SPEED_MULTIPLIER,
   };
 }
 
@@ -503,6 +537,7 @@ export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
 }
 
 function updateEnemy(enemy, dungeon, dt, player) {
+  enemy.hitFlashTimerSec = Math.max(0, toFiniteNumber(enemy.hitFlashTimerSec, 0) - dt);
   updateBehaviorMode(enemy, dungeon, player);
 
   const speedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
@@ -558,6 +593,9 @@ export function updateEnemies(enemies, dungeon, dt, player = null) {
   }
 
   for (const enemy of enemies) {
+    if (enemy.isDead === true) {
+      continue;
+    }
     updateEnemy(enemy, dungeon, dt, player);
   }
 }
@@ -580,6 +618,29 @@ export function getEnemyFrame(enemy) {
     row,
     col: ENEMY_ANIM_SEQUENCE[sequenceIndex],
   };
+}
+
+export function getEnemyCombatHitbox(enemy) {
+  if (!enemy) {
+    return null;
+  }
+
+  return {
+    x: enemy.x,
+    y: enemy.y,
+    width: enemy.width,
+    height: enemy.height,
+  };
+}
+
+export function getEnemyHitFlashAlpha(enemy) {
+  if (!enemy) {
+    return 0;
+  }
+
+  const timer = toFiniteNumber(enemy.hitFlashTimerSec, 0);
+  const duration = Math.max(0.0001, toFiniteNumber(enemy.hitFlashDurationSec, ENEMY_HIT_FLASH_DURATION_SEC));
+  return clamp(timer / duration, 0, 1);
 }
 
 export function getEnemyWallHitbox(enemy) {

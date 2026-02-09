@@ -57,6 +57,10 @@ function drawRoomMarker(ctx, room, label, fillStyle, textStyle) {
   ctx.fillText(label, px + pw / 2, py + ph / 2);
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function drawDungeonBase(ctx, assets, dungeon) {
   const widthPx = dungeon.gridWidth * TILE_SIZE;
   const heightPx = dungeon.gridHeight * TILE_SIZE;
@@ -102,23 +106,76 @@ export function buildDungeonBackdrop(assets, dungeon) {
   };
 }
 
-function drawSprite(ctx, asset, frame, entity) {
+function drawSprite(ctx, asset, frame, entity, options = {}) {
   const sx = frame.col * asset.frameWidth;
   const sy = frame.row * asset.frameHeight;
   const dx = Math.round(entity.x);
   const dy = Math.round(entity.y);
+  const rotationRad = Number.isFinite(options.rotationRad) ? options.rotationRad : 0;
+  const flashAlpha = clamp(Number(options.flashAlpha) || 0, 0, 1);
+  const drawWidth = asset.frameWidth;
+  const drawHeight = asset.frameHeight;
 
-  ctx.drawImage(
-    asset.image,
-    sx,
-    sy,
-    asset.frameWidth,
-    asset.frameHeight,
-    dx,
-    dy,
-    asset.frameWidth,
-    asset.frameHeight
-  );
+  ctx.save();
+  if (Math.abs(rotationRad) > 0.000001) {
+    const centerX = dx + drawWidth / 2;
+    const centerY = dy + drawHeight / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  } else {
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
+  }
+  ctx.restore();
+
+  if (flashAlpha <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = flashAlpha;
+  ctx.filter = "brightness(0) invert(1)";
+  if (Math.abs(rotationRad) > 0.000001) {
+    const centerX = dx + drawWidth / 2;
+    const centerY = dy + drawHeight / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  } else {
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
+  }
+  ctx.restore();
+}
+
+function drawDamagePopups(ctx, damagePopups) {
+  if (!Array.isArray(damagePopups) || damagePopups.length === 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 14px monospace";
+  ctx.lineWidth = 3;
+
+  for (const popup of damagePopups) {
+    const alpha = clamp(Number(popup.alpha) || 0, 0, 1);
+    if (alpha <= 0) {
+      continue;
+    }
+
+    const x = Math.round(popup.x);
+    const y = Math.round(popup.y);
+    const text = String(Math.max(0, Math.round(Number(popup.value) || 0)));
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "rgba(24, 24, 24, 0.75)";
+    ctx.fillStyle = "#fff6f0";
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+  }
+
+  ctx.restore();
 }
 
 /**
@@ -127,9 +184,20 @@ function drawSprite(ctx, asset, frame, entity) {
  * @param {{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null} playerAsset
  * @param {{row:number,col:number}|null} playerFrame
  * @param {{x:number,y:number}|null} player
- * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null}>} enemyDrawables
+ * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number}>} enemyDrawables
+ * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
+ * @param {Array<{value:number,x:number,y:number,alpha:number}>} damagePopups
  */
-export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player, enemyDrawables = []) {
+export function renderFrame(
+  canvas,
+  backdrop,
+  playerAsset,
+  playerFrame,
+  player,
+  enemyDrawables = [],
+  weaponDrawables = [],
+  damagePopups = []
+) {
   if (!backdrop) {
     return;
   }
@@ -153,7 +221,24 @@ export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player, 
     drawQueue.push({
       feetY: drawable.enemy.y + drawable.enemy.height,
       draw() {
-        drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy);
+        drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy, {
+          flashAlpha: drawable.flashAlpha ?? 0,
+        });
+      },
+    });
+  }
+
+  for (const drawable of weaponDrawables) {
+    if (!drawable.asset || !drawable.frame || !drawable.weapon) {
+      continue;
+    }
+
+    drawQueue.push({
+      feetY: drawable.weapon.y + drawable.weapon.height,
+      draw() {
+        drawSprite(ctx, drawable.asset, drawable.frame, drawable.weapon, {
+          rotationRad: drawable.rotationRad ?? 0,
+        });
       },
     });
   }
@@ -171,4 +256,6 @@ export function renderFrame(canvas, backdrop, playerAsset, playerFrame, player, 
   for (const item of drawQueue) {
     item.draw();
   }
+
+  drawDamagePopups(ctx, damagePopups);
 }

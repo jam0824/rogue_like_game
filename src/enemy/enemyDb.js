@@ -57,6 +57,15 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
     height: rawEnemy.height,
     noticeDistance: rawEnemy.notice_distance,
     giveupDistance: rawEnemy.giveup_distance,
+    vit: Number.isFinite(rawEnemy.vit) ? rawEnemy.vit : 10,
+    for: Number.isFinite(rawEnemy.for) ? rawEnemy.for : 10,
+    agi: Number.isFinite(rawEnemy.agi) ? rawEnemy.agi : 10,
+    pow: Number.isFinite(rawEnemy.pow) ? rawEnemy.pow : 10,
+    tec: Number.isFinite(rawEnemy.tec) ? rawEnemy.tec : 10,
+    arc: Number.isFinite(rawEnemy.arc) ? rawEnemy.arc : 10,
+    rank: typeof rawEnemy.rank === "string" && rawEnemy.rank.length > 0 ? rawEnemy.rank : "normal",
+    role: typeof rawEnemy.role === "string" && rawEnemy.role.length > 0 ? rawEnemy.role : "chaser",
+    tags: Array.isArray(rawEnemy.tags) ? rawEnemy.tags.filter((tag) => typeof tag === "string") : [],
   };
 }
 

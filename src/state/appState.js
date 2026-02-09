@@ -5,6 +5,8 @@ export function createAppState(initialSeed) {
     validation: null,
     player: null,
     enemies: [],
+    weapons: [],
+    damagePopups: [],
     backdrop: null,
     error: null,
   };
@@ -16,6 +18,8 @@ export function setDungeonState(state, payload) {
   state.validation = payload.validation;
   state.player = payload.player ?? null;
   state.enemies = payload.enemies ?? [];
+  state.weapons = payload.weapons ?? [];
+  state.damagePopups = payload.damagePopups ?? [];
   state.backdrop = payload.backdrop ?? null;
   state.error = null;
 }
@@ -26,6 +30,8 @@ export function setErrorState(state, seed, error) {
   state.validation = null;
   state.player = null;
   state.enemies = [];
+  state.weapons = [];
+  state.damagePopups = [];
   state.backdrop = null;
   state.error = error instanceof Error ? error.message : String(error);
 }

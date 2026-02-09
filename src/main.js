@@ -1,7 +1,13 @@
 import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./config/constants.js";
 import { loadEnemyAssets } from "./enemy/enemyAsset.js";
 import { loadEnemyDefinitions } from "./enemy/enemyDb.js";
-import { createEnemies, getEnemyFrame, getEnemyWallHitbox, updateEnemies } from "./enemy/enemySystem.js";
+import {
+  createEnemies,
+  getEnemyFrame,
+  getEnemyHitFlashAlpha,
+  getEnemyWallHitbox,
+  updateEnemies,
+} from "./enemy/enemySystem.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
@@ -13,9 +19,20 @@ import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
+import { spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
+import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
+import { loadFormationDefinitions } from "./weapon/formationDb.js";
+import { loadWeaponAssets } from "./weapon/weaponAsset.js";
+import {
+  createPlayerWeapons,
+  getWeaponHitbox,
+  removeDefeatedEnemies,
+  updateWeaponsAndCombat,
+} from "./weapon/weaponSystem.js";
 
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
+const INITIAL_WEAPON_ID = "wepon_sword_01";
 
 const appState = createAppState(INITIAL_SEED);
 const canvas = document.querySelector("#dungeon-canvas");
@@ -60,7 +77,31 @@ function buildStatsRows(dungeon) {
   ];
 }
 
-function buildPlayerTextState(player) {
+function buildWeaponTextState(weapon) {
+  const hitbox = getWeaponHitbox(weapon);
+
+  return {
+    id: weapon.id,
+    weaponDefId: weapon.weaponDefId,
+    formationId: weapon.formationId,
+    x: round2(weapon.x),
+    y: round2(weapon.y),
+    width: weapon.width,
+    height: weapon.height,
+    attackSeq: weapon.attackSeq,
+    rotationDeg: round2(weapon.rotationDeg ?? 0),
+    cooldownRemainingSec: round2(weapon.cooldownRemainingSec ?? 0),
+    hitTargetCount: weapon.hitSet instanceof Set ? weapon.hitSet.size : 0,
+    hitbox: {
+      x: round2(hitbox.x),
+      y: round2(hitbox.y),
+      width: hitbox.width,
+      height: hitbox.height,
+    },
+  };
+}
+
+function buildPlayerTextState(player, weapons) {
   return {
     x: round2(player.x),
     y: round2(player.y),
@@ -75,6 +116,7 @@ function buildPlayerTextState(player) {
           y: round2(player.target.y),
         }
       : null,
+    weapons: (weapons ?? []).map((weapon) => buildWeaponTextState(weapon)),
   };
 }
 
@@ -93,6 +135,21 @@ function buildEnemyTextState(enemy) {
     noticeRadiusPx: round2(enemy.noticeRadiusPx ?? 0),
     giveupRadiusPx: round2(enemy.giveupRadiusPx ?? 0),
     isChasing: enemy.isChasing === true,
+    hp: round2(enemy.hp ?? 0),
+    maxHp: round2(enemy.maxHp ?? 0),
+    isDead: enemy.isDead === true,
+    attackDamage: round2(enemy.attackDamage ?? 0),
+    moveSpeed: round2(enemy.moveSpeed ?? 0),
+    hitFlashAlpha: round2(getEnemyHitFlashAlpha(enemy)),
+  };
+}
+
+function buildDamagePopupTextState(popup) {
+  return {
+    value: Math.max(0, Math.round(Number(popup?.value) || 0)),
+    x: round2(popup?.x ?? 0),
+    y: round2(popup?.y ?? 0),
+    alpha: round2(popup?.alpha ?? 0),
   };
 }
 
@@ -139,8 +196,9 @@ function toTextState() {
         height: dungeon.gridHeight,
       },
       stats: dungeon.stats,
-      player: buildPlayerTextState(appState.player),
+      player: buildPlayerTextState(appState.player, appState.weapons),
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
+      damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
       startRoom: startRoom
         ? {
             id: startRoom.id,
@@ -211,12 +269,27 @@ function followPlayerInView() {
 const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
 let enemyDefinitions = [];
 let enemyAssets = {};
+let weaponDefinitions = [];
+let weaponDefinitionsById = {};
+let formationDefinitionsById = {};
+let weaponAssets = {};
+let damagePopupSeq = 0;
 
 async function refreshEnemyResources() {
   const definitions = await loadEnemyDefinitions();
   const assets = await loadEnemyAssets(definitions);
   enemyDefinitions = definitions;
   enemyAssets = assets;
+}
+
+async function refreshWeaponResources() {
+  const [definitions, formations] = await Promise.all([loadWeaponDefinitions(), loadFormationDefinitions()]);
+  const assets = await loadWeaponAssets(definitions);
+
+  weaponDefinitions = definitions;
+  weaponDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+  formationDefinitionsById = Object.fromEntries(formations.map((formation) => [formation.id, formation]));
+  weaponAssets = assets;
 }
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
@@ -253,9 +326,25 @@ function renderCurrentFrame() {
     enemy,
     asset: enemyAssets[enemy.dbId] ?? null,
     frame: getEnemyFrame(enemy),
+    flashAlpha: getEnemyHitFlashAlpha(enemy),
+  }));
+  const weaponDrawables = appState.weapons.map((weapon) => ({
+    weapon,
+    asset: weaponAssets[weapon.weaponDefId] ?? null,
+    frame: { row: 0, col: 0 },
+    rotationRad: weapon.rotationRad ?? 0,
   }));
 
-  renderFrame(canvas, appState.backdrop, playerAsset, getPlayerFrame(appState.player), appState.player, enemyDrawables);
+  renderFrame(
+    canvas,
+    appState.backdrop,
+    playerAsset,
+    getPlayerFrame(appState.player),
+    appState.player,
+    enemyDrawables,
+    weaponDrawables,
+    appState.damagePopups
+  );
 }
 
 function stepSimulation(dt) {
@@ -265,6 +354,21 @@ function stepSimulation(dt) {
 
   updatePlayer(appState.player, appState.dungeon, dt);
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
+  const combatEvents = updateWeaponsAndCombat(
+    appState.weapons,
+    appState.player,
+    appState.enemies,
+    weaponDefinitionsById,
+    formationDefinitionsById,
+    dt
+  );
+  const spawnedPopups = spawnDamagePopupsFromEvents(combatEvents, damagePopupSeq);
+  damagePopupSeq += 1;
+  appState.damagePopups = updateDamagePopups(
+    [...appState.damagePopups, ...spawnedPopups],
+    dt
+  );
+  appState.enemies = removeDefeatedEnemies(appState.enemies);
   followPlayerInView();
 }
 
@@ -297,7 +401,7 @@ async function regenerate(seed) {
   const requestId = (regenerateRequestId += 1);
 
   try {
-    await refreshEnemyResources();
+    await Promise.all([refreshEnemyResources(), refreshWeaponResources()]);
     if (requestId !== regenerateRequestId) {
       return;
     }
@@ -309,7 +413,14 @@ async function regenerate(seed) {
 
     const player = createPlayerState(dungeon);
     const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
+    const initialWeapon = weaponDefinitionsById[INITIAL_WEAPON_ID];
+    if (!initialWeapon) {
+      throw new Error(`Initial weapon is missing in DB: ${INITIAL_WEAPON_ID}`);
+    }
+
+    const weapons = createPlayerWeapons([initialWeapon], formationDefinitionsById, player);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
+    damagePopupSeq = 0;
 
     setDungeonState(appState, {
       seed: normalizedSeed,
@@ -317,6 +428,8 @@ async function regenerate(seed) {
       validation,
       player,
       enemies,
+      weapons,
+      damagePopups: [],
       backdrop,
     });
 

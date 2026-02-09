@@ -11,7 +11,7 @@
     "base_damage": 12,
     "attack_cooldown_sec": 2.00,
     "hit_num": 1,
-    "pierce_count": 0,
+    "pierce_count": 10,
     "chip_slot_count": 3,
     "formation_id": "formation_id_circle01",
     "skills": [
