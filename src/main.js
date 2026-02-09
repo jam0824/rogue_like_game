@@ -11,7 +11,23 @@ import {
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
-import { createPlayerState, getPlayerFeetHitbox, getPlayerFrame, setPointerTarget, updatePlayer } from "./player/playerSystem.js";
+import {
+  createPlayerState,
+  getPlayerFeetHitbox,
+  getPlayerFrame,
+  setPointerTarget,
+  tryRestorePlayerPosition,
+  updatePlayer,
+} from "./player/playerSystem.js";
+import {
+  applySavedWeaponRuntime,
+  buildWeaponDefinitionsFromPlayerState,
+  createDefaultPlayerState,
+  loadPlayerStateFromStorage,
+  PLAYER_STATE_STORAGE_KEY,
+  savePlayerStateToStorage,
+  syncPlayerStateFromRuntime,
+} from "./player/playerStateStore.js";
 import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
@@ -20,7 +36,7 @@ import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
-import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
+import { loadWeaponDefinitions, loadWeaponRawRecord } from "./weapon/weaponDb.js";
 import { loadFormationDefinitions } from "./weapon/formationDb.js";
 import { loadWeaponAssets } from "./weapon/weaponAsset.js";
 import {
@@ -33,11 +49,23 @@ import {
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "wepon_sword_01";
+const INITIAL_WEAPON_FILE = "wepon_sword_01.json";
+const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 
 const appState = createAppState(INITIAL_SEED);
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
+
+function getStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+const appStorage = getStorage();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -49,6 +77,10 @@ function round2(value) {
 
 function makeRandomSeed() {
   return `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+}
+
+function nowUnixSec() {
+  return Math.floor(Date.now() / 1000);
 }
 
 function findRoomById(dungeon, roomId) {
@@ -160,6 +192,7 @@ function toTextState() {
         mode: "error",
         seed: appState.seed,
         error: appState.error,
+        playerState: appState.playerState,
       },
       null,
       2
@@ -171,6 +204,7 @@ function toTextState() {
       {
         mode: "loading",
         seed: appState.seed,
+        playerState: appState.playerState,
       },
       null,
       2
@@ -198,6 +232,7 @@ function toTextState() {
       },
       stats: dungeon.stats,
       player: buildPlayerTextState(appState.player, appState.weapons),
+      playerState: appState.playerState,
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
       damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
       startRoom: startRoom
@@ -274,6 +309,7 @@ let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
 let weaponAssets = {};
+let starterWeaponRaw = null;
 let damagePopupSeq = 0;
 
 async function refreshEnemyResources() {
@@ -284,13 +320,47 @@ async function refreshEnemyResources() {
 }
 
 async function refreshWeaponResources() {
-  const [definitions, formations] = await Promise.all([loadWeaponDefinitions(), loadFormationDefinitions()]);
+  const [definitions, formations, starterRaw] = await Promise.all([
+    loadWeaponDefinitions(),
+    loadFormationDefinitions(),
+    loadWeaponRawRecord(INITIAL_WEAPON_FILE),
+  ]);
   const assets = await loadWeaponAssets(definitions);
 
   weaponDefinitions = definitions;
   weaponDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
   formationDefinitionsById = Object.fromEntries(formations.map((formation) => [formation.id, formation]));
   weaponAssets = assets;
+  starterWeaponRaw = starterRaw;
+}
+
+function ensurePlayerStateLoaded() {
+  if (appState.playerState) {
+    return;
+  }
+  if (starterWeaponRaw) {
+    appState.playerState = loadPlayerStateFromStorage(
+      appStorage,
+      PLAYER_STATE_STORAGE_KEY,
+      starterWeaponRaw,
+      nowUnixSec()
+    );
+    return;
+  }
+  appState.playerState = createDefaultPlayerState(null, nowUnixSec());
+}
+
+function persistPlayerState() {
+  if (!appState.playerState) {
+    return;
+  }
+
+  if (appState.player && !appState.error) {
+    syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
+  } else {
+    appState.playerState.saved_at = nowUnixSec();
+  }
+  savePlayerStateToStorage(appStorage, PLAYER_STATE_STORAGE_KEY, appState.playerState);
 }
 
 function syncPauseUi() {
@@ -393,6 +463,7 @@ function stepSimulation(dt) {
     dt
   );
   appState.enemies = removeDefeatedEnemies(appState.enemies);
+  syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
   followPlayerInView();
 }
 
@@ -429,6 +500,7 @@ async function regenerate(seed) {
     if (requestId !== regenerateRequestId) {
       return;
     }
+    ensurePlayerStateLoaded();
 
     const dungeon = generateDungeon({ seed: normalizedSeed });
     const validation = validateDungeon(dungeon);
@@ -436,20 +508,27 @@ async function regenerate(seed) {
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
 
     const player = createPlayerState(dungeon);
+    if (appState.playerState?.run?.pos) {
+      tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
+    }
     const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
-    const initialWeapon = weaponDefinitionsById[INITIAL_WEAPON_ID];
-    if (!initialWeapon) {
+    const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(appState.playerState, starterWeaponRaw);
+    const weaponDefinitionsForRun = restoredWeaponDefinitions;
+    if (weaponDefinitionsForRun.length === 0) {
       throw new Error(`Initial weapon is missing in DB: ${INITIAL_WEAPON_ID}`);
     }
 
-    const weapons = createPlayerWeapons([initialWeapon], formationDefinitionsById, player);
+    const weapons = createPlayerWeapons(weaponDefinitionsForRun, formationDefinitionsById, player);
+    applySavedWeaponRuntime(appState.playerState, weapons);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
     damagePopupSeq = 0;
+    syncPlayerStateFromRuntime(appState.playerState, player, weapons, nowUnixSec());
 
     setDungeonState(appState, {
       seed: normalizedSeed,
       dungeon,
       validation,
+      playerState: appState.playerState,
       player,
       enemies,
       weapons,
@@ -468,6 +547,7 @@ async function regenerate(seed) {
 
     renderCurrentFrame();
     followPlayerInView();
+    persistPlayerState();
     resetLoopClock();
   } catch (error) {
     if (requestId !== regenerateRequestId) {
@@ -480,6 +560,7 @@ async function regenerate(seed) {
     debugPanel.setError(appState.error);
     syncPauseUi();
     renderCurrentFrame();
+    persistPlayerState();
     resetLoopClock();
   }
 }
@@ -508,6 +589,13 @@ window.__regenDungeon = (seed) => {
 
   void regenerate(String(seed));
 };
+
+setInterval(() => {
+  persistPlayerState();
+}, PLAYER_STATE_SAVE_INTERVAL_MS);
+window.addEventListener("beforeunload", () => {
+  persistPlayerState();
+});
 
 void regenerate(INITIAL_SEED);
 requestAnimationFrame(runFrame);

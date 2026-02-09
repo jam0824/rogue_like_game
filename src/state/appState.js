@@ -4,6 +4,7 @@ export function createAppState(initialSeed) {
     isPaused: false,
     dungeon: null,
     validation: null,
+    playerState: null,
     player: null,
     enemies: [],
     weapons: [],
@@ -18,6 +19,7 @@ export function setDungeonState(state, payload) {
   state.isPaused = false;
   state.dungeon = payload.dungeon;
   state.validation = payload.validation;
+  state.playerState = payload.playerState ?? state.playerState ?? null;
   state.player = payload.player ?? null;
   state.enemies = payload.enemies ?? [];
   state.weapons = payload.weapons ?? [];

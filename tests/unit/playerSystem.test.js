@@ -4,6 +4,7 @@ import {
   getPlayerFeetHitbox,
   getPlayerFrame,
   setPointerTarget,
+  tryRestorePlayerPosition,
   updatePlayer,
 } from "../../src/player/playerSystem.js";
 import {
@@ -116,6 +117,55 @@ describe("playerSystem", () => {
       setPointerTarget(player, true, Number.NaN, 99);
       expect(player.pointerActive).toBe(true);
       expect(player.target).toEqual({ x: 12, y: 34 });
+    });
+  });
+
+  describe("tryRestorePlayerPosition", () => {
+    it("歩行可能座標なら保存位置に復元する", () => {
+      const dungeon = createDungeon({
+        walkableGrid: createGrid(8, 8, true),
+        rooms: [{ id: 0, x: 1, y: 1, w: 3, h: 3, centerX: 2, centerY: 2 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({ x: 32, y: 32 });
+
+      const restored = tryRestorePlayerPosition(player, dungeon, { x: 64, y: 96 });
+
+      expect(restored).toBe(true);
+      expect(player.x).toBe(64);
+      expect(player.y).toBe(96);
+    });
+
+    it("壁内座標なら復元せず false を返す", () => {
+      const walkableGrid = createGrid(8, 8, true);
+      walkableGrid[4][2] = false;
+      const dungeon = createDungeon({
+        walkableGrid,
+        rooms: [{ id: 0, x: 1, y: 1, w: 3, h: 3, centerX: 2, centerY: 2 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({ x: 32, y: 32 });
+
+      const restored = tryRestorePlayerPosition(player, dungeon, { x: 64, y: 96 });
+
+      expect(restored).toBe(false);
+      expect(player.x).toBe(32);
+      expect(player.y).toBe(32);
+    });
+
+    it("範囲外の保存座標はクランプして復元する", () => {
+      const dungeon = createDungeon({
+        walkableGrid: createGrid(8, 8, true),
+        rooms: [{ id: 0, x: 1, y: 1, w: 3, h: 3, centerX: 2, centerY: 2 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({ x: 32, y: 32 });
+
+      const restored = tryRestorePlayerPosition(player, dungeon, { x: 9999, y: 9999 });
+
+      expect(restored).toBe(true);
+      expect(player.x).toBe(224);
+      expect(player.y).toBe(192);
     });
   });
 

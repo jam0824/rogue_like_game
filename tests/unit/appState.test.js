@@ -10,6 +10,7 @@ describe("appState", () => {
       isPaused: false,
       dungeon: null,
       validation: null,
+      playerState: null,
       player: null,
       enemies: [],
       weapons: [],
@@ -28,6 +29,7 @@ describe("appState", () => {
       seed: "new-seed",
       dungeon: { id: "dungeon" },
       validation: { ok: true },
+      playerState: { schema_version: "player_state_v1" },
       player: { id: "player" },
       enemies: [{ id: "enemy-1" }],
       weapons: [{ id: "weapon-1" }],
@@ -41,6 +43,7 @@ describe("appState", () => {
     expect(state.isPaused).toBe(false);
     expect(state.dungeon).toEqual({ id: "dungeon" });
     expect(state.validation).toEqual({ ok: true });
+    expect(state.playerState).toEqual({ schema_version: "player_state_v1" });
     expect(state.player).toEqual({ id: "player" });
     expect(state.enemies).toEqual([{ id: "enemy-1" }]);
     expect(state.weapons).toEqual([{ id: "weapon-1" }]);
@@ -55,6 +58,7 @@ describe("appState", () => {
       seed: "filled",
       dungeon: { id: "dungeon" },
       validation: { ok: true },
+      playerState: { schema_version: "player_state_v1" },
       player: { id: "player" },
       enemies: [{ id: "enemy" }],
       weapons: [{ id: "weapon" }],
@@ -70,6 +74,7 @@ describe("appState", () => {
       isPaused: false,
       dungeon: null,
       validation: null,
+      playerState: { schema_version: "player_state_v1" },
       player: null,
       enemies: [],
       weapons: [],

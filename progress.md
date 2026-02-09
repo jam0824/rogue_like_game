@@ -150,3 +150,35 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
     - resume re-enabled progression,
     - regenerate while paused auto-reset `isPaused=false`,
     - no console error artifacts.
+- 2026-02-10: Implemented PlayerState JSON persistence (spec v1.4.1) as canonical persisted data using localStorage key `rogue_like_game.player_state_v1`.
+- 2026-02-10: Added `src/player/playerStateStore.js`:
+  - schema constants (`player_state_v1`, storage key), default/sanitized state builders,
+  - load/save helpers for localStorage,
+  - runtime sync (`run.pos`, weapon runtime),
+  - weapon-definition reconstruction from saved snake_case JSON,
+  - saved weapon runtime apply (`attack_seq`, `cooldown_remaining_sec`).
+- 2026-02-10: Added `loadWeaponRawRecord(fileName)` in `src/weapon/weaponDb.js` to fetch+validate raw snake_case weapon JSON.
+- 2026-02-10: Added `tryRestorePlayerPosition(player, dungeon, savedPos)` in `src/player/playerSystem.js` (walkable+bounds aware restore).
+- 2026-02-10: Extended app state with `playerState` in `src/state/appState.js` and wired through `setDungeonState`.
+- 2026-02-10: Integrated persistence flow in `src/main.js`:
+  - load playerState on startup from localStorage,
+  - regenerate restores saved position when valid,
+  - equipped weapons are rebuilt from saved spec-shape JSON (fallback to initial DB weapon),
+  - saved weapon runtime applied to runtime weapons,
+  - simulation syncs playerState each tick,
+  - autosave every 1s + beforeunload forced save,
+  - `render_game_to_text` now includes `playerState` in loading/error/dungeon payloads.
+- 2026-02-10: Added/updated unit tests:
+  - added `tests/unit/playerStateStore.test.js` (default shape, sword copy, broken-save sanitize, runtime sync/save, weapon-restore runtime apply),
+  - updated `tests/unit/playerSystem.test.js` for `tryRestorePlayerPosition` success/block/clamp cases,
+  - updated `tests/unit/appState.test.js` for `playerState` state wiring.
+- 2026-02-10: Validation complete:
+  - `npm run unit` -> PASS (8 files, 41 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/player-attack)
+  - Playwright skill client run with `tests/actions/idle.json` produced `output/web-game-player-state-save` artifacts;
+    `state-0.json` includes `playerState.schema_version=player_state_v1` and `run.equipped_weapons[0].weapon` sword fields.
+  - Additional Playwright restore scenario (local script using same playwright runtime) passed:
+    saved valid moved position restored after reload, invalid saved position safely fell back to valid in-bounds walkable position.
+
+- TODO: If player HP runtime is introduced later, wire `playerState.run.hp` to true runtime HP source (currently synced from player if available, otherwise maintained default/saved value).
+- TODO: If multiple weapon DB entries and assets are added, ensure saved weapon IDs/file names are validated against available assets and decide fallback policy for missing sprites.
