@@ -2,6 +2,7 @@ export function createAppState(initialSeed) {
   return {
     seed: String(initialSeed),
     isPaused: false,
+    debugPlayerDamagePreviewOnly: false,
     dungeon: null,
     validation: null,
     playerState: null,
@@ -17,6 +18,7 @@ export function createAppState(initialSeed) {
 export function setDungeonState(state, payload) {
   state.seed = String(payload.seed);
   state.isPaused = false;
+  state.debugPlayerDamagePreviewOnly = payload.debugPlayerDamagePreviewOnly ?? state.debugPlayerDamagePreviewOnly ?? false;
   state.dungeon = payload.dungeon;
   state.validation = payload.validation;
   state.playerState = payload.playerState ?? state.playerState ?? null;
@@ -31,6 +33,7 @@ export function setDungeonState(state, payload) {
 export function setErrorState(state, seed, error) {
   state.seed = String(seed);
   state.isPaused = false;
+  state.debugPlayerDamagePreviewOnly = state.debugPlayerDamagePreviewOnly ?? false;
   state.dungeon = null;
   state.validation = null;
   state.player = null;

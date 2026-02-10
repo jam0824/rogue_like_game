@@ -61,6 +61,83 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad) {
+  ctx.save();
+  if (Math.abs(rotationRad) > 0.000001) {
+    const centerX = dx + drawWidth / 2;
+    const centerY = dy + drawHeight / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  } else {
+    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
+  }
+  ctx.restore();
+}
+
+const tintSurfaceCache = new Map();
+
+function getTintSurface(width, height) {
+  const key = `${width}x${height}`;
+  const cached = tintSurfaceCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
+  const surface = { canvas, ctx };
+  tintSurfaceCache.set(key, surface);
+  return surface;
+}
+
+function drawTintedFrame(
+  ctx,
+  asset,
+  sx,
+  sy,
+  drawWidth,
+  drawHeight,
+  dx,
+  dy,
+  rotationRad,
+  color,
+  alpha
+) {
+  const tintAlpha = clamp(Number(alpha) || 0, 0, 1);
+  if (tintAlpha <= 0) {
+    return;
+  }
+
+  const tintSurface = getTintSurface(drawWidth, drawHeight);
+  const tintCtx = tintSurface.ctx;
+
+  tintCtx.globalCompositeOperation = "source-over";
+  tintCtx.clearRect(0, 0, drawWidth, drawHeight);
+  tintCtx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, 0, 0, drawWidth, drawHeight);
+  tintCtx.globalCompositeOperation = "source-in";
+  tintCtx.fillStyle = color;
+  tintCtx.fillRect(0, 0, drawWidth, drawHeight);
+  tintCtx.globalCompositeOperation = "source-over";
+
+  ctx.save();
+  ctx.globalAlpha = tintAlpha;
+  if (Math.abs(rotationRad) > 0.000001) {
+    const centerX = dx + drawWidth / 2;
+    const centerY = dy + drawHeight / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(tintSurface.canvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  } else {
+    ctx.drawImage(tintSurface.canvas, dx, dy, drawWidth, drawHeight);
+  }
+  ctx.restore();
+}
+
 function drawDungeonBase(ctx, assets, dungeon) {
   const widthPx = dungeon.gridWidth * TILE_SIZE;
   const heightPx = dungeon.gridHeight * TILE_SIZE;
@@ -112,21 +189,16 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
   const dx = Math.round(entity.x);
   const dy = Math.round(entity.y);
   const rotationRad = Number.isFinite(options.rotationRad) ? options.rotationRad : 0;
+  const telegraphAlpha = clamp(Number(options.telegraphAlpha) || 0, 0, 1);
   const flashAlpha = clamp(Number(options.flashAlpha) || 0, 0, 1);
   const drawWidth = asset.frameWidth;
   const drawHeight = asset.frameHeight;
 
-  ctx.save();
-  if (Math.abs(rotationRad) > 0.000001) {
-    const centerX = dx + drawWidth / 2;
-    const centerY = dy + drawHeight / 2;
-    ctx.translate(centerX, centerY);
-    ctx.rotate(rotationRad);
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-  } else {
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
+  drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad);
+
+  if (telegraphAlpha > 0) {
+    drawTintedFrame(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad, "#ff2d2d", telegraphAlpha);
   }
-  ctx.restore();
 
   if (flashAlpha <= 0) {
     return;
@@ -135,15 +207,7 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
   ctx.save();
   ctx.globalAlpha = flashAlpha;
   ctx.filter = "brightness(0) invert(1)";
-  if (Math.abs(rotationRad) > 0.000001) {
-    const centerX = dx + drawWidth / 2;
-    const centerY = dy + drawHeight / 2;
-    ctx.translate(centerX, centerY);
-    ctx.rotate(rotationRad);
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-  } else {
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
-  }
+  drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad);
   ctx.restore();
 }
 
@@ -167,10 +231,11 @@ function drawDamagePopups(ctx, damagePopups) {
     const x = Math.round(popup.x);
     const y = Math.round(popup.y);
     const text = String(Math.max(0, Math.round(Number(popup.value) || 0)));
+    const isPlayerDamage = popup.targetType === "player";
 
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = "rgba(24, 24, 24, 0.75)";
-    ctx.fillStyle = "#fff6f0";
+    ctx.fillStyle = isPlayerDamage ? "#ff4a4a" : "#fff6f0";
     ctx.strokeText(text, x, y);
     ctx.fillText(text, x, y);
   }
@@ -184,9 +249,11 @@ function drawDamagePopups(ctx, damagePopups) {
  * @param {{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null} playerAsset
  * @param {{row:number,col:number}|null} playerFrame
  * @param {{x:number,y:number}|null} player
- * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number}>} enemyDrawables
+ * @param {number} playerFlashAlpha
+ * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
- * @param {Array<{value:number,x:number,y:number,alpha:number}>} damagePopups
+ * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
+ * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\")}>} damagePopups
  */
 export function renderFrame(
   canvas,
@@ -194,8 +261,10 @@ export function renderFrame(
   playerAsset,
   playerFrame,
   player,
+  playerFlashAlpha = 0,
   enemyDrawables = [],
   weaponDrawables = [],
+  enemyWeaponDrawables = [],
   damagePopups = []
 ) {
   if (!backdrop) {
@@ -223,6 +292,7 @@ export function renderFrame(
       draw() {
         drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy, {
           flashAlpha: drawable.flashAlpha ?? 0,
+          telegraphAlpha: drawable.telegraphAlpha ?? 0,
         });
       },
     });
@@ -243,11 +313,28 @@ export function renderFrame(
     });
   }
 
+  for (const drawable of enemyWeaponDrawables) {
+    if (!drawable.asset || !drawable.frame || !drawable.weapon) {
+      continue;
+    }
+
+    drawQueue.push({
+      feetY: drawable.weapon.y + drawable.weapon.height,
+      draw() {
+        drawSprite(ctx, drawable.asset, drawable.frame, drawable.weapon, {
+          rotationRad: drawable.rotationRad ?? 0,
+        });
+      },
+    });
+  }
+
   if (playerAsset && playerFrame && player) {
     drawQueue.push({
       feetY: player.y + playerAsset.frameHeight,
       draw() {
-        drawSprite(ctx, playerAsset, playerFrame, player);
+        drawSprite(ctx, playerAsset, playerFrame, player, {
+          flashAlpha: playerFlashAlpha,
+        });
       },
     });
   }

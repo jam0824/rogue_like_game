@@ -252,6 +252,7 @@ function applyWeaponHits(weapon, weaponDefinition, enemies, events) {
     hitSet.add(enemy.id);
     events.push({
       kind: "damage",
+      targetType: "enemy",
       enemyId: enemy.id,
       damage: totalDamage,
       worldX: enemy.x + enemy.width / 2,

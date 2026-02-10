@@ -35,6 +35,11 @@ function createDebugRoot() {
   const regenerateButton = createEventTarget({ textContent: "再生成" });
   const pauseToggleButton = createEventTarget({ textContent: "一時停止", attributes: { "aria-pressed": "false" } });
   const showStorageButton = createEventTarget({ textContent: "Storage表示" });
+  const resetStorageButton = createEventTarget({ textContent: "Storageリセット" });
+  const damagePreviewToggleButton = createEventTarget({
+    textContent: "被ダメ有効",
+    attributes: { "aria-pressed": "false" },
+  });
   const statsList = createEventTarget({ innerHTML: "" });
   const storageView = createEventTarget({ textContent: "", hidden: true });
   const errorMessage = createEventTarget({ textContent: "", hidden: true });
@@ -45,6 +50,8 @@ function createDebugRoot() {
     "#regen-random": regenerateButton,
     "#pause-toggle": pauseToggleButton,
     "#show-storage": showStorageButton,
+    "#reset-storage": resetStorageButton,
+    "#damage-preview-toggle": damagePreviewToggleButton,
     "#debug-stats": statsList,
     "#debug-storage": storageView,
     "#debug-error": errorMessage,
@@ -58,6 +65,8 @@ function createDebugRoot() {
     root,
     pauseToggleButton,
     showStorageButton,
+    resetStorageButton,
+    damagePreviewToggleButton,
     storageView,
   };
 }
@@ -72,6 +81,8 @@ describe("debugPanel", () => {
       onRegenerate: vi.fn(),
       onTogglePause,
       onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
     });
 
     pauseToggleButton.trigger("click");
@@ -86,6 +97,8 @@ describe("debugPanel", () => {
       onRegenerate: vi.fn(),
       onTogglePause: vi.fn(),
       onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
     });
 
     panel.setPaused(true);
@@ -106,6 +119,8 @@ describe("debugPanel", () => {
       onRegenerate: vi.fn(),
       onTogglePause: vi.fn(),
       onShowStorage,
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
     });
 
     showStorageButton.trigger("click");
@@ -120,6 +135,8 @@ describe("debugPanel", () => {
       onRegenerate: vi.fn(),
       onTogglePause: vi.fn(),
       onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
     });
 
     panel.setStorageDump("keys: 1\n\n[test]\nvalue");
@@ -129,5 +146,60 @@ describe("debugPanel", () => {
     panel.setStorageDump("");
     expect(storageView.hidden).toBe(true);
     expect(storageView.textContent).toBe("");
+  });
+
+  it("Storageリセットボタンクリックで onResetStorage が呼ばれる", () => {
+    const { root, resetStorageButton } = createDebugRoot();
+    const onResetStorage = vi.fn();
+
+    createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage,
+      onToggleDamagePreview: vi.fn(),
+    });
+
+    resetStorageButton.trigger("click");
+    expect(onResetStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it("被ダメ設定ボタンクリックで onToggleDamagePreview が呼ばれる", () => {
+    const { root, damagePreviewToggleButton } = createDebugRoot();
+    const onToggleDamagePreview = vi.fn();
+
+    createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview,
+    });
+
+    damagePreviewToggleButton.trigger("click");
+    expect(onToggleDamagePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("setDamagePreviewOnly でボタン文言と aria-pressed が切り替わる", () => {
+    const { root, damagePreviewToggleButton } = createDebugRoot();
+
+    const panel = createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
+    });
+
+    panel.setDamagePreviewOnly(true);
+    expect(damagePreviewToggleButton.textContent).toBe("被ダメ無効(演出のみ)");
+    expect(damagePreviewToggleButton.getAttribute("aria-pressed")).toBe("true");
+
+    panel.setDamagePreviewOnly(false);
+    expect(damagePreviewToggleButton.textContent).toBe("被ダメ有効");
+    expect(damagePreviewToggleButton.getAttribute("aria-pressed")).toBe("false");
   });
 });

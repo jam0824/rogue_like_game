@@ -66,6 +66,8 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
     rank: typeof rawEnemy.rank === "string" && rawEnemy.rank.length > 0 ? rawEnemy.rank : "normal",
     role: typeof rawEnemy.role === "string" && rawEnemy.role.length > 0 ? rawEnemy.role : "chaser",
     tags: Array.isArray(rawEnemy.tags) ? rawEnemy.tags.filter((tag) => typeof tag === "string") : [],
+    aiProfileId: typeof rawEnemy.ai_profile_id === "string" ? rawEnemy.ai_profile_id : null,
+    weaponLoadoutId: typeof rawEnemy.weapon_loadout_id === "string" ? rawEnemy.weapon_loadout_id : null,
   };
 }
 

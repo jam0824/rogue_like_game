@@ -14,6 +14,8 @@ export function createDebugPanel(root, handlers) {
   const regenerateButton = root.querySelector("#regen-random");
   const pauseToggleButton = root.querySelector("#pause-toggle");
   const showStorageButton = root.querySelector("#show-storage");
+  const resetStorageButton = root.querySelector("#reset-storage");
+  const damagePreviewToggleButton = root.querySelector("#damage-preview-toggle");
   const statsList = root.querySelector("#debug-stats");
   const storageView = root.querySelector("#debug-storage");
   const errorMessage = root.querySelector("#debug-error");
@@ -45,6 +47,22 @@ export function createDebugPanel(root, handlers) {
     });
   }
 
+  if (resetStorageButton) {
+    resetStorageButton.addEventListener("click", () => {
+      if (typeof handlers.onResetStorage === "function") {
+        handlers.onResetStorage();
+      }
+    });
+  }
+
+  if (damagePreviewToggleButton) {
+    damagePreviewToggleButton.addEventListener("click", () => {
+      if (typeof handlers.onToggleDamagePreview === "function") {
+        handlers.onToggleDamagePreview();
+      }
+    });
+  }
+
   return {
     setSeed(seed) {
       seedInput.value = String(seed);
@@ -53,6 +71,15 @@ export function createDebugPanel(root, handlers) {
       const nextPaused = paused === true;
       pauseToggleButton.textContent = nextPaused ? "再開" : "一時停止";
       pauseToggleButton.setAttribute("aria-pressed", nextPaused ? "true" : "false");
+    },
+    setDamagePreviewOnly(enabled) {
+      if (!damagePreviewToggleButton) {
+        return;
+      }
+
+      const nextEnabled = enabled === true;
+      damagePreviewToggleButton.textContent = nextEnabled ? "被ダメ無効(演出のみ)" : "被ダメ有効";
+      damagePreviewToggleButton.setAttribute("aria-pressed", nextEnabled ? "true" : "false");
     },
     setStats(rows) {
       renderStatsList(statsList, rows);

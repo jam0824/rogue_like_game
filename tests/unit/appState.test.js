@@ -8,6 +8,7 @@ describe("appState", () => {
     expect(state).toEqual({
       seed: "12345",
       isPaused: false,
+      debugPlayerDamagePreviewOnly: false,
       dungeon: null,
       validation: null,
       playerState: null,
@@ -24,6 +25,7 @@ describe("appState", () => {
     const state = createAppState("old-seed");
     state.error = "old error";
     state.isPaused = true;
+    state.debugPlayerDamagePreviewOnly = true;
 
     const payload = {
       seed: "new-seed",
@@ -41,6 +43,7 @@ describe("appState", () => {
 
     expect(state.seed).toBe("new-seed");
     expect(state.isPaused).toBe(false);
+    expect(state.debugPlayerDamagePreviewOnly).toBe(true);
     expect(state.dungeon).toEqual({ id: "dungeon" });
     expect(state.validation).toEqual({ ok: true });
     expect(state.playerState).toEqual({ schema_version: "player_state_v1" });
@@ -72,6 +75,7 @@ describe("appState", () => {
     expect(state).toEqual({
       seed: "999",
       isPaused: false,
+      debugPlayerDamagePreviewOnly: false,
       dungeon: null,
       validation: null,
       playerState: { schema_version: "player_state_v1" },

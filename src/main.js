@@ -1,11 +1,16 @@
-import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./config/constants.js";
+import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from "./config/constants.js";
 import { loadEnemyAssets } from "./enemy/enemyAsset.js";
+import { loadEnemyAiProfiles } from "./enemy/enemyAiProfileDb.js";
 import { loadEnemyDefinitions } from "./enemy/enemyDb.js";
+import { loadEnemyWeaponLoadouts } from "./enemy/enemyWeaponLoadoutDb.js";
 import {
   createEnemies,
+  getEnemyTelegraphAlpha,
   getEnemyFrame,
   getEnemyHitFlashAlpha,
+  getEnemyWeaponRuntimes,
   getEnemyWallHitbox,
+  updateEnemyAttacks,
   updateEnemies,
 } from "./enemy/enemySystem.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
@@ -15,6 +20,7 @@ import {
   createPlayerState,
   getPlayerFeetHitbox,
   getPlayerFrame,
+  getPlayerHitFlashAlpha,
   setPointerTarget,
   tryRestorePlayerPosition,
   updatePlayer,
@@ -50,6 +56,7 @@ const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "weapon_sword_01";
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
+const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
 
 const appState = createAppState(INITIAL_SEED);
 const canvas = document.querySelector("#dungeon-canvas");
@@ -132,12 +139,19 @@ function findRoomById(dungeon, roomId) {
   return dungeon.rooms.find((room) => room.id === roomId) ?? null;
 }
 
-function buildStatsRows(dungeon) {
+function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = false) {
   const startRoom = findRoomById(dungeon, dungeon.startRoomId);
   const stairsRoom = findRoomById(dungeon, dungeon.stairsRoomId);
+  const hpValue =
+    player && Number.isFinite(player.hp) && Number.isFinite(player.maxHp)
+      ? `${Math.max(0, Math.round(player.hp))} / ${Math.max(0, Math.round(player.maxHp))}`
+      : "-";
+  const damageMode = debugPlayerDamagePreviewOnly ? "演出のみ（HP減少なし）" : "通常";
 
   return [
     { label: "seed", value: dungeon.seed },
+    { label: "HP", value: hpValue },
+    { label: "被ダメ設定", value: damageMode },
     { label: "部屋数", value: dungeon.stats.roomCount },
     { label: "主線部屋数", value: dungeon.stats.mainPathCount },
     { label: "枝道本数", value: dungeon.stats.branchCount },
@@ -184,6 +198,9 @@ function buildPlayerTextState(player, weapons) {
     y: round2(player.y),
     width: PLAYER_WIDTH,
     height: PLAYER_HEIGHT,
+    hp: round2(player.hp ?? 0),
+    maxHp: round2(player.maxHp ?? 0),
+    hitFlashAlpha: round2(getPlayerHitFlashAlpha(player)),
     feetHitbox: getPlayerFeetHitbox(player),
     facing: player.facing,
     isMoving: player.isMoving,
@@ -194,6 +211,20 @@ function buildPlayerTextState(player, weapons) {
         }
       : null,
     weapons: (weapons ?? []).map((weapon) => buildWeaponTextState(weapon)),
+  };
+}
+
+function buildEnemyWeaponTextState(weapon) {
+  return {
+    id: weapon.id,
+    weaponDefId: weapon.weaponDefId,
+    formationId: weapon.formationId,
+    x: round2(weapon.x ?? 0),
+    y: round2(weapon.y ?? 0),
+    width: weapon.width ?? 0,
+    height: weapon.height ?? 0,
+    rotationDeg: round2(weapon.rotationDeg ?? 0),
+    visible: weapon.visible === true,
   };
 }
 
@@ -218,6 +249,9 @@ function buildEnemyTextState(enemy) {
     attackDamage: round2(enemy.attackDamage ?? 0),
     moveSpeed: round2(enemy.moveSpeed ?? 0),
     hitFlashAlpha: round2(getEnemyHitFlashAlpha(enemy)),
+    attackPhase: enemy.attack?.phase ?? "none",
+    telegraphAlpha: round2(getEnemyTelegraphAlpha(enemy)),
+    weapons: getEnemyWeaponRuntimes(enemy).map((weapon) => buildEnemyWeaponTextState(weapon)),
   };
 }
 
@@ -227,6 +261,7 @@ function buildDamagePopupTextState(popup) {
     x: round2(popup?.x ?? 0),
     y: round2(popup?.y ?? 0),
     alpha: round2(popup?.alpha ?? 0),
+    targetType: popup?.targetType === "player" ? "player" : "enemy",
   };
 }
 
@@ -265,6 +300,9 @@ function toTextState() {
       mode: "dungeon",
       seed: dungeon.seed,
       isPaused: appState.isPaused === true,
+      debug: {
+        playerDamagePreviewOnly: appState.debugPlayerDamagePreviewOnly === true,
+      },
       coordinateSystem: {
         origin: "top-left",
         xAxis: "right-positive",
@@ -350,6 +388,9 @@ function followPlayerInView() {
 const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
 let enemyDefinitions = [];
 let enemyAssets = {};
+let enemyAiProfilesById = {};
+let enemyWeaponLoadoutsById = {};
+let enemyAttackProfilesByDbId = {};
 let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
@@ -365,11 +406,114 @@ function resolveStarterWeaponDefId() {
   return loadedWeaponIds.length > 0 ? loadedWeaponIds[0] : null;
 }
 
+function resolveFormationIdForEnemyWeapon(weaponInstance, weaponDefinition, formationMap) {
+  if (weaponInstance?.formationId && formationMap?.[weaponInstance.formationId]) {
+    return weaponInstance.formationId;
+  }
+
+  if (weaponDefinition?.formationId && formationMap?.[weaponDefinition.formationId]) {
+    return weaponDefinition.formationId;
+  }
+
+  const fallbackFormationId = Object.keys(formationMap ?? {})[0];
+  return fallbackFormationId ?? null;
+}
+
+function buildEnemyAttackProfilesByDbId() {
+  const nextProfiles = {};
+
+  for (const enemyDefinition of enemyDefinitions) {
+    const aiProfile = enemyAiProfilesById?.[enemyDefinition.aiProfileId];
+    const loadout = enemyWeaponLoadoutsById?.[enemyDefinition.weaponLoadoutId];
+    if (!aiProfile || !loadout || !Array.isArray(loadout.weapons) || loadout.weapons.length === 0) {
+      nextProfiles[enemyDefinition.id] = null;
+      continue;
+    }
+
+    const attackCycles = Math.max(1, Math.floor(Number(aiProfile.weaponAttackCycles) || 1));
+    const cooldownMul = Math.max(0.0001, Number(aiProfile.weaponCooldownMul) || 1);
+    const resolvedWeapons = [];
+    const executeDurationsSec = [];
+    const periodsSec = [];
+
+    for (const weaponInstance of loadout.weapons) {
+      const weaponDefinition = weaponDefinitionsById?.[weaponInstance.weaponDefId];
+      if (!weaponDefinition) {
+        continue;
+      }
+
+      const formationId = resolveFormationIdForEnemyWeapon(weaponInstance, weaponDefinition, formationDefinitionsById);
+      if (!formationId) {
+        continue;
+      }
+
+      const formationDefinition = formationDefinitionsById?.[formationId];
+      if (!formationDefinition || formationDefinition.type !== "circle") {
+        continue;
+      }
+
+      const angularSpeed = Number(formationDefinition.angularSpeedBase) || 0;
+      const executeDurationSec =
+        Math.abs(angularSpeed) <= 0.0001 ? 0 : (Math.PI * 2 * attackCycles) / Math.abs(angularSpeed);
+
+      resolvedWeapons.push({
+        weaponDefId: weaponDefinition.id,
+        formationId,
+        width: weaponDefinition.width,
+        height: weaponDefinition.height,
+        radiusPx: (Number(formationDefinition.radiusBase) || 0) * TILE_SIZE,
+        angularSpeed,
+        centerMode: formationDefinition?.params?.centerMode ?? formationDefinition?.params?.center_mode ?? "player",
+        biasStrengthMul: Number(formationDefinition.biasStrengthMul) || 0,
+        biasResponseMul: Number(formationDefinition.biasResponseMul) || 0,
+        biasOffsetRatioMax: Number(formationDefinition?.clamp?.biasOffsetRatioMax),
+        executeDurationSec,
+        supported: true,
+      });
+
+      executeDurationsSec.push(executeDurationSec);
+      periodsSec.push(Math.max(MIN_ENEMY_ATTACK_COOLDOWN_SEC, (Number(weaponDefinition.attackCooldownSec) || 0) * cooldownMul));
+    }
+
+    if (resolvedWeapons.length === 0) {
+      nextProfiles[enemyDefinition.id] = null;
+      continue;
+    }
+
+    const windupSec = Math.max(0, Number(aiProfile.attackWindupSec) || 0);
+    const recoverSec = Math.max(0, Number(aiProfile.recoverSec) || 0);
+    const executeSec = Math.max(0.0001, ...executeDurationsSec);
+    const periodSec = Math.max(MIN_ENEMY_ATTACK_COOLDOWN_SEC, ...periodsSec);
+    const cooldownAfterRecoverSec = Math.max(0, periodSec - (windupSec + executeSec + recoverSec));
+
+    nextProfiles[enemyDefinition.id] = {
+      windupSec,
+      recoverSec,
+      executeSec,
+      cooldownAfterRecoverSec,
+      attackRangePx: (Number(aiProfile.weaponActiveRangeTiles) || 0) * TILE_SIZE,
+      losRequired: aiProfile.losRequired === true,
+      weaponAimMode: aiProfile.weaponAimMode,
+      weaponVisibilityMode: aiProfile.weaponVisibilityMode,
+      attackLinked: loadout.attackLinked !== false,
+      weapons: resolvedWeapons,
+    };
+  }
+
+  enemyAttackProfilesByDbId = nextProfiles;
+}
+
 async function refreshEnemyResources() {
-  const definitions = await loadEnemyDefinitions();
+  const [definitions, aiProfiles, loadouts] = await Promise.all([
+    loadEnemyDefinitions(),
+    loadEnemyAiProfiles(),
+    loadEnemyWeaponLoadouts(),
+  ]);
   const assets = await loadEnemyAssets(definitions);
   enemyDefinitions = definitions;
   enemyAssets = assets;
+  enemyAiProfilesById = Object.fromEntries(aiProfiles.map((profile) => [profile.id, profile]));
+  enemyWeaponLoadoutsById = Object.fromEntries(loadouts.map((loadout) => [loadout.id, loadout]));
 }
 
 async function refreshWeaponResources() {
@@ -413,9 +557,39 @@ function persistPlayerState() {
   savePlayerStateToStorage(appStorage, PLAYER_STATE_STORAGE_KEY, appState.playerState);
 }
 
+function resetStorageAndReload() {
+  if (!appStorage) {
+    debugPanel.setStorageDump("localStorage is unavailable.");
+    return;
+  }
+
+  try {
+    if (typeof appStorage.clear === "function") {
+      appStorage.clear();
+    } else if (typeof appStorage.removeItem === "function") {
+      appStorage.removeItem(PLAYER_STATE_STORAGE_KEY);
+    }
+  } catch (error) {
+    debugPanel.setStorageDump(
+      `Failed to reset localStorage: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+
+  appState.playerState = null;
+  debugPanel.setStorageDump(buildLocalStorageDump(appStorage));
+  void regenerate(appState.seed);
+}
+
 function syncPauseUi() {
   debugPanel.setPaused(appState.isPaused);
 }
+
+function syncDamagePreviewUi() {
+  debugPanel.setDamagePreviewOnly(appState.debugPlayerDamagePreviewOnly === true);
+}
+
+let lastStatsDigest = "";
 
 function setPaused(paused) {
   appState.isPaused = paused === true;
@@ -427,6 +601,13 @@ function togglePause() {
     return;
   }
   setPaused(!appState.isPaused);
+}
+
+function toggleDamagePreview() {
+  appState.debugPlayerDamagePreviewOnly = appState.debugPlayerDamagePreviewOnly !== true;
+  syncDamagePreviewUi();
+  lastStatsDigest = "";
+  syncStatsPanel();
 }
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
@@ -444,8 +625,46 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   onShowStorage: () => {
     debugPanel.setStorageDump(buildLocalStorageDump(appStorage));
   },
+  onResetStorage: () => {
+    resetStorageAndReload();
+  },
+  onToggleDamagePreview: () => {
+    toggleDamagePreview();
+  },
 });
 syncPauseUi();
+syncDamagePreviewUi();
+
+function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
+  if (!dungeon) {
+    return "";
+  }
+
+  return [
+    dungeon.seed,
+    dungeon.stats?.roomCount ?? 0,
+    dungeon.stats?.mainPathCount ?? 0,
+    dungeon.stats?.branchCount ?? 0,
+    dungeon.stats?.hasLoop ? 1 : 0,
+    Math.round(Number(player?.hp) || 0),
+    Math.round(Number(player?.maxHp) || 0),
+    debugPlayerDamagePreviewOnly ? 1 : 0,
+  ].join("|");
+}
+
+function syncStatsPanel() {
+  if (!appState.dungeon) {
+    return;
+  }
+
+  const digest = buildStatsDigest(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly);
+  if (digest === lastStatsDigest) {
+    return;
+  }
+
+  debugPanel.setStats(buildStatsRows(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly));
+  lastStatsDigest = digest;
+}
 
 createPointerController(canvas, {
   onPointerTarget: (active, worldX, worldY) => {
@@ -474,6 +693,7 @@ function renderCurrentFrame() {
     asset: enemyAssets[enemy.dbId] ?? null,
     frame: getEnemyFrame(enemy),
     flashAlpha: getEnemyHitFlashAlpha(enemy),
+    telegraphAlpha: getEnemyTelegraphAlpha(enemy),
   }));
   const weaponDrawables = appState.weapons.map((weapon) => ({
     weapon,
@@ -481,6 +701,16 @@ function renderCurrentFrame() {
     frame: { row: 0, col: 0 },
     rotationRad: weapon.rotationRad ?? 0,
   }));
+  const enemyWeaponDrawables = appState.enemies.flatMap((enemy) =>
+    getEnemyWeaponRuntimes(enemy)
+      .filter((weapon) => weapon.visible === true)
+      .map((weapon) => ({
+        weapon,
+        asset: weaponAssets[weapon.weaponDefId] ?? null,
+        frame: { row: 0, col: 0 },
+        rotationRad: weapon.rotationRad ?? 0,
+      }))
+  );
 
   renderFrame(
     canvas,
@@ -488,8 +718,10 @@ function renderCurrentFrame() {
     playerAsset,
     getPlayerFrame(appState.player),
     appState.player,
+    getPlayerHitFlashAlpha(appState.player),
     enemyDrawables,
     weaponDrawables,
+    enemyWeaponDrawables,
     appState.damagePopups
   );
 }
@@ -501,7 +733,7 @@ function stepSimulation(dt) {
 
   updatePlayer(appState.player, appState.dungeon, dt);
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
-  const combatEvents = updateWeaponsAndCombat(
+  const playerCombatEvents = updateWeaponsAndCombat(
     appState.weapons,
     appState.player,
     appState.enemies,
@@ -509,6 +741,10 @@ function stepSimulation(dt) {
     formationDefinitionsById,
     dt
   );
+  const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
+    applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
+  });
+  const combatEvents = [...playerCombatEvents, ...enemyCombatEvents];
   const spawnedPopups = spawnDamagePopupsFromEvents(combatEvents, damagePopupSeq);
   damagePopupSeq += 1;
   appState.damagePopups = updateDamagePopups(
@@ -517,6 +753,7 @@ function stepSimulation(dt) {
   );
   appState.enemies = removeDefeatedEnemies(appState.enemies);
   syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
+  syncStatsPanel();
   followPlayerInView();
 }
 
@@ -553,6 +790,7 @@ async function regenerate(seed) {
     if (requestId !== regenerateRequestId) {
       return;
     }
+    buildEnemyAttackProfilesByDbId();
     ensurePlayerStateLoaded();
 
     const dungeon = generateDungeon({ seed: normalizedSeed });
@@ -564,7 +802,10 @@ async function regenerate(seed) {
     if (appState.playerState?.run?.pos) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
-    const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
+    if (Number.isFinite(appState.playerState?.run?.hp)) {
+      player.hp = clamp(appState.playerState.run.hp, 0, player.maxHp);
+    }
+    const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed, enemyAttackProfilesByDbId);
     const starterWeaponDefId = resolveStarterWeaponDefId();
     if (!starterWeaponDefId) {
       throw new Error("Weapon DB is empty.");
@@ -620,9 +861,11 @@ async function regenerate(seed) {
     });
 
     debugPanel.setSeed(normalizedSeed);
-    debugPanel.setStats(buildStatsRows(dungeon));
+    lastStatsDigest = "";
+    syncStatsPanel();
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
     syncPauseUi();
+    syncDamagePreviewUi();
 
     if (requestId !== regenerateRequestId) {
       return;
@@ -639,9 +882,11 @@ async function regenerate(seed) {
 
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
+    lastStatsDigest = "";
     debugPanel.setStats([]);
     debugPanel.setError(appState.error);
     syncPauseUi();
+    syncDamagePreviewUi();
     renderCurrentFrame();
     persistPlayerState();
     resetLoopClock();

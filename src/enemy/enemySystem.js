@@ -20,10 +20,21 @@ const ENEMY_ATTACK_BASE = 8;
 const ENEMY_ATTACK_PER_POW = 1.8;
 const ENEMY_MOVE_PER_AGI = 0.01;
 const ENEMY_HIT_FLASH_DURATION_SEC = 0.12;
+const ENEMY_ATTACK_TELEGRAPH_BLINK_HZ = 6;
+const VECTOR_EPSILON = 0.0001;
+const BIAS_LERP_BASE = 6;
+const MIN_ATTACK_COOLDOWN_SEC = 0.05;
 
 const BEHAVIOR_MODE = {
   RANDOM_WALK: "random_walk",
   CHASE: "chase",
+};
+
+const ENEMY_ATTACK_PHASE = {
+  COOLDOWN: "cooldown",
+  WINDUP: "windup",
+  ATTACK: "attack",
+  RECOVER: "recover",
 };
 
 const WALK_DIRECTIONS = [
@@ -43,6 +54,54 @@ function clamp(value, min, max) {
 
 function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeVector(x, y, fallbackX = 1, fallbackY = 0) {
+  const length = Math.hypot(x, y);
+  if (length <= VECTOR_EPSILON) {
+    return { x: fallbackX, y: fallbackY };
+  }
+
+  return {
+    x: x / length,
+    y: y / length,
+  };
+}
+
+function normalizeVectorOrZero(x, y) {
+  const length = Math.hypot(x, y);
+  if (length <= VECTOR_EPSILON) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: x / length,
+    y: y / length,
+  };
+}
+
+function getFacingVector(facing) {
+  if (facing === "left") {
+    return { x: -1, y: 0 };
+  }
+
+  if (facing === "up") {
+    return { x: 0, y: -1 };
+  }
+
+  if (facing === "down") {
+    return { x: 0, y: 1 };
+  }
+
+  return { x: 1, y: 0 };
+}
+
+function toRotationDegrees(dx, dy) {
+  return (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+}
+
+function intersectsAabb(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
 function getWalkableGrid(dungeon) {
@@ -162,6 +221,19 @@ function getPlayerFeetCenter(player) {
   };
 }
 
+function getPlayerCombatHitbox(player) {
+  if (!player) {
+    return null;
+  }
+
+  return {
+    x: player.x,
+    y: player.y,
+    width: Number.isFinite(player.width) ? player.width : 32,
+    height: Number.isFinite(player.height) ? player.height : 64,
+  };
+}
+
 function getDistanceToPlayer(enemy, player) {
   const enemyCenter = getEnemyCenter(enemy);
   const playerFeetCenter = getPlayerFeetCenter(player);
@@ -205,7 +277,7 @@ function buildLineTiles(startX, startY, endX, endY) {
   return tiles;
 }
 
-function hasWalkLineOfSight(enemy, player, dungeon) {
+function hasLineOfSightToPlayer(enemy, player, dungeon) {
   const walkableGrid = getWalkableGrid(dungeon);
   const enemyTile = toTileCoordinate(getEnemyCenter(enemy));
   const playerTile = toTileCoordinate(getPlayerFeetCenter(player));
@@ -232,7 +304,7 @@ function canNoticePlayer(enemy, player, dungeon) {
     return true;
   }
 
-  return hasWalkLineOfSight(enemy, player, dungeon);
+  return hasLineOfSightToPlayer(enemy, player, dungeon);
 }
 
 function switchBehaviorMode(enemy, nextMode) {
@@ -421,7 +493,151 @@ function moveChaseStep(enemy, dungeon, player, stepDistance) {
   };
 }
 
-function createEnemyState(definition, x, y, collision, rng, enemyId) {
+function resolveBiasOffsetPx(radiusPx, weaponRuntime) {
+  const biasStrengthMul = Math.max(0, toFiniteNumber(weaponRuntime.biasStrengthMul, 0));
+  const maxRatio = Math.max(0, toFiniteNumber(weaponRuntime.biasOffsetRatioMax, Number.POSITIVE_INFINITY));
+  const rawOffset = Math.max(0, radiusPx * biasStrengthMul);
+  const maxOffset = Math.max(0, radiusPx * maxRatio);
+  return Math.min(rawOffset, maxOffset);
+}
+
+function snapEnemyWeaponToEnemy(enemy, weaponRuntime) {
+  const enemyCenter = getEnemyCenter(enemy);
+  weaponRuntime.x = enemyCenter.x - weaponRuntime.width / 2;
+  weaponRuntime.y = enemyCenter.y - weaponRuntime.height / 2;
+}
+
+function updateEnemyWeaponTransform(weaponRuntime, enemy, aimDir, dt) {
+  if (weaponRuntime.supported !== true) {
+    snapEnemyWeaponToEnemy(enemy, weaponRuntime);
+    return;
+  }
+
+  const response = Math.max(0, toFiniteNumber(weaponRuntime.biasResponseMul, 0));
+  const lerpFactor = clamp(response * dt * BIAS_LERP_BASE, 0, 1);
+  const baseBias = normalizeVector(
+    toFiniteNumber(weaponRuntime.biasDirX, aimDir.x),
+    toFiniteNumber(weaponRuntime.biasDirY, aimDir.y),
+    aimDir.x,
+    aimDir.y
+  );
+
+  const nextBias = normalizeVector(
+    baseBias.x + (aimDir.x - baseBias.x) * lerpFactor,
+    baseBias.y + (aimDir.y - baseBias.y) * lerpFactor,
+    aimDir.x,
+    aimDir.y
+  );
+
+  weaponRuntime.biasDirX = nextBias.x;
+  weaponRuntime.biasDirY = nextBias.y;
+
+  const angularSpeed = toFiniteNumber(weaponRuntime.angularSpeed, 0);
+  weaponRuntime.angleRad = toFiniteNumber(weaponRuntime.angleRad, 0) + angularSpeed * dt;
+
+  const enemyCenter = getEnemyCenter(enemy);
+  const radiusPx = Math.max(0, toFiniteNumber(weaponRuntime.radiusPx, 0));
+  const biasOffsetPx = resolveBiasOffsetPx(radiusPx, weaponRuntime);
+  const orbitCenterX =
+    weaponRuntime.centerMode === "biased_center" ? enemyCenter.x + nextBias.x * biasOffsetPx : enemyCenter.x;
+  const orbitCenterY =
+    weaponRuntime.centerMode === "biased_center" ? enemyCenter.y + nextBias.y * biasOffsetPx : enemyCenter.y;
+
+  const weaponCenterX = orbitCenterX + Math.cos(weaponRuntime.angleRad) * radiusPx;
+  const weaponCenterY = orbitCenterY + Math.sin(weaponRuntime.angleRad) * radiusPx;
+  const fromOrbitDx = weaponCenterX - orbitCenterX;
+  const fromOrbitDy = weaponCenterY - orbitCenterY;
+  const rotationDeg = toRotationDegrees(fromOrbitDx, fromOrbitDy);
+
+  weaponRuntime.x = weaponCenterX - weaponRuntime.width / 2;
+  weaponRuntime.y = weaponCenterY - weaponRuntime.height / 2;
+  weaponRuntime.rotationDeg = rotationDeg;
+  weaponRuntime.rotationRad = rotationDeg * Math.PI / 180;
+}
+
+function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
+  const profile = attackProfile && typeof attackProfile === "object" ? attackProfile : null;
+  const profileWeapons = Array.isArray(profile?.weapons) ? profile.weapons : [];
+  const weaponCount = Math.max(1, profileWeapons.length);
+  const visibilityMode = profile?.weaponVisibilityMode === "always" ? "always" : "burst";
+
+  const weapons = profileWeapons.map((weapon, index) => {
+    const supported = weapon?.supported !== false;
+    const width = Math.max(1, toFiniteNumber(weapon?.width, 32));
+    const height = Math.max(1, toFiniteNumber(weapon?.height, 32));
+    const angleOffset = (index / weaponCount) * Math.PI * 2;
+    const enemyCenterX = spawnX + enemyWidth / 2;
+    const enemyCenterY = spawnY + enemyHeight / 2;
+
+    return {
+      id: `${enemyId}-weapon-${index}`,
+      weaponDefId: weapon?.weaponDefId ?? null,
+      formationId: weapon?.formationId ?? null,
+      x: enemyCenterX - width / 2,
+      y: enemyCenterY - height / 2,
+      width,
+      height,
+      angleRad: angleOffset,
+      baseAngleRad: angleOffset,
+      rotationDeg: 0,
+      rotationRad: 0,
+      biasDirX: 0,
+      biasDirY: 1,
+      radiusPx: Math.max(0, toFiniteNumber(weapon?.radiusPx, 0)),
+      angularSpeed: toFiniteNumber(weapon?.angularSpeed, 0),
+      centerMode: weapon?.centerMode === "biased_center" ? "biased_center" : "player",
+      biasStrengthMul: Math.max(0, toFiniteNumber(weapon?.biasStrengthMul, 0)),
+      biasResponseMul: Math.max(0, toFiniteNumber(weapon?.biasResponseMul, 0)),
+      biasOffsetRatioMax: Math.max(0, toFiniteNumber(weapon?.biasOffsetRatioMax, Number.POSITIVE_INFINITY)),
+      executeDurationSec: Math.max(0, toFiniteNumber(weapon?.executeDurationSec, 0)),
+      visible: visibilityMode === "always",
+      hitApplied: false,
+      supported,
+    };
+  });
+
+  if (weapons.length === 0) {
+    return {
+      enabled: false,
+      phase: ENEMY_ATTACK_PHASE.COOLDOWN,
+      phaseTimerSec: 0,
+      telegraphAlpha: 0,
+      windupSec: 0,
+      recoverSec: 0,
+      executeSec: 0,
+      cooldownAfterRecoverSec: 0,
+      weaponAimMode: "none",
+      weaponVisibilityMode: "burst",
+      attackRangePx: Number.POSITIVE_INFINITY,
+      losRequired: false,
+      attackLinked: true,
+      lockedAimDirX: 0,
+      lockedAimDirY: 0,
+      weapons: [],
+    };
+  }
+
+  return {
+    enabled: true,
+    phase: ENEMY_ATTACK_PHASE.COOLDOWN,
+    phaseTimerSec: 0,
+    telegraphAlpha: 0,
+    windupSec: Math.max(0, toFiniteNumber(profile?.windupSec, 0)),
+    recoverSec: Math.max(0, toFiniteNumber(profile?.recoverSec, 0)),
+    executeSec: Math.max(0, toFiniteNumber(profile?.executeSec, 0)),
+    cooldownAfterRecoverSec: Math.max(0, toFiniteNumber(profile?.cooldownAfterRecoverSec, 0)),
+    weaponAimMode: profile?.weaponAimMode === "move_dir" || profile?.weaponAimMode === "none" ? profile.weaponAimMode : "to_target",
+    weaponVisibilityMode: visibilityMode,
+    attackRangePx: Math.max(0, toFiniteNumber(profile?.attackRangePx, Number.POSITIVE_INFINITY)),
+    losRequired: profile?.losRequired === true,
+    attackLinked: profile?.attackLinked !== false,
+    lockedAimDirX: 0,
+    lockedAimDirY: 0,
+    weapons,
+  };
+}
+
+function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfile = null) {
   const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
   const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
   const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
@@ -467,6 +683,9 @@ function createEnemyState(definition, x, y, collision, rng, enemyId) {
     moveSpeed,
     baseSpeedPxPerSec: moveSpeed,
     chaseSpeedPxPerSec: moveSpeed * ENEMY_CHASE_SPEED_MULTIPLIER,
+    lastMoveDx: 0,
+    lastMoveDy: 1,
+    attack: createEnemyAttackRuntime(attackProfile, enemyId, x, y, definition.width, definition.height),
   };
 }
 
@@ -503,7 +722,7 @@ function chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOr
   return spawnRng.pick(enemyDefinitions);
 }
 
-export function createEnemies(dungeon, enemyDefinitions, seed) {
+export function createEnemies(dungeon, enemyDefinitions, seed, enemyAttackProfilesByDbId = null) {
   if (!Array.isArray(enemyDefinitions) || enemyDefinitions.length === 0) {
     return [];
   }
@@ -523,17 +742,26 @@ export function createEnemies(dungeon, enemyDefinitions, seed) {
     }
 
     const enemyRng = createRng(deriveSeed(seed ?? dungeon.seed, `enemy-${room.id}-${index}`));
+    const attackProfile = enemyAttackProfilesByDbId?.[definition.id] ?? null;
     enemies.push(
-      createEnemyState(definition, spawn.x, spawn.y, spawn.collision, enemyRng, `enemy-${room.id}-${index}`)
+      createEnemyState(
+        definition,
+        spawn.x,
+        spawn.y,
+        spawn.collision,
+        enemyRng,
+        `enemy-${room.id}-${index}`,
+        attackProfile
+      )
     );
   }
 
   return enemies;
 }
 
-export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed) {
+export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed, enemyAttackProfilesByDbId = null) {
   const onlyWalkDefinitions = (walkEnemyDefinitions ?? []).filter((definition) => definition.type === "walk");
-  return createEnemies(dungeon, onlyWalkDefinitions, seed);
+  return createEnemies(dungeon, onlyWalkDefinitions, seed, enemyAttackProfilesByDbId);
 }
 
 function updateEnemy(enemy, dungeon, dt, player) {
@@ -575,6 +803,8 @@ function updateEnemy(enemy, dungeon, dt, player) {
   }
 
   enemy.isMoving = true;
+  enemy.lastMoveDx = movedX;
+  enemy.lastMoveDy = movedY;
   updateFacing(enemy, movedX, movedY);
 
   if (!wasMoving) {
@@ -598,6 +828,297 @@ export function updateEnemies(enemies, dungeon, dt, player = null) {
     }
     updateEnemy(enemy, dungeon, dt, player);
   }
+}
+
+function shouldStartEnemyAttack(enemy, player, dungeon) {
+  const attack = enemy.attack;
+  if (!attack || attack.enabled !== true) {
+    return false;
+  }
+
+  if (enemy.behaviorMode !== BEHAVIOR_MODE.CHASE) {
+    return false;
+  }
+
+  if (!player) {
+    return false;
+  }
+
+  if (Number.isFinite(player.hp) && player.hp <= 0) {
+    return false;
+  }
+
+  const distanceToPlayerPx = getDistanceToPlayer(enemy, player);
+  if (Number.isFinite(attack.attackRangePx) && distanceToPlayerPx > attack.attackRangePx) {
+    return false;
+  }
+
+  if (attack.losRequired === true && !hasLineOfSightToPlayer(enemy, player, dungeon)) {
+    return false;
+  }
+
+  return true;
+}
+
+function getEnemyAimDirection(enemy, player, useLockedAim = false) {
+  const attack = enemy.attack;
+  if (!attack) {
+    return getFacingVector(enemy.facing);
+  }
+
+  if (useLockedAim) {
+    return normalizeVectorOrZero(attack.lockedAimDirX, attack.lockedAimDirY);
+  }
+
+  if (attack.weaponAimMode === "none") {
+    return { x: 0, y: 0 };
+  }
+
+  if (attack.weaponAimMode === "move_dir") {
+    const moveDir = normalizeVectorOrZero(enemy.lastMoveDx ?? 0, enemy.lastMoveDy ?? 0);
+    if (Math.hypot(moveDir.x, moveDir.y) > VECTOR_EPSILON) {
+      return moveDir;
+    }
+
+    return getFacingVector(enemy.facing);
+  }
+
+  if (!player) {
+    return getFacingVector(enemy.facing);
+  }
+
+  const enemyCenter = getEnemyCenter(enemy);
+  const playerFeetCenter = getPlayerFeetCenter(player);
+  return normalizeVector(
+    playerFeetCenter.x - enemyCenter.x,
+    playerFeetCenter.y - enemyCenter.y,
+    getFacingVector(enemy.facing).x,
+    getFacingVector(enemy.facing).y
+  );
+}
+
+function resetEnemyAttackWeaponHits(attack) {
+  for (const weapon of attack.weapons) {
+    weapon.hitApplied = false;
+  }
+}
+
+function setEnemyWeaponVisibility(attack, visible) {
+  const alwaysVisible = attack.weaponVisibilityMode === "always";
+
+  for (const weapon of attack.weapons) {
+    weapon.visible = alwaysVisible ? true : visible;
+  }
+}
+
+function setEnemyAttackPhase(enemy, phase, timerSec) {
+  const attack = enemy.attack;
+  attack.phase = phase;
+  attack.phaseTimerSec = Math.max(0, toFiniteNumber(timerSec, 0));
+
+  if (phase === ENEMY_ATTACK_PHASE.WINDUP) {
+    attack.telegraphAlpha = 1;
+    setEnemyWeaponVisibility(attack, false);
+    return;
+  }
+
+  if (phase === ENEMY_ATTACK_PHASE.ATTACK) {
+    attack.telegraphAlpha = 0;
+    resetEnemyAttackWeaponHits(attack);
+    setEnemyWeaponVisibility(attack, true);
+    for (const weapon of attack.weapons) {
+      if (attack.weaponVisibilityMode !== "always") {
+        weapon.angleRad = weapon.baseAngleRad;
+      }
+    }
+    return;
+  }
+
+  attack.telegraphAlpha = 0;
+  if (phase === ENEMY_ATTACK_PHASE.RECOVER || phase === ENEMY_ATTACK_PHASE.COOLDOWN) {
+    setEnemyWeaponVisibility(attack, false);
+  }
+}
+
+function updateEnemyAttackTelegraph(enemy) {
+  const attack = enemy.attack;
+  if (!attack || attack.phase !== ENEMY_ATTACK_PHASE.WINDUP) {
+    if (attack) {
+      attack.telegraphAlpha = 0;
+    }
+    return;
+  }
+
+  const windupSec = Math.max(0.0001, toFiniteNumber(attack.windupSec, 0.0001));
+  const elapsed = clamp(windupSec - attack.phaseTimerSec, 0, windupSec);
+  const normalized = clamp(elapsed / windupSec, 0, 1);
+  const pulse = (Math.sin(normalized * Math.PI * 2 * ENEMY_ATTACK_TELEGRAPH_BLINK_HZ) + 1) * 0.5;
+  attack.telegraphAlpha = clamp(0.2 + pulse * 0.8, 0, 1);
+}
+
+function updateEnemyWeaponVisuals(enemy, player, dt) {
+  const attack = enemy.attack;
+  if (!attack || attack.enabled !== true || !Array.isArray(attack.weapons)) {
+    return;
+  }
+
+  const inAttackCycle = attack.phase === ENEMY_ATTACK_PHASE.WINDUP || attack.phase === ENEMY_ATTACK_PHASE.ATTACK;
+  const useLockedAim = inAttackCycle;
+  const liveAim = getEnemyAimDirection(enemy, player, useLockedAim);
+  const aimDir = normalizeVectorOrZero(liveAim.x, liveAim.y);
+
+  const shouldAnimateWeapon = attack.phase === ENEMY_ATTACK_PHASE.ATTACK || attack.weaponVisibilityMode === "always";
+
+  for (const weapon of attack.weapons) {
+    if (!shouldAnimateWeapon) {
+      snapEnemyWeaponToEnemy(enemy, weapon);
+      continue;
+    }
+
+    const fallbackFacing = getFacingVector(enemy.facing);
+    const resolvedAim =
+      attack.weaponAimMode === "none"
+        ? { x: 0, y: 0 }
+        : Math.hypot(aimDir.x, aimDir.y) <= VECTOR_EPSILON
+          ? { x: fallbackFacing.x, y: fallbackFacing.y }
+          : aimDir;
+
+    updateEnemyWeaponTransform(weapon, enemy, resolvedAim, dt);
+  }
+}
+
+function applyEnemyWeaponHits(enemy, player, events, options = {}) {
+  const attack = enemy.attack;
+  if (!attack || attack.phase !== ENEMY_ATTACK_PHASE.ATTACK) {
+    return;
+  }
+
+  const playerHitbox = getPlayerCombatHitbox(player);
+  if (!playerHitbox) {
+    return;
+  }
+
+  const damageValue = Math.max(1, Math.round(toFiniteNumber(enemy.attackDamage, 1)));
+  const applyPlayerHpDamage = options.applyPlayerHpDamage !== false;
+
+  for (const weapon of attack.weapons) {
+    if (weapon.supported !== true || weapon.visible !== true || weapon.hitApplied === true) {
+      continue;
+    }
+
+    const weaponHitbox = {
+      x: weapon.x,
+      y: weapon.y,
+      width: weapon.width,
+      height: weapon.height,
+    };
+
+    if (!intersectsAabb(weaponHitbox, playerHitbox)) {
+      continue;
+    }
+
+    if (applyPlayerHpDamage) {
+      player.hp = Math.max(0, toFiniteNumber(player.hp, toFiniteNumber(player.maxHp, 100)) - damageValue);
+      if (Number.isFinite(player.maxHp)) {
+        player.hp = Math.min(player.hp, player.maxHp);
+      }
+    }
+
+    const flashDurationSec = Math.max(0.0001, toFiniteNumber(player.hitFlashDurationSec, 0.12));
+    player.hitFlashTimerSec = flashDurationSec;
+
+    const worldX = playerHitbox.x + playerHitbox.width / 2;
+    const worldY = playerHitbox.y + playerHitbox.height / 2;
+    events.push({
+      kind: "damage",
+      targetType: "player",
+      enemyId: enemy.id,
+      damage: damageValue,
+      worldX,
+      worldY,
+    });
+
+    weapon.hitApplied = true;
+  }
+}
+
+function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
+  const attack = enemy.attack;
+  if (!attack || attack.enabled !== true) {
+    return;
+  }
+
+  if (!player || (Number.isFinite(player.hp) && player.hp <= 0)) {
+    attack.telegraphAlpha = 0;
+    if (attack.weaponVisibilityMode !== "always") {
+      setEnemyWeaponVisibility(attack, false);
+    }
+    updateEnemyWeaponVisuals(enemy, player, dt);
+    return;
+  }
+
+  if (attack.phase === ENEMY_ATTACK_PHASE.COOLDOWN) {
+    attack.phaseTimerSec = Math.max(0, attack.phaseTimerSec - dt);
+
+    if (attack.phaseTimerSec <= 0 && shouldStartEnemyAttack(enemy, player, dungeon)) {
+      const lockedAim = getEnemyAimDirection(enemy, player, false);
+      attack.lockedAimDirX = lockedAim.x;
+      attack.lockedAimDirY = lockedAim.y;
+      setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.WINDUP, attack.windupSec);
+    }
+  }
+
+  updateEnemyWeaponVisuals(enemy, player, dt);
+  updateEnemyAttackTelegraph(enemy);
+
+  if (attack.phase === ENEMY_ATTACK_PHASE.ATTACK) {
+    applyEnemyWeaponHits(enemy, player, events, options);
+  }
+
+  if (
+    attack.phase === ENEMY_ATTACK_PHASE.WINDUP ||
+    attack.phase === ENEMY_ATTACK_PHASE.ATTACK ||
+    attack.phase === ENEMY_ATTACK_PHASE.RECOVER
+  ) {
+    attack.phaseTimerSec = Math.max(0, attack.phaseTimerSec - dt);
+
+    if (attack.phase === ENEMY_ATTACK_PHASE.WINDUP && attack.phaseTimerSec <= 0) {
+      setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.ATTACK, attack.executeSec);
+      return;
+    }
+
+    if (attack.phase === ENEMY_ATTACK_PHASE.ATTACK && attack.phaseTimerSec <= 0) {
+      setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.RECOVER, attack.recoverSec);
+      return;
+    }
+
+    if (attack.phase === ENEMY_ATTACK_PHASE.RECOVER && attack.phaseTimerSec <= 0) {
+      const cooldown = Math.max(MIN_ATTACK_COOLDOWN_SEC, toFiniteNumber(attack.cooldownAfterRecoverSec, 0));
+      setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.COOLDOWN, cooldown);
+    }
+  }
+}
+
+export function updateEnemyAttacks(enemies, player, dungeon, dt, options = {}) {
+  if (!Array.isArray(enemies) || enemies.length === 0) {
+    return [];
+  }
+
+  if (!player || !dungeon || !Number.isFinite(dt) || dt <= 0) {
+    return [];
+  }
+
+  const events = [];
+
+  for (const enemy of enemies) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    updateEnemyAttack(enemy, player, dungeon, dt, events, options);
+  }
+
+  return events;
 }
 
 export function getEnemyFrame(enemy) {
@@ -643,6 +1164,22 @@ export function getEnemyHitFlashAlpha(enemy) {
   return clamp(timer / duration, 0, 1);
 }
 
+export function getEnemyTelegraphAlpha(enemy) {
+  if (!enemy || !enemy.attack) {
+    return 0;
+  }
+
+  return clamp(toFiniteNumber(enemy.attack.telegraphAlpha, 0), 0, 1);
+}
+
+export function getEnemyWeaponRuntimes(enemy) {
+  if (!enemy || !enemy.attack || !Array.isArray(enemy.attack.weapons)) {
+    return [];
+  }
+
+  return enemy.attack.weapons;
+}
+
 export function getEnemyWallHitbox(enemy) {
   const hitbox = getWallHitboxAt(enemy, enemy.x, enemy.y);
   if (!hitbox) {
@@ -656,3 +1193,5 @@ export function getEnemyWallHitbox(enemy) {
     height: hitbox.height,
   };
 }
+
+export { BEHAVIOR_MODE, ENEMY_ATTACK_PHASE };

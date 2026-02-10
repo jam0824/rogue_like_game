@@ -11,6 +11,8 @@ import {
 
 const MAX_SUBSTEP_PIXELS = 4;
 const MOVE_EPSILON = 0.001;
+const PLAYER_MAX_HP_DEFAULT = 100;
+const PLAYER_HIT_FLASH_DURATION_SEC = 0.12;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -235,6 +237,10 @@ export function createPlayerState(dungeon) {
     target: null,
     isMoving: false,
     animTime: 0,
+    hp: PLAYER_MAX_HP_DEFAULT,
+    maxHp: PLAYER_MAX_HP_DEFAULT,
+    hitFlashTimerSec: 0,
+    hitFlashDurationSec: PLAYER_HIT_FLASH_DURATION_SEC,
   };
 }
 
@@ -281,6 +287,8 @@ export function updatePlayer(player, dungeon, dt) {
   if (!Number.isFinite(dt) || dt <= 0) {
     return;
   }
+
+  player.hitFlashTimerSec = Math.max(0, (Number(player.hitFlashTimerSec) || 0) - dt);
 
   if (!player.pointerActive || !player.target) {
     player.isMoving = false;
@@ -380,4 +388,27 @@ export function getPlayerFeetHitbox(player) {
     width: rect.width,
     height: rect.height,
   };
+}
+
+export function getPlayerCombatHitbox(player) {
+  if (!player) {
+    return null;
+  }
+
+  return {
+    x: player.x,
+    y: player.y,
+    width: player.width ?? PLAYER_WIDTH,
+    height: player.height ?? PLAYER_HEIGHT,
+  };
+}
+
+export function getPlayerHitFlashAlpha(player) {
+  if (!player) {
+    return 0;
+  }
+
+  const timer = Math.max(0, Number(player.hitFlashTimerSec) || 0);
+  const duration = Math.max(0.0001, Number(player.hitFlashDurationSec) || PLAYER_HIT_FLASH_DURATION_SEC);
+  return clamp(timer / duration, 0, 1);
 }

@@ -234,3 +234,77 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - UI: added `Storage表示` button and storage output area in debug panel (`index.html`, `styles/main.css`).
   - Logic: `main.js` now builds a readable localStorage dump (JSON pretty-print when possible) and wires button handler via `debugPanel.setStorageDump(...)`.
   - Tests: expanded `tests/unit/debugPanel.test.js` for storage button callback and dump visibility toggling.
+- 2026-02-10: Implemented enemy attack v1.1 with weapon-object rendering + trajectories.
+  - Added enemy DB loaders:
+    - `src/enemy/enemyAiProfileDb.js` (ai_profile discovery/validation/normalize)
+    - `src/enemy/enemyWeaponLoadoutDb.js` (enemy loadout discovery/validation/normalize)
+  - Extended enemy definition normalization (`src/enemy/enemyDb.js`) with `aiProfileId` and `weaponLoadoutId`.
+  - Reworked `src/enemy/enemySystem.js` to add enemy attack runtime:
+    - attack phases: `cooldown -> windup -> attack -> recover`
+    - windup telegraph alpha (red blink), locked aim dir, LOS/range gating, and per-weapon hit gating
+    - enemy weapon runtime transform update (circle formation) and visibility modes (`burst`/`always`)
+    - enemy-to-player combat events via weapon AABB vs player AABB
+    - new exports: `updateEnemyAttacks`, `getEnemyTelegraphAlpha`, `getEnemyWeaponRuntimes`
+  - Integrated enemy attack systems in `src/main.js`:
+    - merged player and enemy combat events for popup generation
+    - loaded/resolved enemy AI + loadout + weapon/formation into per-enemy attack profiles
+    - render wiring for enemy telegraph and enemy weapon drawables
+    - text-state extensions: player hp/maxHp/hitFlashAlpha, enemy attackPhase/telegraphAlpha/weapons, popup targetType
+  - Added player damage feedback in `src/player/playerSystem.js`:
+    - player runtime hp/maxHp and white hit-flash decay
+    - `getPlayerCombatHitbox` and `getPlayerHitFlashAlpha`
+  - Added popup target typing in `src/combat/combatFeedbackSystem.js` and red player-damage popup color in renderer.
+  - Added player HP visibility in debug panel stats (`HP: current / max`) with runtime refresh.
+- 2026-02-10: Added tests/checks for enemy attack feature.
+  - Added unit tests:
+    - `tests/unit/enemyAiProfileDb.test.js`
+    - `tests/unit/enemyWeaponLoadoutDb.test.js`
+  - Expanded unit tests:
+    - `tests/unit/enemySystem.test.js` (telegraph/phase transitions/weapon-hit damage)
+    - `tests/unit/playerSystem.test.js` (player flash + hp defaults)
+    - `tests/unit/combatFeedbackSystem.test.js` (popup targetType)
+    - `tests/unit/weaponSystem.test.js` (enemy targetType on damage events)
+  - Added integration check script:
+    - `scripts/check_enemy_attack.mjs`
+  - Updated npm scripts:
+    - `check:enemy-attack`
+    - linked into `test:checks`
+- 2026-02-10: Validation complete after enemy attack integration:
+  - `npm run unit` -> PASS (11 files, 59 tests)
+  - `npm run check:enemy-attack` -> PASS
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
+  - `npm test` -> PASS
+
+- TODO: Tune enemy attack trigger feel (currently gated by `weapon_active_range_tiles` and `los_required` from AI profile; default profile may feel conservative in live movement).
+- TODO: Add deterministic Playwright scenario specifically for enemy-attack visibility (telegraph -> weapon visible -> player red popup/white flash) once a stable near-enemy route payload is prepared.
+- 2026-02-11: Added debug utilities requested by user.
+  - Added debug panel buttons in `index.html`:
+    - `#reset-storage` (Storageリセット)
+    - `#damage-preview-toggle` (被ダメ有効 / 被ダメ無効(演出のみ))
+  - Extended debug panel controller (`src/ui/debugPanel.js`):
+    - new handlers `onResetStorage`, `onToggleDamagePreview`
+    - new UI setter `setDamagePreviewOnly(enabled)`
+  - Extended app state (`src/state/appState.js`) with `debugPlayerDamagePreviewOnly` and preserved it across dungeon/error transitions.
+  - Integrated in main loop (`src/main.js`):
+    - added storage reset flow (`resetStorageAndReload`) that clears localStorage and regenerates current seed
+    - added damage-preview toggle flow with UI/state sync
+    - debug stats now include `被ダメ設定` line and update digest reflects preview mode
+    - wired enemy attack call to pass `{ applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true }`
+  - Enemy attack system update (`src/enemy/enemySystem.js`):
+    - `updateEnemyAttacks(..., options)` now supports `applyPlayerHpDamage=false`
+    - when disabled, HP is not reduced while hit flash + damage popup event remain active (演出のみ)
+- 2026-02-11: Added/updated tests for debug options.
+  - Updated `tests/unit/debugPanel.test.js`:
+    - onResetStorage callback invocation
+    - onToggleDamagePreview callback invocation
+    - `setDamagePreviewOnly` label/aria switching
+  - Updated `tests/unit/appState.test.js` for `debugPlayerDamagePreviewOnly` default/persistence/reset behavior.
+  - Updated `tests/unit/enemySystem.test.js` with preview-only mode case (events+flash on, HP unchanged).
+- 2026-02-11: Validation complete after debug option integration:
+  - `npm run unit` -> PASS (11 files, 63 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-11: Fixed enemy telegraph rendering shape in `src/render/canvasRenderer.js` by replacing rectangle-style overlay with sprite-silhouette tint rendering (`drawTintedFrame` via offscreen `source-in`), preserving draw order (base -> red telegraph -> white flash).
+- 2026-02-11: Revalidated after telegraph shape fix:
+  - `npm run unit` -> PASS (11 files, 63 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
+  - Playwright skill-client run with `tests/actions/enemy_notice_giveup.json` captured artifacts at `output/web-game-enemy-telegraph-shape` (no console error artifacts).

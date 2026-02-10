@@ -4,9 +4,9 @@ import { spawnDamagePopupsFromEvents, updateDamagePopups } from "../../src/comba
 describe("combatFeedbackSystem", () => {
   it("damageイベントからポップアップを生成する", () => {
     const events = [
-      { kind: "damage", enemyId: "enemy-1", damage: 12, worldX: 100, worldY: 200 },
+      { kind: "damage", targetType: "enemy", enemyId: "enemy-1", damage: 12, worldX: 100, worldY: 200 },
       { kind: "status", enemyId: "enemy-1", value: "poison" },
-      { kind: "damage", enemyId: "enemy-2", damage: 7.4, worldX: 120.2, worldY: 210.9 },
+      { kind: "damage", targetType: "player", enemyId: "enemy-2", damage: 7.4, worldX: 120.2, worldY: 210.9 },
     ];
 
     const popups = spawnDamagePopupsFromEvents(events, 10);
@@ -20,6 +20,7 @@ describe("combatFeedbackSystem", () => {
       ageSec: 0,
       lifetimeSec: 0.45,
       alpha: 1,
+      targetType: "enemy",
     });
     expect(popups[1]).toMatchObject({
       id: "popup-10-1",
@@ -29,6 +30,7 @@ describe("combatFeedbackSystem", () => {
       ageSec: 0,
       lifetimeSec: 0.45,
       alpha: 1,
+      targetType: "player",
     });
   });
 
@@ -42,6 +44,7 @@ describe("combatFeedbackSystem", () => {
         ageSec: 0,
         lifetimeSec: 0.45,
         alpha: 1,
+        targetType: "player",
       },
     ];
 
@@ -49,6 +52,7 @@ describe("combatFeedbackSystem", () => {
     expect(after100ms).toHaveLength(1);
     expect(after100ms[0].y).toBeCloseTo(47.2, 5);
     expect(after100ms[0].alpha).toBeCloseTo(1 - 0.1 / 0.45, 5);
+    expect(after100ms[0].targetType).toBe("player");
 
     const expired = updateDamagePopups(after100ms, 0.5);
     expect(expired).toHaveLength(0);

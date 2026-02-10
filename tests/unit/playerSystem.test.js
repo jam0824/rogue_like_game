@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createPlayerState,
+  getPlayerHitFlashAlpha,
   getPlayerFeetHitbox,
   getPlayerFrame,
   setPointerTarget,
@@ -65,6 +66,9 @@ describe("playerSystem", () => {
 
       expect(player.x).toBe(expectedX);
       expect(player.y).toBe(expectedY);
+      expect(player.hp).toBe(100);
+      expect(player.maxHp).toBe(100);
+      expect(player.hitFlashTimerSec).toBe(0);
     });
 
     it("開始部屋中心が不可なら開始部屋内の代替歩行可能タイルにスポーンする", () => {
@@ -186,6 +190,21 @@ describe("playerSystem", () => {
       expect(player).toEqual(before);
     });
 
+    it("被弾フラッシュタイマーを毎フレーム減衰させる", () => {
+      const dungeon = createDungeon({
+        walkableGrid: createGrid(8, 8, true),
+        rooms: [{ id: 0, x: 1, y: 1, w: 3, h: 3, centerX: 2, centerY: 2 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({ pointerActive: false, target: null, hitFlashTimerSec: 0.12 });
+
+      updatePlayer(player, dungeon, 0.03);
+      expect(player.hitFlashTimerSec).toBeCloseTo(0.09, 5);
+
+      updatePlayer(player, dungeon, 0.2);
+      expect(player.hitFlashTimerSec).toBe(0);
+    });
+
     it("ターゲット未設定なら移動停止して animTime を 0 にする", () => {
       const dungeon = createDungeon({
         walkableGrid: createGrid(8, 8, true),
@@ -282,6 +301,19 @@ describe("playerSystem", () => {
         width: 32,
         height: 32,
       });
+    });
+
+    it("getPlayerHitFlashAlpha は 0..1 を返す", () => {
+      expect(getPlayerHitFlashAlpha(null)).toBe(0);
+
+      const player = { hitFlashTimerSec: 0.12, hitFlashDurationSec: 0.12 };
+      expect(getPlayerHitFlashAlpha(player)).toBe(1);
+
+      player.hitFlashTimerSec = 0.06;
+      expect(getPlayerHitFlashAlpha(player)).toBeCloseTo(0.5, 5);
+
+      player.hitFlashTimerSec = 0;
+      expect(getPlayerHitFlashAlpha(player)).toBe(0);
     });
   });
 });
