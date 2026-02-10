@@ -331,6 +331,56 @@ describe("enemySystem", () => {
     expect(enemy.attack.phase).toBe("cooldown");
   });
 
+  it("windup終了直後の attack 開始フレームで武器transformが確定している", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-attack-transform-01" });
+    const attackProfile = createEnemyAttackProfile({
+      windupSec: 0.01,
+      executeSec: 0.2,
+      recoverSec: 0.1,
+      cooldownAfterRecoverSec: 0.1,
+      engageRangePx: 64,
+      attackRangePx: 999,
+      weapons: [
+        {
+          weaponDefId: "weapon_sword_01",
+          width: 32,
+          height: 64,
+          radiusPx: 24,
+          angularSpeed: 0,
+          executeDurationSec: 0.2,
+        },
+      ],
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-attack-transform-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    const [weapon] = getEnemyWeaponRuntimes(enemy);
+    const player = createPlayer({ x: enemy.x, y: enemy.y });
+
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.005);
+    expect(enemy.attack.phase).toBe("windup");
+    expect(weapon.visible).toBe(false);
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(enemy.attack.phase).toBe("attack");
+    expect(weapon.visible).toBe(true);
+
+    const enemyCenterX = enemy.x + enemy.width / 2;
+    const enemyCenterY = enemy.y + enemy.height / 2;
+    const weaponCenterX = weapon.x + weapon.width / 2;
+    const weaponCenterY = weapon.y + weapon.height / 2;
+    const distanceToCenter = Math.hypot(weaponCenterX - enemyCenterX, weaponCenterY - enemyCenterY);
+
+    expect(distanceToCenter).toBeCloseTo(24, 5);
+    expect(weapon.rotationDeg).toBeCloseTo(90, 5);
+    expect(weapon.rotationRad).toBeCloseTo(Math.PI / 2, 5);
+  });
+
   it("攻撃中に敵武器AABBが重なるとプレイヤー被弾し、武器ごとに1回ヒットする", () => {
     const dungeon = createDungeon();
     const enemyDef = createEnemyDefinition({ id: "enemy-hit-01" });

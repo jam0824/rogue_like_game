@@ -342,3 +342,13 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (11 files, 68 tests)
   - `npm run test:checks` -> PASS
   - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-enemy-idle-step`; no `errors-*.json` artifacts.
+- 2026-02-11: Fixed enemy weapon one-frame stale transform on `windup -> attack` transition.
+  - `src/enemy/enemySystem.js`: after `setEnemyAttackPhase(...ATTACK...)`, now immediately calls `updateEnemyWeaponVisuals(enemy, player, 0)` before return.
+  - Purpose: resolve start-frame weapon position/rotation before first visible attack frame; no timing change to hit application.
+- 2026-02-11: Added verification for attack-start transform initialization.
+  - `tests/unit/enemySystem.test.js`: added case validating attack-start weapon visibility + initialized orbit distance + resolved rotation in first attack frame.
+  - `scripts/check_enemy_attack.mjs`: added runtime assertion at attack start for visible weapon + initialized position/rotation.
+- 2026-02-11: Validation complete for attack-start transform fix:
+  - `npm run unit` -> PASS (11 files, 69 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-enemy-attack-start-fix`; no `errors-*.json` artifacts.

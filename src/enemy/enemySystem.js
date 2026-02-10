@@ -1137,6 +1137,7 @@ function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
 
     if (attack.phase === ENEMY_ATTACK_PHASE.WINDUP && attack.phaseTimerSec <= 0) {
       setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.ATTACK, attack.executeSec);
+      updateEnemyWeaponVisuals(enemy, player, 0);
       return;
     }
 

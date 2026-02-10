@@ -141,6 +141,20 @@ function main() {
   let damageEvents = [];
   for (let i = 0; i < 120; i += 1) {
     const events = updateEnemyAttacks(enemies, player, dungeon, DT);
+    if (enemy.attack.phase === "attack") {
+      const firstWeapon = getEnemyWeaponRuntimes(enemy)[0];
+      const enemyCenterX = enemy.x + enemy.width / 2;
+      const enemyCenterY = enemy.y + enemy.height / 2;
+      const weaponCenterX = firstWeapon.x + firstWeapon.width / 2;
+      const weaponCenterY = firstWeapon.y + firstWeapon.height / 2;
+      const distanceToCenter = Math.hypot(weaponCenterX - enemyCenterX, weaponCenterY - enemyCenterY);
+      assert(firstWeapon.visible === true, "attack start should make weapon visible");
+      assert(distanceToCenter <= 0.0001, "attack start weapon should be initialized to start position");
+      assert(
+        Number.isFinite(firstWeapon.rotationDeg) && Number.isFinite(firstWeapon.rotationRad),
+        "attack start weapon should have resolved rotation"
+      );
+    }
     if (events.length > 0) {
       damageEvents = events;
       break;
