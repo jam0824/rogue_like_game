@@ -48,7 +48,7 @@ import {
 
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
-const INITIAL_WEAPON_ID = "wepon_sword_01";
+const INITIAL_WEAPON_ID = "weapon_sword_01";
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 
 const appState = createAppState(INITIAL_SEED);

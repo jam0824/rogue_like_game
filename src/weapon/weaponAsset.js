@@ -8,7 +8,7 @@ function loadImage(src) {
 }
 
 async function loadAssetForDefinition(definition) {
-  const src = new URL(`../../graphic/wepon/wepon_tip/${definition.weaponFileName}`, import.meta.url).href;
+  const src = new URL(`../../graphic/weapon/weapon_tip/${definition.weaponFileName}`, import.meta.url).href;
   const image = await loadImage(src);
 
   return [

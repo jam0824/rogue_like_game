@@ -1,8 +1,8 @@
 {
-    "name_key": "name_wepon_sword_01",
-    "description_key": "description_wepon_sword_01",
+    "name_key": "name_weapon_sword_01",
+    "description_key": "description_weapon_sword_01",
 
-    "weapon_file_name": "wepon_sword_01.png",
+    "weapon_file_name": "weapon_sword_01.png",
     "width": 32,
     "height": 64,
 

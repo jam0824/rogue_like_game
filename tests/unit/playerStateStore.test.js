@@ -12,10 +12,10 @@ import {
 
 function createStarterWeaponDef() {
   return {
-    id: "wepon_sword_01",
-    nameKey: "name_wepon_sword_01",
-    descriptionKey: "description_wepon_sword_01",
-    weaponFileName: "wepon_sword_01.png",
+    id: "weapon_sword_01",
+    nameKey: "name_weapon_sword_01",
+    descriptionKey: "description_weapon_sword_01",
+    weaponFileName: "weapon_sword_01.png",
     width: 32,
     height: 64,
     rarity: "rare",
@@ -37,11 +37,11 @@ function createWeaponDefinitionsById() {
   const starter = createStarterWeaponDef();
   return {
     [starter.id]: starter,
-    wepon_spear_01: {
-      id: "wepon_spear_01",
-      nameKey: "name_wepon_spear_01",
-      descriptionKey: "description_wepon_spear_01",
-      weaponFileName: "wepon_spear_01.png",
+    weapon_spear_01: {
+      id: "weapon_spear_01",
+      nameKey: "name_weapon_spear_01",
+      descriptionKey: "description_weapon_spear_01",
+      weaponFileName: "weapon_spear_01.png",
       width: 24,
       height: 64,
       rarity: "normal",
@@ -82,7 +82,7 @@ describe("playerStateStore", () => {
     expect(state.base.base_stats).toEqual({ vit: 0, for: 0, agi: 0, pow: 0, tec: 0, arc: 0 });
     expect(state.run.equipped_weapons).toHaveLength(1);
     expect(state.run.equipped_weapons[0].weapon).toEqual({
-      weapon_def_id: "wepon_sword_01",
+      weapon_def_id: "weapon_sword_01",
       rarity: "rare",
       weapon_plus: 0,
       formation_id: "formation_id_circle01",
@@ -110,9 +110,9 @@ describe("playerStateStore", () => {
           {
             slot: 0,
             weapon: {
-              name_key: "name_wepon_sword_01",
-              description_key: "description_wepon_sword_01",
-              weapon_file_name: "wepon_sword_01.png",
+              name_key: "name_weapon_sword_01",
+              description_key: "description_weapon_sword_01",
+              weapon_file_name: "weapon_sword_01.png",
               width: 32,
               height: 64,
               rarity: "rare",
@@ -136,34 +136,34 @@ describe("playerStateStore", () => {
       storage,
       PLAYER_STATE_STORAGE_KEY,
       weaponDefs,
-      "wepon_sword_01",
+      "weapon_sword_01",
       1700000000
     );
 
     expect(state.schema_version).toBe(PLAYER_STATE_SCHEMA_VERSION);
-    expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("wepon_sword_01");
+    expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
     expect("weapon_file_name" in state.run.equipped_weapons[0].weapon).toBe(false);
     expect(state.run.equipped_weapons[0].runtime).toEqual({ attack_seq: 0, cooldown_remaining_sec: 0 });
   });
 
   it("buildWeaponDefinitionsFromPlayerState が weapon_def_id解決+formation_id上書きを行う", () => {
     const weaponDefs = createWeaponDefinitionsById();
-    const starter = weaponDefs.wepon_sword_01;
+    const starter = weaponDefs.weapon_sword_01;
     const state = createDefaultPlayerState(starter, 1700000000);
 
     state.run.equipped_weapons[0].weapon = {
-      weapon_def_id: "wepon_spear_01",
+      weapon_def_id: "weapon_spear_01",
       rarity: "rare",
       weapon_plus: 7,
       formation_id: "formation_id_circle01",
       skills: [{ id: "skill_id_ice01", plus: 2 }],
     };
 
-    const resolved = buildWeaponDefinitionsFromPlayerState(state, weaponDefs, "wepon_sword_01");
+    const resolved = buildWeaponDefinitionsFromPlayerState(state, weaponDefs, "weapon_sword_01");
 
     expect(resolved).toHaveLength(1);
-    expect(resolved[0].id).toBe("wepon_spear_01");
-    expect(resolved[0].weaponFileName).toBe("wepon_spear_01.png");
+    expect(resolved[0].id).toBe("weapon_spear_01");
+    expect(resolved[0].weaponFileName).toBe("weapon_spear_01.png");
     expect(resolved[0].formationId).toBe("formation_id_circle01");
     expect(resolved[0].baseDamage).toBe(8);
     expect(resolved[0].weaponPlus).toBe(7);

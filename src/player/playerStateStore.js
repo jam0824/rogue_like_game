@@ -1,7 +1,7 @@
 export const PLAYER_STATE_SCHEMA_VERSION = "player_state_v1";
 export const PLAYER_STATE_STORAGE_KEY = "rogue_like_game.player_state_v1";
 
-const DEFAULT_STARTER_WEAPON_DEF_ID = "wepon_sword_01";
+const DEFAULT_STARTER_WEAPON_DEF_ID = "weapon_sword_01";
 const LEGACY_WEAPON_DEF_KEYS = [
   "name_key",
   "description_key",
@@ -56,9 +56,9 @@ function getDefaultRunStats() {
 function getFallbackWeaponDef() {
   return {
     id: DEFAULT_STARTER_WEAPON_DEF_ID,
-    nameKey: "name_wepon_sword_01",
-    descriptionKey: "description_wepon_sword_01",
-    weaponFileName: "wepon_sword_01.png",
+    nameKey: "name_weapon_sword_01",
+    descriptionKey: "description_weapon_sword_01",
+    weaponFileName: "weapon_sword_01.png",
     width: 32,
     height: 64,
     rarity: "rare",

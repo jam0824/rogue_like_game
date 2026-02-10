@@ -74,7 +74,7 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup)
   - `npm test` -> PASS (unit + checks)
 - 2026-02-09: Playwright smoke check executed with idle action payload using skill client (`tests/actions/idle.json`) against local server; screenshot + state JSON captured under `/tmp/rogue_like_game_playwright_smoke` and visually/state-checked with no console-error artifacts generated.
-- 2026-02-09: Added player auto-attack v1 with initial weapon load (`wepon_sword_01`) + circle formation (`formation_circle_01`), including runtime weapon orbit, attack sequence cooldown, hit_set gating, hit_num, and pierce_count rules.
+- 2026-02-09: Added player auto-attack v1 with initial weapon load (`weapon_sword_01`) + circle formation (`formation_circle_01`), including runtime weapon orbit, attack sequence cooldown, hit_set gating, hit_num, and pierce_count rules.
 - 2026-02-09: Added weapon data pipeline and assets:
   - `src/weapon/weaponDb.js` (DB discovery + validation + normalization)
   - `src/weapon/formationDb.js` (formation discovery + validation + normalization)
@@ -128,7 +128,7 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - observed subsequent state: popup removed after lifetime; no `errors-*.json` artifacts generated.
 - TODO: For clearer visual QA, consider a temporary debug zoom/marker mode around player combat area to make popup/flash easier to inspect in full-map captures.
 - 2026-02-09: Updated related specs to match implemented combat feedback and runtime values:
-  - `spec/武器システム仕様_v1_4.md`: added v1 feedback rules (weapon rotation angle convention, damage popups, enemy hit flash), reflected current starter weapon values (`wepon_sword_01`, `formation_id_circle01`, `pierce_count=10`), and documented `render_game_to_text` combat debug fields.
+  - `spec/武器システム仕様_v1_4.md`: added v1 feedback rules (weapon rotation angle convention, damage popups, enemy hit flash), reflected current starter weapon values (`weapon_sword_01`, `formation_id_circle01`, `pierce_count=10`), and documented `render_game_to_text` combat debug fields.
   - `spec/敵キャラ仕様_v1_5.md`: added hit-flash runtime behavior (`hitFlashTimerSec`, `hitFlashDurationSec`, `hitFlashAlpha`) and updated weapon-spec reference link.
   - aligned cross-document references from `武器システム仕様_v1.md` to `武器システム仕様_v1_4.md` in `spec/ゲーム概要_v2.md`, `spec/ステータス仕様_v1_3.md`, and `spec/ダンジョン仕様_v1.md`.
 
@@ -207,3 +207,17 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - Formation override run (`output/web-game-weapon-instance-formation-check`) confirmed runtime remains stable with invalid saved formation id via fallback, while playerState keeps saved instance value.
 
 - TODO: When more formation files are introduced, decide whether to auto-normalize invalid saved `formation_id` inside persisted playerState (currently runtime fallback only).
+- 2026-02-10: Normalized weapon typo naming across the repository (legacy misspelling -> `weapon`) for IDs, key names, DB/asset paths, and docs.
+- 2026-02-10: Renamed tracked weapon resources/paths:
+  - `db/<legacy-typo>_db/*` -> `db/weapon_db/*`
+  - `db/weapon_db/<legacy-typo>_sword_01.json` -> `db/weapon_db/weapon_sword_01.json`
+  - `db/weapon_db/<legacy-typo>_db_template/<legacy-typo>_db_template.json` -> `db/weapon_db/weapon_db_template/weapon_db_template.json`
+  - `graphic/<legacy-typo>/<legacy-typo>_tip/<legacy-typo>_sword_01.png` -> `graphic/weapon/weapon_tip/weapon_sword_01.png`
+- 2026-02-10: Validation complete after typo normalization:
+  - `rg -n '<legacy-typo-pattern>' .` -> 0 hits
+  - `npm run unit` -> PASS (8 files, 41 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/player-attack)
+  - `npm test` -> PASS
+  - Playwright skill-client smoke (`tests/actions/idle.json`) output at `output/web-game-weapon-typo-fix`:
+    - `state-0.json` includes `weapon_sword_01` in `weaponDefId` / `weapon_def_id`
+    - no `errors-*.json` artifacts generated.

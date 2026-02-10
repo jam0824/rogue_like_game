@@ -1,4 +1,4 @@
-const WEAPON_DB_FALLBACK_FILE_NAMES = ["wepon_sword_01.json"];
+const WEAPON_DB_FALLBACK_FILE_NAMES = ["weapon_sword_01.json"];
 
 const REQUIRED_KEYS = [
   "name_key",
@@ -92,7 +92,7 @@ function normalizeWeaponRecord(rawWeapon, fileName) {
 }
 
 async function loadWeaponFile(fileName, cacheBustKey) {
-  const url = new URL(`../../db/wepon_db/${fileName}`, import.meta.url);
+  const url = new URL(`../../db/weapon_db/${fileName}`, import.meta.url);
   if (cacheBustKey) {
     url.searchParams.set("cb", String(cacheBustKey));
   }
@@ -132,7 +132,7 @@ function extractWeaponJsonFileNamesFromDirectoryHtml(html) {
 }
 
 async function discoverWeaponDbFileNames(cacheBustKey) {
-  const directoryUrl = new URL("../../db/wepon_db/", import.meta.url);
+  const directoryUrl = new URL("../../db/weapon_db/", import.meta.url);
   if (cacheBustKey) {
     directoryUrl.searchParams.set("cb", String(cacheBustKey));
   }

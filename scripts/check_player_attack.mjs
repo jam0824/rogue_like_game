@@ -16,7 +16,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
-const weaponDbFile = path.join(projectRoot, "db", "wepon_db", "wepon_sword_01.json");
+const weaponDbFile = path.join(projectRoot, "db", "weapon_db", "weapon_sword_01.json");
 const formationDbFile = path.join(projectRoot, "db", "formation_db", "formation_circle_01.json");
 const DT = 1 / 60;
 const HIT_DT = 1e-6;
@@ -30,7 +30,7 @@ function assert(condition, message) {
 function loadInitialWeaponDefinitionFromFs() {
   const raw = JSON.parse(fs.readFileSync(weaponDbFile, "utf-8"));
   return {
-    id: "wepon_sword_01",
+    id: "weapon_sword_01",
     weaponFileName: raw.weapon_file_name,
     width: raw.width,
     height: raw.height,

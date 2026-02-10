@@ -17,7 +17,7 @@ function createPlayer(overrides = {}) {
 function createWeaponDefinition(overrides = {}) {
   return {
     id: "test-weapon",
-    weaponFileName: "wepon_sword_01.png",
+    weaponFileName: "weapon_sword_01.png",
     width: 32,
     height: 32,
     baseDamage: 10,
