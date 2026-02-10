@@ -1,6 +1,7 @@
 const WEAPON_DB_FALLBACK_FILE_NAMES = ["weapon_sword_01.json"];
 
 const REQUIRED_KEYS = [
+  "id",
   "name_key",
   "description_key",
   "weapon_file_name",
@@ -26,6 +27,10 @@ function assertHasRequiredKeys(rawWeapon, fileName) {
 }
 
 function assertWeaponShape(rawWeapon, fileName) {
+  if (typeof rawWeapon.id !== "string" || rawWeapon.id.trim().length === 0) {
+    throw new Error(`Weapon DB ${fileName} has invalid id: ${rawWeapon.id}`);
+  }
+
   if (!Number.isFinite(rawWeapon.width) || rawWeapon.width <= 0) {
     throw new Error(`Weapon DB ${fileName} has invalid width: ${rawWeapon.width}`);
   }
@@ -68,9 +73,16 @@ function assertWeaponShape(rawWeapon, fileName) {
 function normalizeWeaponRecord(rawWeapon, fileName) {
   assertHasRequiredKeys(rawWeapon, fileName);
   assertWeaponShape(rawWeapon, fileName);
+  const fileBaseName = fileName.replace(/\.json$/, "");
+
+  if (rawWeapon.id !== fileBaseName) {
+    console.warn(
+      `Weapon DB ${fileName} id mismatch: file name id=${fileBaseName}, json id=${rawWeapon.id}. Using JSON id.`
+    );
+  }
 
   return {
-    id: fileName.replace(/\.json$/, ""),
+    id: rawWeapon.id,
     nameKey: rawWeapon.name_key,
     descriptionKey: rawWeapon.description_key,
     weaponFileName: rawWeapon.weapon_file_name,
@@ -163,5 +175,15 @@ async function discoverWeaponDbFileNames(cacheBustKey) {
 export async function loadWeaponDefinitions() {
   const cacheBustKey = Date.now();
   const fileNames = await discoverWeaponDbFileNames(cacheBustKey);
-  return Promise.all(fileNames.map((fileName) => loadWeaponFile(fileName, cacheBustKey)));
+  const definitions = await Promise.all(fileNames.map((fileName) => loadWeaponFile(fileName, cacheBustKey)));
+  const seenIds = new Set();
+
+  for (const definition of definitions) {
+    if (seenIds.has(definition.id)) {
+      throw new Error(`Weapon DB has duplicate id: ${definition.id}`);
+    }
+    seenIds.add(definition.id);
+  }
+
+  return definitions;
 }

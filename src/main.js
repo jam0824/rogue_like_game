@@ -310,6 +310,15 @@ let formationDefinitionsById = {};
 let weaponAssets = {};
 let damagePopupSeq = 0;
 
+function resolveStarterWeaponDefId() {
+  if (weaponDefinitionsById?.[INITIAL_WEAPON_ID]) {
+    return INITIAL_WEAPON_ID;
+  }
+
+  const loadedWeaponIds = Object.keys(weaponDefinitionsById ?? {});
+  return loadedWeaponIds.length > 0 ? loadedWeaponIds[0] : null;
+}
+
 async function refreshEnemyResources() {
   const definitions = await loadEnemyDefinitions();
   const assets = await loadEnemyAssets(definitions);
@@ -331,13 +340,13 @@ function ensurePlayerStateLoaded() {
   if (appState.playerState) {
     return;
   }
-  const starterWeaponDef = weaponDefinitionsById[INITIAL_WEAPON_ID] ?? null;
-  if (starterWeaponDef) {
+  const starterWeaponDefId = resolveStarterWeaponDefId();
+  if (starterWeaponDefId) {
     appState.playerState = loadPlayerStateFromStorage(
       appStorage,
       PLAYER_STATE_STORAGE_KEY,
       weaponDefinitionsById,
-      INITIAL_WEAPON_ID,
+      starterWeaponDefId,
       nowUnixSec()
     );
     return;
@@ -507,10 +516,14 @@ async function regenerate(seed) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
     const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed);
+    const starterWeaponDefId = resolveStarterWeaponDefId();
+    if (!starterWeaponDefId) {
+      throw new Error("Weapon DB is empty.");
+    }
     const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(
       appState.playerState,
       weaponDefinitionsById,
-      INITIAL_WEAPON_ID
+      starterWeaponDefId
     );
     const fallbackFormationId = Object.keys(formationDefinitionsById)[0] ?? null;
     const weaponDefinitionsForRun = restoredWeaponDefinitions.map((definition) => {
@@ -536,7 +549,7 @@ async function regenerate(seed) {
       return definition;
     });
     if (weaponDefinitionsForRun.length === 0) {
-      throw new Error(`Initial weapon is missing in DB: ${INITIAL_WEAPON_ID}`);
+      throw new Error(`Initial weapon is missing in DB: ${starterWeaponDefId}`);
     }
 
     const weapons = createPlayerWeapons(weaponDefinitionsForRun, formationDefinitionsById, player);

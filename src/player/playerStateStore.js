@@ -465,10 +465,14 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
       let slotEntry = equippedWeapons[index];
 
       if (!slotEntry) {
+        const runtimeWeaponDefId =
+          typeof runtimeWeapon?.weaponDefId === "string" && runtimeWeapon.weaponDefId.length > 0
+            ? runtimeWeapon.weaponDefId
+            : DEFAULT_STARTER_WEAPON_DEF_ID;
         slotEntry = {
           slot: index,
           weapon: {
-            weapon_def_id: DEFAULT_STARTER_WEAPON_DEF_ID,
+            weapon_def_id: runtimeWeaponDefId,
             rarity: "rare",
             weapon_plus: 0,
             formation_id: typeof runtimeWeapon?.formationId === "string" ? runtimeWeapon.formationId : "formation_id_circle01",

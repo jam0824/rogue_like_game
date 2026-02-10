@@ -197,4 +197,38 @@ describe("playerStateStore", () => {
     expect(runtimeAfterLoad[0].cooldownRemainingSec).toBe(0.75);
     expect(runtimeAfterLoad[0].hitSet.size).toBe(0);
   });
+
+  it("syncPlayerStateFromRuntime の missing slot は runtime weaponDefId を優先する", () => {
+    const starter = createStarterWeaponDef();
+    const state = createDefaultPlayerState(starter, 1700000000);
+    state.run.equipped_weapons = [];
+
+    syncPlayerStateFromRuntime(
+      state,
+      { x: 0, y: 0 },
+      [{ weaponDefId: "weapon_spear_01", formationId: "formation_id_line_front01", attackSeq: 2, cooldownRemainingSec: 0.3 }],
+      1700002222
+    );
+
+    expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_spear_01");
+    expect(state.run.equipped_weapons[0].runtime).toEqual({
+      attack_seq: 2,
+      cooldown_remaining_sec: 0.3,
+    });
+  });
+
+  it("syncPlayerStateFromRuntime の missing slot は不正 runtime weaponDefId を既定値へフォールバックする", () => {
+    const starter = createStarterWeaponDef();
+    const state = createDefaultPlayerState(starter, 1700000000);
+    state.run.equipped_weapons = [];
+
+    syncPlayerStateFromRuntime(
+      state,
+      { x: 0, y: 0 },
+      [{ weaponDefId: "", formationId: "formation_id_line_front01", attackSeq: 1, cooldownRemainingSec: 0.1 }],
+      1700003333
+    );
+
+    expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
+  });
 });

@@ -221,3 +221,12 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - Playwright skill-client smoke (`tests/actions/idle.json`) output at `output/web-game-weapon-typo-fix`:
     - `state-0.json` includes `weapon_sword_01` in `weaponDefId` / `weapon_def_id`
     - no `errors-*.json` artifacts generated.
+- 2026-02-10: Switched weapon definition ID source from filename to JSON `id` in `src/weapon/weaponDb.js`.
+- 2026-02-10: Added weapon DB validation policy updates: required `id`, filename/id mismatch warning with JSON-id priority, duplicate-id hard error.
+- 2026-02-10: Updated starter weapon ID resolution in `src/main.js` to prefer `INITIAL_WEAPON_ID` and fallback to first loaded weapon definition ID.
+- 2026-02-10: Updated `syncPlayerStateFromRuntime` missing-slot behavior to prefer runtime `weaponDefId` and fallback to default only when invalid.
+- 2026-02-10: Added new unit suite `tests/unit/weaponDb.test.js` and expanded `tests/unit/playerStateStore.test.js` for runtime `weaponDefId` slot-fill behavior.
+- 2026-02-10: Validation run complete after weapon-id refactor.
+  - `npm run unit` PASS (9 files / 47 tests)
+  - `npm run test:checks` PASS
+  - Playwright client run (`output/web-game-weapon-id-ref`) produced `shot-0.png` + `state-0.json`; no `errors-*.json` artifact generated.
