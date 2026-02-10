@@ -56,6 +56,22 @@ function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function resolveEnemyRangeConfig(attackProfile) {
+  const preferredRawPx = Math.max(0, toFiniteNumber(attackProfile?.preferredRangePx, 0));
+  const retreatRangePx = Math.max(0, toFiniteNumber(attackProfile?.retreatRangePx, 0));
+  const engageRawPx = Math.max(0, toFiniteNumber(attackProfile?.engageRangePx, 0));
+  const engageRangePx = Math.max(retreatRangePx, engageRawPx);
+  const preferredRangePx = preferredRawPx;
+  const rangeMoveTargetPx = engageRangePx > 0 ? engageRangePx : preferredRangePx;
+
+  return {
+    preferredRangePx,
+    engageRangePx,
+    retreatRangePx,
+    rangeMoveTargetPx,
+  };
+}
+
 function normalizeVector(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
   if (length <= VECTOR_EPSILON) {
@@ -310,11 +326,17 @@ function canNoticePlayer(enemy, player, dungeon) {
 function switchBehaviorMode(enemy, nextMode) {
   if (enemy.behaviorMode === nextMode) {
     enemy.isChasing = nextMode === BEHAVIOR_MODE.CHASE;
+    if (nextMode !== BEHAVIOR_MODE.CHASE) {
+      enemy.rangeIntent = "hold";
+    }
     return;
   }
 
   enemy.behaviorMode = nextMode;
   enemy.isChasing = nextMode === BEHAVIOR_MODE.CHASE;
+  if (nextMode !== BEHAVIOR_MODE.CHASE) {
+    enemy.rangeIntent = "hold";
+  }
   enemy.walkDirection = null;
   enemy.directionTimer = 0;
 }
@@ -448,16 +470,39 @@ function moveRandomWalkStep(enemy, dungeon, stepDistance, stepDuration) {
 function moveChaseStep(enemy, dungeon, player, stepDistance) {
   const enemyCenter = getEnemyCenter(enemy);
   const playerFeetCenter = getPlayerFeetCenter(player);
-  const toTargetX = playerFeetCenter.x - enemyCenter.x;
-  const toTargetY = playerFeetCenter.y - enemyCenter.y;
-  const distance = Math.hypot(toTargetX, toTargetY);
+  const toPlayerX = playerFeetCenter.x - enemyCenter.x;
+  const toPlayerY = playerFeetCenter.y - enemyCenter.y;
+  const distance = Math.hypot(toPlayerX, toPlayerY);
+  const retreatRangePx = Math.max(0, toFiniteNumber(enemy.retreatRangePx, 0));
+  const rangeMoveTargetPx = Math.max(0, toFiniteNumber(enemy.rangeMoveTargetPx, 0));
 
   if (distance <= MOVE_EPSILON) {
+    enemy.rangeIntent = "hold";
     return { dx: 0, dy: 0, moved: false };
   }
 
-  const desiredDx = (toTargetX / distance) * stepDistance;
-  const desiredDy = (toTargetY / distance) * stepDistance;
+  let moveDirX = 0;
+  let moveDirY = 0;
+
+  if (rangeMoveTargetPx <= 0 && retreatRangePx <= 0) {
+    enemy.rangeIntent = "legacy_chase";
+    moveDirX = toPlayerX / distance;
+    moveDirY = toPlayerY / distance;
+  } else if (distance < retreatRangePx) {
+    enemy.rangeIntent = "retreat";
+    moveDirX = -toPlayerX / distance;
+    moveDirY = -toPlayerY / distance;
+  } else if (distance > rangeMoveTargetPx) {
+    enemy.rangeIntent = "approach";
+    moveDirX = toPlayerX / distance;
+    moveDirY = toPlayerY / distance;
+  } else {
+    enemy.rangeIntent = "hold";
+    return { dx: 0, dy: 0, moved: false };
+  }
+
+  const desiredDx = moveDirX * stepDistance;
+  const desiredDy = moveDirY * stepDistance;
 
   if (enemy.type === "walk") {
     const candidate = resolveWalkChaseStep(enemy, dungeon, desiredDx, desiredDy);
@@ -557,6 +602,7 @@ function updateEnemyWeaponTransform(weaponRuntime, enemy, aimDir, dt) {
 
 function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
   const profile = attackProfile && typeof attackProfile === "object" ? attackProfile : null;
+  const rangeConfig = resolveEnemyRangeConfig(profile);
   const profileWeapons = Array.isArray(profile?.weapons) ? profile.weapons : [];
   const weaponCount = Math.max(1, profileWeapons.length);
   const visibilityMode = profile?.weaponVisibilityMode === "always" ? "always" : "burst";
@@ -608,6 +654,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       cooldownAfterRecoverSec: 0,
       weaponAimMode: "none",
       weaponVisibilityMode: "burst",
+      engageRangePx: 0,
       attackRangePx: Number.POSITIVE_INFINITY,
       losRequired: false,
       attackLinked: true,
@@ -628,6 +675,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
     cooldownAfterRecoverSec: Math.max(0, toFiniteNumber(profile?.cooldownAfterRecoverSec, 0)),
     weaponAimMode: profile?.weaponAimMode === "move_dir" || profile?.weaponAimMode === "none" ? profile.weaponAimMode : "to_target",
     weaponVisibilityMode: visibilityMode,
+    engageRangePx: rangeConfig.engageRangePx,
     attackRangePx: Math.max(0, toFiniteNumber(profile?.attackRangePx, Number.POSITIVE_INFINITY)),
     losRequired: profile?.losRequired === true,
     attackLinked: profile?.attackLinked !== false,
@@ -641,6 +689,7 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
   const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
   const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
   const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
+  const rangeConfig = resolveEnemyRangeConfig(attackProfile);
   const vit = toFiniteNumber(definition.vit, 10);
   const fortitude = toFiniteNumber(definition.for, 10);
   const agi = toFiniteNumber(definition.agi, 10);
@@ -674,6 +723,11 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     distanceToPlayerPx: null,
     noticeRadiusPx,
     giveupRadiusPx,
+    preferredRangePx: rangeConfig.preferredRangePx,
+    engageRangePx: rangeConfig.engageRangePx,
+    retreatRangePx: rangeConfig.retreatRangePx,
+    rangeMoveTargetPx: rangeConfig.rangeMoveTargetPx,
+    rangeIntent: "legacy_chase",
     maxHp,
     hp: maxHp,
     isDead: false,
@@ -784,6 +838,7 @@ function updateEnemy(enemy, dungeon, dt, player) {
     if (enemy.behaviorMode === BEHAVIOR_MODE.CHASE && player) {
       stepResult = moveChaseStep(enemy, dungeon, player, stepDistance);
     } else {
+      enemy.rangeIntent = "hold";
       stepResult = moveRandomWalkStep(enemy, dungeon, stepDistance, stepDuration);
     }
 
@@ -849,6 +904,10 @@ function shouldStartEnemyAttack(enemy, player, dungeon) {
   }
 
   const distanceToPlayerPx = getDistanceToPlayer(enemy, player);
+  if (attack.engageRangePx > 0 && distanceToPlayerPx > attack.engageRangePx) {
+    return false;
+  }
+
   if (Number.isFinite(attack.attackRangePx) && distanceToPlayerPx > attack.attackRangePx) {
     return false;
   }

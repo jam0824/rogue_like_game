@@ -308,3 +308,18 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (11 files, 63 tests)
   - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
   - Playwright skill-client run with `tests/actions/enemy_notice_giveup.json` captured artifacts at `output/web-game-enemy-telegraph-shape` (no console error artifacts).
+- 2026-02-11: Implemented enemy range-control v1.2 (`preferred/engage/retreat`) with minimal behavior changes.
+  - AI profile validation (`src/enemy/enemyAiProfileDb.js`): explicit non-negative checks for `preferred_range_tiles`, `engage_range_tiles`, `retreat_range_tiles`.
+  - Enemy attack profile build (`src/main.js`): added `preferredRangePx`, `engageRangePx`, `retreatRangePx` from AI profile tiles.
+  - Enemy runtime (`src/enemy/enemySystem.js`): added `preferredRangePx`, `engageRangePx`, `retreatRangePx`, `rangeMoveTargetPx`, `rangeIntent` and runtime-safe range normalization (`engage=max(engage,retreat)`).
+  - Chase movement now uses distance band intent (`approach` / `hold` / `retreat` / `legacy_chase`) while preserving existing walk/fly passability handling.
+  - Attack gate updated: windup start requires `distance <= engageRangePx` when engage range is configured; existing active-range + LOS checks preserved.
+  - Text state extended (`src/main.js` / `render_game_to_text`): `distanceToPlayerPx`, range fields, and `rangeIntent` per enemy.
+- 2026-02-11: Added/updated tests for range-control v1.2.
+  - `tests/unit/enemyAiProfileDb.test.js`: normalization checks for range fields + negative value rejection.
+  - `tests/unit/enemySystem.test.js`: approach/hold/retreat behavior, retreat>engage runtime normalization, engage-gated attack start.
+  - `scripts/check_enemy_attack.mjs`: added engage-range gate scenario before windup.
+- 2026-02-11: Validation complete for range-control v1.2:
+  - `npm run unit` -> PASS (11 files, 67 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-range-v12`; `state-0.json` includes new range debug fields and no `errors-*.json` artifact.

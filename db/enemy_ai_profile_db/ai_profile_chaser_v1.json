@@ -2,9 +2,9 @@
     "id": "ai_profile_chaser_v1",
     "role": "chaser",
   
-    "preferred_range_tiles": 1.2,
-    "engage_range_tiles": 1.0,
-    "retreat_range_tiles": 0.0,
+    "preferred_range_tiles": 2.2,
+    "engage_range_tiles": 2.0,
+    "retreat_range_tiles": 1.5,
     "strafe_chance": 0.05,
     "repath_interval_sec": 0.40,
   

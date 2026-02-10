@@ -9,6 +9,9 @@ function createAiProfileRecord(overrides = {}) {
     recover_sec: 0.35,
     weapon_aim_mode: "to_target",
     weapon_visibility_mode: "burst",
+    preferred_range_tiles: 1.2,
+    engage_range_tiles: 1.0,
+    retreat_range_tiles: 0.5,
     weapon_attack_cycles: 1,
     weapon_active_range_tiles: 2,
     weapon_cooldown_mul: 1,
@@ -111,9 +114,25 @@ describe("enemyAiProfileDb", () => {
       recoverSec: 0.35,
       weaponAimMode: "to_target",
       weaponVisibilityMode: "burst",
+      preferredRangeTiles: 1.2,
+      engageRangeTiles: 1.0,
+      retreatRangeTiles: 0.5,
       weaponActiveRangeTiles: 2,
       losRequired: true,
     });
+  });
+
+  it("レンジ系パラメータが負値ならエラー", async () => {
+    setupFetchMock({
+      fileNames: ["ai_profile_chaser_v1.json"],
+      recordsByFileName: {
+        "ai_profile_chaser_v1.json": createAiProfileRecord({
+          engage_range_tiles: -1,
+        }),
+      },
+    });
+
+    await expect(loadEnemyAiProfiles()).rejects.toThrow("invalid engage_range_tiles");
   });
 
   it("必須キー欠損はエラー", async () => {

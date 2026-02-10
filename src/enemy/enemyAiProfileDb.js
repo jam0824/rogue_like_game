@@ -87,6 +87,33 @@ function assertEnemyAiProfileShape(rawProfile, fileName) {
   if (rawProfile.los_required !== undefined && typeof rawProfile.los_required !== "boolean") {
     throw new Error(`Enemy AI profile DB ${fileName} has invalid los_required: ${rawProfile.los_required}`);
   }
+
+  if (
+    rawProfile.preferred_range_tiles !== undefined &&
+    (!Number.isFinite(rawProfile.preferred_range_tiles) || rawProfile.preferred_range_tiles < 0)
+  ) {
+    throw new Error(
+      `Enemy AI profile DB ${fileName} has invalid preferred_range_tiles: ${rawProfile.preferred_range_tiles}`
+    );
+  }
+
+  if (
+    rawProfile.engage_range_tiles !== undefined &&
+    (!Number.isFinite(rawProfile.engage_range_tiles) || rawProfile.engage_range_tiles < 0)
+  ) {
+    throw new Error(
+      `Enemy AI profile DB ${fileName} has invalid engage_range_tiles: ${rawProfile.engage_range_tiles}`
+    );
+  }
+
+  if (
+    rawProfile.retreat_range_tiles !== undefined &&
+    (!Number.isFinite(rawProfile.retreat_range_tiles) || rawProfile.retreat_range_tiles < 0)
+  ) {
+    throw new Error(
+      `Enemy AI profile DB ${fileName} has invalid retreat_range_tiles: ${rawProfile.retreat_range_tiles}`
+    );
+  }
 }
 
 function normalizeEnemyAiProfileRecord(rawProfile, fileName) {

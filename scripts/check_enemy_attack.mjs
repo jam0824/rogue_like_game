@@ -52,6 +52,9 @@ function createEnemyAttackProfile() {
     recoverSec: 0.08,
     executeSec: 0.2,
     cooldownAfterRecoverSec: 0.1,
+    preferredRangePx: 0,
+    engageRangePx: 48,
+    retreatRangePx: 0,
     attackRangePx: 96,
     losRequired: false,
     weaponAimMode: "to_target",
@@ -104,7 +107,7 @@ function main() {
   enemy.attackDamage = 9;
 
   const player = {
-    x: enemy.x,
+    x: enemy.x + 64,
     y: enemy.y,
     width: 32,
     height: 64,
@@ -120,9 +123,16 @@ function main() {
     hitFlashDurationSec: 0.12,
   };
 
+  const engageBlockedEvents = updateEnemyAttacks(enemies, player, dungeon, DT);
+  assert(engageBlockedEvents.length === 0, "engage-range gate should not emit events outside engage range");
+  assert(enemy.attack.phase === "cooldown", "enemy should stay in cooldown outside engage range");
+
+  player.x = enemy.x;
+  player.y = enemy.y;
+
   const windupEvents = updateEnemyAttacks(enemies, player, dungeon, DT);
   assert(windupEvents.length === 0, "windup should not emit damage events");
-  assert(enemy.attack.phase === "windup", "enemy should enter windup");
+  assert(enemy.attack.phase === "windup", "enemy should enter windup inside engage range");
   assert(getEnemyTelegraphAlpha(enemy) > 0, "windup should expose telegraph alpha");
 
   const windupWeaponVisibility = getEnemyWeaponRuntimes(enemy).every((weapon) => weapon.visible === false);

@@ -72,6 +72,9 @@ function createEnemyAttackProfile(overrides = {}) {
     recoverSec: 0.1,
     executeSec: 0.2,
     cooldownAfterRecoverSec: 0.1,
+    preferredRangePx: 0,
+    engageRangePx: 0,
+    retreatRangePx: 0,
     attackRangePx: 64,
     losRequired: false,
     weaponAimMode: "to_target",
@@ -151,6 +154,111 @@ describe("enemySystem", () => {
     updateEnemies(enemies, dungeon, 0.2, null);
     expect(enemy.hitFlashTimerSec).toBe(0);
     expect(getEnemyHitFlashAlpha(enemy)).toBe(0);
+  });
+
+  it("chase中は engage/retreat 距離帯で接近・停止・後退を切り替える", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-range-intent-01" });
+    const attackProfile = createEnemyAttackProfile({
+      preferredRangePx: 96,
+      engageRangePx: 64,
+      retreatRangePx: 32,
+      attackRangePx: 999,
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-range-intent-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    const player = createPlayer();
+
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    const getDistance = () => {
+      const enemyCenterX = enemy.x + enemy.width / 2;
+      const enemyCenterY = enemy.y + enemy.height / 2;
+      const playerFeetCenterX = player.x + player.width / 2;
+      const playerFeetCenterY = player.y + player.height - player.footHitboxHeight / 2;
+      return Math.hypot(playerFeetCenterX - enemyCenterX, playerFeetCenterY - enemyCenterY);
+    };
+
+    player.x = enemy.x + 256;
+    player.y = enemy.y;
+    const approachBefore = getDistance();
+    updateEnemies(enemies, dungeon, 1 / 60, player);
+    const approachAfter = getDistance();
+    expect(enemy.rangeIntent).toBe("approach");
+    expect(approachAfter).toBeLessThan(approachBefore);
+
+    player.x = enemy.x + 48;
+    player.y = enemy.y;
+    const holdBefore = getDistance();
+    updateEnemies(enemies, dungeon, 1 / 60, player);
+    const holdAfter = getDistance();
+    expect(enemy.rangeIntent).toBe("hold");
+    expect(holdAfter).toBeCloseTo(holdBefore, 5);
+
+    player.x = enemy.x + 4;
+    player.y = enemy.y;
+    const retreatBefore = getDistance();
+    updateEnemies(enemies, dungeon, 1 / 60, player);
+    const retreatAfter = getDistance();
+    expect(enemy.rangeIntent).toBe("retreat");
+    expect(retreatAfter).toBeGreaterThan(retreatBefore);
+  });
+
+  it("retreat > engage のときは runtime で engage が補正される", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-range-normalize-01" });
+    const attackProfile = createEnemyAttackProfile({
+      preferredRangePx: 24,
+      engageRangePx: 16,
+      retreatRangePx: 48,
+      attackRangePx: 999,
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-range-normalize-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+
+    expect(enemy.retreatRangePx).toBe(48);
+    expect(enemy.engageRangePx).toBe(48);
+    expect(enemy.rangeMoveTargetPx).toBe(48);
+    expect(enemy.attack.engageRangePx).toBe(48);
+  });
+
+  it("engage距離外では攻撃開始せず、engage内で windup 開始する", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-engage-gate-01" });
+    const attackProfile = createEnemyAttackProfile({
+      windupSec: 0.2,
+      executeSec: 0.2,
+      recoverSec: 0.1,
+      cooldownAfterRecoverSec: 0.1,
+      engageRangePx: 48,
+      attackRangePx: 999,
+      losRequired: false,
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-engage-gate-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    const player = createPlayer({
+      x: enemy.x + 220,
+      y: enemy.y,
+    });
+
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    const farEvents = updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(farEvents).toHaveLength(0);
+    expect(enemy.attack.phase).toBe("cooldown");
+
+    player.x = enemy.x;
+    player.y = enemy.y;
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(enemy.attack.phase).toBe("windup");
   });
 
   it("windup->attack->recover->cooldown を遷移し、windup中は赤点滅アルファが出る", () => {
