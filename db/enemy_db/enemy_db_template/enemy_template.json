@@ -20,5 +20,8 @@
   "tec": 10,
   "arc": 10,
 
-  "tags": ["minion"]
+  "tags": ["minion"],
+
+  "ai_profile_id": "ai_profile_chaser_v1",
+  "weapon_loadout_id": "enemy_loadout_rabbit_claw01"
 }

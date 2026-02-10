@@ -1,0 +1,15 @@
+{
+    "id": "enemy_loadout_rabbit_claw01",
+    "attack_linked": true,
+    "weapons": [
+      {
+        "weapon_def_id": "weapon_sword_01",
+        "rarity": "common",
+        "weapon_plus": 0,
+        "formation_id": "formation_id_circle01",
+        "skills": [
+          { "id": "skill_id_fire01", "plus": 0 }
+        ]
+      }
+    ]
+  }
