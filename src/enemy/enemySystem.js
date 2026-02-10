@@ -4,7 +4,6 @@ import {
   ENEMY_CHASE_SPEED_MULTIPLIER,
   ENEMY_DIRECTION_MAX_SECONDS,
   ENEMY_DIRECTION_MIN_SECONDS,
-  ENEMY_IDLE_FRAME_COL,
   ENEMY_WALK_SPEED_PX_PER_SEC,
   TILE_SIZE,
 } from "../config/constants.js";
@@ -827,7 +826,6 @@ function updateEnemy(enemy, dungeon, dt, player) {
   const substeps = Math.max(1, Math.ceil(travelDistance / MAX_SUBSTEP_PIXELS));
   const stepDistance = travelDistance / substeps;
   const stepDuration = dt / substeps;
-  const wasMoving = enemy.isMoving;
 
   let movedX = 0;
   let movedY = 0;
@@ -853,7 +851,7 @@ function updateEnemy(enemy, dungeon, dt, player) {
   const movedDistance = Math.hypot(movedX, movedY);
   if (movedDistance <= MOVE_EPSILON) {
     enemy.isMoving = false;
-    enemy.animTime = 0;
+    enemy.animTime += dt;
     return;
   }
 
@@ -861,10 +859,6 @@ function updateEnemy(enemy, dungeon, dt, player) {
   enemy.lastMoveDx = movedX;
   enemy.lastMoveDy = movedY;
   updateFacing(enemy, movedX, movedY);
-
-  if (!wasMoving) {
-    enemy.animTime = 0;
-  }
   enemy.animTime += dt;
 }
 
@@ -1189,11 +1183,8 @@ export function getEnemyFrame(enemy) {
   };
 
   const row = rowByFacing[enemy.facing] ?? 0;
-  if (!enemy.isMoving) {
-    return { row, col: ENEMY_IDLE_FRAME_COL };
-  }
-
-  const sequenceIndex = Math.floor(enemy.animTime * ENEMY_ANIM_FPS) % ENEMY_ANIM_SEQUENCE.length;
+  const animTime = Math.max(0, toFiniteNumber(enemy.animTime, 0));
+  const sequenceIndex = Math.floor(animTime * ENEMY_ANIM_FPS) % ENEMY_ANIM_SEQUENCE.length;
   return {
     row,
     col: ENEMY_ANIM_SEQUENCE[sequenceIndex],

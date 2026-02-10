@@ -329,3 +329,16 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `tests/unit/appState.test.js`: updated expected default/error-state values to `debugPlayerDamagePreviewOnly: true`.
 - 2026-02-11: Validation after default toggle change:
   - `npm run unit` -> PASS (11 files, 67 tests)
+- 2026-02-11: Implemented enemy idle-step animation (do not freeze animation while standing).
+  - `src/enemy/enemySystem.js`:
+    - removed idle-frame branch in `getEnemyFrame`; enemy frame now always uses `ENEMY_ANIM_SEQUENCE` by `animTime`.
+    - updated `updateEnemy` so `animTime` advances even when `isMoving=false`.
+    - kept `isMoving` semantics as actual movement flag (no behavior/combat/render side effects).
+  - `tests/unit/enemySystem.test.js`:
+    - added test: standing enemy keeps `isMoving=false` while `animTime` advances and frame column progresses.
+  - `scripts/check_enemy_walk.mjs`:
+    - updated animation check to expect stepping sequence even when `isMoving=false`.
+- 2026-02-11: Validation complete for enemy idle-step animation:
+  - `npm run unit` -> PASS (11 files, 68 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-enemy-idle-step`; no `errors-*.json` artifacts.

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ENEMY_WALK_SPEED_PX_PER_SEC } from "../../src/config/constants.js";
+import { ENEMY_ANIM_FPS, ENEMY_ANIM_SEQUENCE, ENEMY_WALK_SPEED_PX_PER_SEC } from "../../src/config/constants.js";
 import {
   createEnemies,
   getEnemyCombatHitbox,
+  getEnemyFrame,
   getEnemyHitFlashAlpha,
   getEnemyTelegraphAlpha,
   getEnemyWeaponRuntimes,
@@ -154,6 +155,28 @@ describe("enemySystem", () => {
     updateEnemies(enemies, dungeon, 0.2, null);
     expect(enemy.hitFlashTimerSec).toBe(0);
     expect(getEnemyHitFlashAlpha(enemy)).toBe(0);
+  });
+
+  it("停止中でも animTime が進み、足踏みフレームが更新される", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-idle-step-01" });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-idle-step-seed");
+    const [enemy] = enemies;
+
+    enemy.baseSpeedPxPerSec = 0;
+    enemy.chaseSpeedPxPerSec = 0;
+    enemy.moveSpeed = 0;
+    enemy.isMoving = false;
+    enemy.animTime = 0;
+
+    const beforeFrame = getEnemyFrame(enemy);
+    updateEnemies(enemies, dungeon, 1 / ENEMY_ANIM_FPS, null);
+    const afterFrame = getEnemyFrame(enemy);
+
+    expect(enemy.isMoving).toBe(false);
+    expect(enemy.animTime).toBeCloseTo(1 / ENEMY_ANIM_FPS, 6);
+    expect(beforeFrame.col).toBe(ENEMY_ANIM_SEQUENCE[0]);
+    expect(afterFrame.col).toBe(ENEMY_ANIM_SEQUENCE[1]);
   });
 
   it("chase中は engage/retreat 距離帯で接近・停止・後退を切り替える", () => {

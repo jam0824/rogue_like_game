@@ -147,7 +147,7 @@ function checkHeightCollisionBehavior(dungeon, walkEnemyDefinitions) {
 }
 
 function checkAnimationSequence() {
-  const movingEnemy = {
+  const enemyBase = {
     facing: "down",
     isMoving: true,
     animTime: 0,
@@ -155,14 +155,20 @@ function checkAnimationSequence() {
 
   const frameCols = [0, 1, 2, 3].map((index) => {
     const time = index / ENEMY_ANIM_FPS;
-    return getEnemyFrame({ ...movingEnemy, animTime: time }).col;
+    return getEnemyFrame({ ...enemyBase, animTime: time }).col;
   });
 
   const expected = [0, 1, 2, 1];
   assert(JSON.stringify(frameCols) === JSON.stringify(expected), `animation sequence mismatch: ${frameCols.join(",")}`);
 
-  const idleCol = getEnemyFrame({ ...movingEnemy, isMoving: false, animTime: 99 }).col;
-  assert(idleCol === 1, `idle frame should be B(1), got ${idleCol}`);
+  const idleStepCols = [0, 1, 2, 3].map((index) => {
+    const time = index / ENEMY_ANIM_FPS;
+    return getEnemyFrame({ ...enemyBase, isMoving: false, animTime: time }).col;
+  });
+  assert(
+    JSON.stringify(idleStepCols) === JSON.stringify(expected),
+    `idle-step sequence mismatch: ${idleStepCols.join(",")}`
+  );
 }
 
 function main() {
