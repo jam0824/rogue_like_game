@@ -323,3 +323,9 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (11 files, 67 tests)
   - `npm run test:checks` -> PASS
   - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-range-v12`; `state-0.json` includes new range debug fields and no `errors-*.json` artifact.
+- 2026-02-11: Changed default player-damage debug mode to preview-only (HP not reduced by default).
+  - `src/state/appState.js`: `debugPlayerDamagePreviewOnly` default/fallback switched to `true`.
+  - `index.html`: `#damage-preview-toggle` initial label/pressed-state set to preview-only (`被ダメ無効(演出のみ)`, `aria-pressed=true`).
+  - `tests/unit/appState.test.js`: updated expected default/error-state values to `debugPlayerDamagePreviewOnly: true`.
+- 2026-02-11: Validation after default toggle change:
+  - `npm run unit` -> PASS (11 files, 67 tests)

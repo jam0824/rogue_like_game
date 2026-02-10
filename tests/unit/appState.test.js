@@ -8,7 +8,7 @@ describe("appState", () => {
     expect(state).toEqual({
       seed: "12345",
       isPaused: false,
-      debugPlayerDamagePreviewOnly: false,
+      debugPlayerDamagePreviewOnly: true,
       dungeon: null,
       validation: null,
       playerState: null,
@@ -75,7 +75,7 @@ describe("appState", () => {
     expect(state).toEqual({
       seed: "999",
       isPaused: false,
-      debugPlayerDamagePreviewOnly: false,
+      debugPlayerDamagePreviewOnly: true,
       dungeon: null,
       validation: null,
       playerState: { schema_version: "player_state_v1" },
