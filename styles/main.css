@@ -87,7 +87,7 @@ body {
 
 .debug-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -137,6 +137,21 @@ button[aria-pressed="true"] {
   color: #ffd7d7;
   background: rgba(64, 18, 22, 0.8);
   font-size: 12px;
+}
+
+.debug-storage {
+  margin: 10px 0 0;
+  padding: 8px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid rgba(111, 130, 170, 0.35);
+  color: #d8e4fb;
+  background: rgba(23, 34, 57, 0.72);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 900px) {

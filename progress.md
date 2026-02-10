@@ -230,3 +230,7 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` PASS (9 files / 47 tests)
   - `npm run test:checks` PASS
   - Playwright client run (`output/web-game-weapon-id-ref`) produced `shot-0.png` + `state-0.json`; no `errors-*.json` artifact generated.
+- 2026-02-10: Added debug panel localStorage inspection feature.
+  - UI: added `Storage表示` button and storage output area in debug panel (`index.html`, `styles/main.css`).
+  - Logic: `main.js` now builds a readable localStorage dump (JSON pretty-print when possible) and wires button handler via `debugPanel.setStorageDump(...)`.
+  - Tests: expanded `tests/unit/debugPanel.test.js` for storage button callback and dump visibility toggling.

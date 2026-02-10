@@ -82,6 +82,52 @@ function nowUnixSec() {
   return Math.floor(Date.now() / 1000);
 }
 
+function formatStorageValue(rawValue) {
+  if (typeof rawValue !== "string") {
+    return String(rawValue);
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(rawValue), null, 2);
+  } catch {
+    return rawValue;
+  }
+}
+
+function buildLocalStorageDump(storage) {
+  if (!storage || typeof storage.length !== "number" || typeof storage.getItem !== "function") {
+    return "localStorage is unavailable.";
+  }
+
+  if (storage.length <= 0) {
+    return "localStorage is empty.";
+  }
+
+  const keys = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (typeof key === "string" && key.length > 0) {
+      keys.push(key);
+    }
+  }
+  keys.sort((a, b) => a.localeCompare(b));
+
+  if (keys.length === 0) {
+    return "localStorage is empty.";
+  }
+
+  const rows = keys.map((key) => {
+    try {
+      const value = storage.getItem(key);
+      return `[${key}]\n${formatStorageValue(value)}`;
+    } catch (error) {
+      return `[${key}]\n<failed to read: ${error instanceof Error ? error.message : String(error)}>`;
+    }
+  });
+
+  return `keys: ${keys.length}\n\n${rows.join("\n\n")}`;
+}
+
 function findRoomById(dungeon, roomId) {
   return dungeon.rooms.find((room) => room.id === roomId) ?? null;
 }
@@ -394,6 +440,9 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   },
   onTogglePause: () => {
     togglePause();
+  },
+  onShowStorage: () => {
+    debugPanel.setStorageDump(buildLocalStorageDump(appStorage));
   },
 });
 syncPauseUi();

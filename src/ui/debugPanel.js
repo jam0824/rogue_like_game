@@ -13,7 +13,9 @@ export function createDebugPanel(root, handlers) {
   const applySeedButton = root.querySelector("#apply-seed");
   const regenerateButton = root.querySelector("#regen-random");
   const pauseToggleButton = root.querySelector("#pause-toggle");
+  const showStorageButton = root.querySelector("#show-storage");
   const statsList = root.querySelector("#debug-stats");
+  const storageView = root.querySelector("#debug-storage");
   const errorMessage = root.querySelector("#debug-error");
 
   applySeedButton.addEventListener("click", () => {
@@ -35,6 +37,14 @@ export function createDebugPanel(root, handlers) {
     handlers.onTogglePause();
   });
 
+  if (showStorageButton) {
+    showStorageButton.addEventListener("click", () => {
+      if (typeof handlers.onShowStorage === "function") {
+        handlers.onShowStorage();
+      }
+    });
+  }
+
   return {
     setSeed(seed) {
       seedInput.value = String(seed);
@@ -46,6 +56,18 @@ export function createDebugPanel(root, handlers) {
     },
     setStats(rows) {
       renderStatsList(statsList, rows);
+    },
+    setStorageDump(text) {
+      if (!storageView) {
+        return;
+      }
+      if (!text) {
+        storageView.textContent = "";
+        storageView.hidden = true;
+        return;
+      }
+      storageView.textContent = text;
+      storageView.hidden = false;
     },
     setError(message) {
       if (!message) {

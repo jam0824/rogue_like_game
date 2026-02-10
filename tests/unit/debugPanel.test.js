@@ -34,7 +34,9 @@ function createDebugRoot() {
   const applySeedButton = createEventTarget({ textContent: "Apply Seed" });
   const regenerateButton = createEventTarget({ textContent: "再生成" });
   const pauseToggleButton = createEventTarget({ textContent: "一時停止", attributes: { "aria-pressed": "false" } });
+  const showStorageButton = createEventTarget({ textContent: "Storage表示" });
   const statsList = createEventTarget({ innerHTML: "" });
+  const storageView = createEventTarget({ textContent: "", hidden: true });
   const errorMessage = createEventTarget({ textContent: "", hidden: true });
 
   const elements = {
@@ -42,7 +44,9 @@ function createDebugRoot() {
     "#apply-seed": applySeedButton,
     "#regen-random": regenerateButton,
     "#pause-toggle": pauseToggleButton,
+    "#show-storage": showStorageButton,
     "#debug-stats": statsList,
+    "#debug-storage": storageView,
     "#debug-error": errorMessage,
   };
 
@@ -53,6 +57,8 @@ function createDebugRoot() {
   return {
     root,
     pauseToggleButton,
+    showStorageButton,
+    storageView,
   };
 }
 
@@ -65,6 +71,7 @@ describe("debugPanel", () => {
       onApplySeed: vi.fn(),
       onRegenerate: vi.fn(),
       onTogglePause,
+      onShowStorage: vi.fn(),
     });
 
     pauseToggleButton.trigger("click");
@@ -78,6 +85,7 @@ describe("debugPanel", () => {
       onApplySeed: vi.fn(),
       onRegenerate: vi.fn(),
       onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
     });
 
     panel.setPaused(true);
@@ -87,5 +95,39 @@ describe("debugPanel", () => {
     panel.setPaused(false);
     expect(pauseToggleButton.textContent).toBe("一時停止");
     expect(pauseToggleButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("Storage表示ボタンクリックで onShowStorage が呼ばれる", () => {
+    const { root, showStorageButton } = createDebugRoot();
+    const onShowStorage = vi.fn();
+
+    createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage,
+    });
+
+    showStorageButton.trigger("click");
+    expect(onShowStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it("setStorageDump で表示/非表示が切り替わる", () => {
+    const { root, storageView } = createDebugRoot();
+
+    const panel = createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+    });
+
+    panel.setStorageDump("keys: 1\n\n[test]\nvalue");
+    expect(storageView.hidden).toBe(false);
+    expect(storageView.textContent).toContain("keys: 1");
+
+    panel.setStorageDump("");
+    expect(storageView.hidden).toBe(true);
+    expect(storageView.textContent).toBe("");
   });
 });
