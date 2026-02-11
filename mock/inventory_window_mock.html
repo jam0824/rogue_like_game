@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventory UI Mock</title>
+  <style>
+    :root{
+      --ui-bg: #2b1b10;
+      --ui-panel: #3b2415;
+      --ui-panel2: #2f1d12;
+
+      --frame: #c79252;
+      --frame2:#9a6734;
+
+      --title: #d6a06a;
+      --title2:#b67a44;
+
+      --slot: #3a2416;
+      --slot2:#2c1a10;
+      --slot-border:#6a4a2a;
+
+      --text: #f0e3c8;
+      --muted:#d2c1a5;
+
+      --select:#f1c55f;
+      --select2:#c58f2c;
+
+      --btn:#6a4a2a;
+      --btn2:#4d331e;
+      --btnText:#f3e7cf;
+
+      --danger:#8b3a2a;
+      --danger2:#63261c;
+
+      --shadow: rgba(0,0,0,0.35);
+    }
+
+    *{ box-sizing: border-box; }
+    body{
+      margin:0;
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      background:#1f1f1f;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+      color: var(--text);
+    }
+
+    /* ===== window ===== */
+    .window{
+      width: 760px;
+      border: 6px solid var(--frame);
+      background: var(--ui-bg);
+      box-shadow:
+        inset 0 0 0 3px var(--frame2),
+        0 14px 0 rgba(0,0,0,0.25);
+      position: relative;
+    }
+
+    .titlebar{
+      height: 54px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+      background: linear-gradient(to bottom, var(--title), var(--title2));
+      border-bottom: 4px solid var(--frame2);
+      box-shadow: inset 0 3px 0 rgba(255,255,255,0.20);
+      letter-spacing: 0.5px;
+      font-weight: 800;
+      font-size: 20px;
+      color: #3a2416;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.25);
+      user-select:none;
+    }
+
+    .close{
+      position:absolute;
+      right: 10px;
+      top: 10px;
+      width: 34px;
+      height: 34px;
+      border: 3px solid #6b3a2d;
+      background: #d55a44;
+      color: #3a2416;
+      font-weight: 900;
+      cursor:pointer;
+      box-shadow:
+        inset 0 2px 0 rgba(255,255,255,0.18),
+        inset 0 -3px 0 rgba(0,0,0,0.20);
+    }
+    .close:hover{ filter: brightness(1.05); }
+    .close:active{ transform: translateY(1px); }
+    .close:focus-visible{ outline: 3px solid rgba(255,255,255,0.35); outline-offset: 2px; }
+
+    /* ===== content layout ===== */
+    .content{
+      display:grid;
+      grid-template-columns: 420px 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    /* ===== left grid ===== */
+    .gridWrap{
+      background: var(--ui-panel2);
+      border: 4px solid var(--frame2);
+      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.12);
+      padding: 12px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(6, 60px);
+      grid-auto-rows: 60px;
+      gap: 8px;
+    }
+
+    .slot{
+      width: 60px;
+      height: 60px;
+      padding: 0;
+      border: 3px solid var(--slot-border);
+      background: linear-gradient(to bottom, var(--slot), var(--slot2));
+      cursor: pointer;
+      position: relative;
+      box-shadow:
+        inset 0 2px 0 rgba(255,255,255,0.08),
+        inset 0 -3px 0 rgba(0,0,0,0.22);
+    }
+
+    .slot.is-selected{
+      border-color: var(--select);
+      box-shadow:
+        inset 0 0 0 3px var(--select2),
+        inset 0 2px 0 rgba(255,255,255,0.10),
+        inset 0 -3px 0 rgba(0,0,0,0.22);
+    }
+
+    .slot:focus-visible{
+      outline: 3px solid rgba(255,255,255,0.35);
+      outline-offset: 2px;
+    }
+
+    .slot .qty{
+      position:absolute;
+      right: 5px;
+      bottom: 4px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 2px 0 rgba(0,0,0,0.6);
+      user-select:none;
+    }
+
+    .slot .icon{
+      width: 42px;
+      height: 42px;
+      position:absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -55%);
+      filter: drop-shadow(0 3px 0 rgba(0,0,0,0.35));
+    }
+    .slot .icon svg{
+      width:100%;
+      height:100%;
+      shape-rendering: crispEdges;
+    }
+
+    /* ===== right details ===== */
+    .details{
+      background: var(--ui-panel);
+      border: 4px solid var(--frame2);
+      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.12);
+      padding: 12px;
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 380px;
+    }
+
+    .detailsTop{
+      display:flex;
+      justify-content:center;
+      padding-top: 4px;
+    }
+
+    .detailsIcon{
+      width: 120px;
+      height: 120px;
+      border: 3px solid var(--slot-border);
+      background: linear-gradient(to bottom, var(--slot), var(--slot2));
+      box-shadow:
+        inset 0 2px 0 rgba(255,255,255,0.08),
+        inset 0 -3px 0 rgba(0,0,0,0.22);
+      display:grid;
+      place-items:center;
+    }
+    .detailsIcon .icon{
+      width: 88px;
+      height: 88px;
+      filter: drop-shadow(0 4px 0 rgba(0,0,0,0.35));
+    }
+
+    .itemName{
+      text-align:center;
+      font-size: 18px;
+      font-weight: 900;
+      margin: 0;
+    }
+
+    .flavor{
+      margin: 0;
+      color: var(--muted);
+      font-style: italic;
+      line-height: 1.35;
+      font-size: 13px;
+      text-align:center;
+    }
+
+    .divider{
+      height: 2px;
+      background: rgba(255,255,255,0.12);
+      border-bottom: 1px solid rgba(0,0,0,0.25);
+    }
+
+    .stats{
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.55;
+      font-weight: 650;
+      font-size: 14px;
+    }
+
+    .meta{
+      margin-top:auto;
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      font-weight: 750;
+      font-size: 14px;
+    }
+    .metaRow{
+      display:flex;
+      align-items:center;
+      gap: 8px;
+    }
+    .metaRow .label{
+      color: var(--muted);
+      font-weight: 750;
+      min-width: 120px;
+    }
+    .coin{
+      width: 16px;
+      height: 16px;
+      display:inline-block;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #ffe59a, #d49c2a 70%);
+      border: 2px solid #7a571d;
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.18);
+      transform: translateY(1px);
+    }
+
+    /* ===== footer buttons ===== */
+    .footer{
+      display:flex;
+      gap: 10px;
+      padding: 12px 14px 16px;
+      border-top: 4px solid var(--frame2);
+      background: #24160d;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      min-width: 120px;
+      height: 42px;
+      border: 4px solid var(--btn2);
+      background: var(--btn);
+      color: var(--btnText);
+      font-weight: 900;
+      letter-spacing: 0.7px;
+      cursor:pointer;
+      box-shadow:
+        inset 0 2px 0 rgba(255,255,255,0.10),
+        inset 0 -4px 0 rgba(0,0,0,0.22);
+    }
+    .btn:hover{ filter: brightness(1.05); }
+    .btn:active{ transform: translateY(1px); }
+
+    .btn.danger{
+      background: var(--danger);
+      border-color: var(--danger2);
+    }
+
+    .btn:disabled{
+      opacity: 0.45;
+      cursor: not-allowed;
+      filter: none;
+      transform: none;
+    }
+
+    /* small helper */
+    .hint{
+      margin-top: 10px;
+      color: rgba(240,227,200,0.75);
+      font-size: 12px;
+      text-align:center;
+      user-select:none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="window" role="dialog" aria-label="Inventory window">
+    <div class="titlebar">
+      Inventory
+      <button class="close" aria-label="Close">×</button>
+    </div>
+
+    <div class="content">
+      <section class="gridWrap">
+        <div id="grid" class="grid" role="grid" aria-label="Inventory grid"></div>
+        <div class="hint">スロットをクリックすると右側の詳細が更新されます</div>
+      </section>
+
+      <aside class="details" aria-label="Item details">
+        <div class="detailsTop">
+          <div class="detailsIcon" id="detailsIcon"></div>
+        </div>
+        <h2 class="itemName" id="itemName">—</h2>
+        <p class="flavor" id="flavor">空のスロットを選択しています。</p>
+        <div class="divider"></div>
+        <ul class="stats" id="stats"></ul>
+        <div class="meta">
+          <div class="metaRow">
+            <span class="label">Cost</span>
+            <span class="coin" aria-hidden="true"></span>
+            <span id="cost">—</span>
+          </div>
+          <div class="metaRow">
+            <span class="label">Required level</span>
+            <span id="req">—</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="footer">
+      <button class="btn" id="useBtn" disabled>USE</button>
+      <button class="btn danger" id="dropBtn" disabled>DROP</button>
+    </div>
+  </div>
+
+  <script>
+    // ====== mock data ======
+    const COLS = 6;
+    const ROWS = 5;
+    const SLOT_COUNT = COLS * ROWS;
+
+    const itemsBySlot = Array(SLOT_COUNT).fill(null);
+
+    // 1行目
+    itemsBySlot[0] = {
+      id: "book",
+      name: "Old Tome",
+      flavor: "“A dusty book filled with half-forgotten spells.”",
+      stats: ["+2 magic power", "+5% cast speed"],
+      cost: 500,
+      req: 3,
+      qty: 46
+    };
+    itemsBySlot[1] = {
+      id: "potion_green",
+      name: "Elixir",
+      flavor: "“Restores a small amount of energy.”",
+      stats: ["+25 stamina"],
+      cost: 120,
+      req: 1,
+      qty: 1
+    };
+    itemsBySlot[2] = {
+      id: "arrows",
+      name: "Arrows",
+      flavor: "“Standard arrows. Reliable and cheap.”",
+      stats: ["Ammo for bows"],
+      cost: 10,
+      req: 1,
+      qty: 237
+    };
+    itemsBySlot[3] = {
+      id: "bow",
+      name: "High Quality Bow",
+      flavor: "“This expertly engineered bow demonstrates exceptional accuracy and power.”",
+      stats: ["+5 piercing damage", "-30% aiming time", "+15% fire resistance"],
+      cost: 12500,
+      req: 68,
+      qty: 1
+    };
+    itemsBySlot[4] = {
+      id: "medkit",
+      name: "Med Kit",
+      flavor: "“Useful for emergencies.”",
+      stats: ["Heals 40 HP over 2 sec"],
+      cost: 300,
+      req: 5,
+      qty: 19
+    };
+    itemsBySlot[5] = {
+      id: "potion_red",
+      name: "Health Potion",
+      flavor: "“A classic.”",
+      stats: ["Restores 30 HP"],
+      cost: 80,
+      req: 1,
+      qty: 3
+    };
+
+    // 2行目
+    itemsBySlot[6] = { id:"helmet", name:"Leather Helm", flavor:"“Better than nothing.”", stats:["+1 armor"], cost: 60, req: 2, qty: 1 };
+    itemsBySlot[7] = { id:"sword", name:"Short Sword", flavor:"“A balanced blade.”", stats:["+3 damage"], cost: 220, req: 4, qty: 1 };
+    itemsBySlot[8] = { id:"torch", name:"Torch", flavor:"“Lights the way.”", stats:["Illuminates nearby area"], cost: 15, req: 1, qty: 111 };
+    itemsBySlot[9] = { id:"ring", name:"Life Ring", flavor:"“Keeps you afloat.”", stats:["+2 vitality"], cost: 900, req: 12, qty: 1 };
+    itemsBySlot[10] = { id:"scroll", name:"Scroll", flavor:"“Single-use spell.”", stats:["Casts a random effect"], cost: 180, req: 6, qty: 1 };
+    itemsBySlot[11] = { id:"ticket", name:"Voucher", flavor:"“Redeem at a vendor.”", stats:["Trade item"], cost: 0, req: 0, qty: 15 };
+
+    // ====== icons (simple inline svg) ======
+    function iconSVG(type){
+      // 32x32 viewBox
+      switch(type){
+        case "bow":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M8 4c6 4 10 8 10 12S14 24 8 28" fill="none" stroke="#f3c44c" stroke-width="3" stroke-linecap="square"/>
+              <path d="M24 4c-6 4-10 8-10 12s4 8 10 12" fill="none" stroke="#f3c44c" stroke-width="3" stroke-linecap="square"/>
+              <path d="M8 4l16 24" fill="none" stroke="#8b3a2a" stroke-width="2" stroke-linecap="square"/>
+            </svg>`;
+        case "arrows":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M6 24L22 8" stroke="#f3c44c" stroke-width="3" stroke-linecap="square"/>
+              <path d="M10 26L26 10" stroke="#f3c44c" stroke-width="3" stroke-linecap="square"/>
+              <path d="M22 8l4 2-2-4z" fill="#d49c2a"/>
+              <path d="M26 10l4 2-2-4z" fill="#d49c2a"/>
+              <path d="M6 24l-2 4 4-2z" fill="#8b3a2a"/>
+              <path d="M10 26l-2 4 4-2z" fill="#8b3a2a"/>
+            </svg>`;
+        case "book":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M8 6h16v20H8z" fill="#b43a45" stroke="#5a1f24" stroke-width="2"/>
+              <path d="M10 8h12v16H10z" fill="#d95a67" opacity="0.65"/>
+              <path d="M12 10h8" stroke="#f3e7cf" stroke-width="2" opacity="0.9"/>
+              <path d="M12 14h8" stroke="#f3e7cf" stroke-width="2" opacity="0.7"/>
+            </svg>`;
+        case "potion_green":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M12 4h8v4h-8z" fill="#d2c1a5" stroke="#6a4a2a" stroke-width="2"/>
+              <path d="M12 8h8v6c0 2 2 3 2 6 0 4-3 8-6 8h-2c-3 0-6-4-6-8 0-3 2-4 2-6z"
+                    fill="#3bd47a" stroke="#1f6b3f" stroke-width="2"/>
+              <path d="M13 14h6" stroke="#ffffff" stroke-width="2" opacity="0.35"/>
+            </svg>`;
+        case "potion_red":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M12 4h8v4h-8z" fill="#d2c1a5" stroke="#6a4a2a" stroke-width="2"/>
+              <path d="M12 8h8v6c0 2 2 3 2 6 0 4-3 8-6 8h-2c-3 0-6-4-6-8 0-3 2-4 2-6z"
+                    fill="#d55a44" stroke="#6b2a20" stroke-width="2"/>
+              <path d="M13 14h6" stroke="#ffffff" stroke-width="2" opacity="0.35"/>
+            </svg>`;
+        case "medkit":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M10 10h12v16H10z" fill="#cfd7e1" stroke="#5d6772" stroke-width="2"/>
+              <path d="M13 8h6v4h-6z" fill="#cfd7e1" stroke="#5d6772" stroke-width="2"/>
+              <path d="M16 14v8" stroke="#d55a44" stroke-width="3"/>
+              <path d="M12 18h8" stroke="#d55a44" stroke-width="3"/>
+            </svg>`;
+        case "helmet":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M8 18c0-6 4-10 8-10s8 4 8 10v6H8z" fill="#8b5a2b" stroke="#4d331e" stroke-width="2"/>
+              <path d="M8 20h16" stroke="#2b1b10" stroke-width="2" opacity="0.5"/>
+              <path d="M12 18h8" stroke="#f3e7cf" stroke-width="2" opacity="0.35"/>
+            </svg>`;
+        case "sword":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M18 6l2 2-10 10-2-2z" fill="#cfd7e1" stroke="#5d6772" stroke-width="1.5"/>
+              <path d="M9 17l6 6-2 2-6-6z" fill="#3b78d8" stroke="#1e3f70" stroke-width="1.5"/>
+              <path d="M7 25l2-2 2 2-2 2z" fill="#d2c1a5" stroke="#6a4a2a" stroke-width="1.5"/>
+            </svg>`;
+        case "torch":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M14 10h4v16h-4z" fill="#8b5a2b" stroke="#4d331e" stroke-width="2"/>
+              <path d="M16 6c3 2 4 4 3 6-1 2-5 2-6 0-1-2 0-4 3-6z" fill="#ffcf5a" stroke="#8b3a2a" stroke-width="2"/>
+              <path d="M16 8c1 1 1.5 2 .8 3-.7 1.1-2.4 1.1-3.1 0-.7-1 0-2 .8-3z" fill="#ff7a4a" opacity="0.9"/>
+            </svg>`;
+        case "ring":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <circle cx="16" cy="16" r="10" fill="none" stroke="#e8e8e8" stroke-width="4"/>
+              <path d="M16 6a10 10 0 0 1 10 10" fill="none" stroke="#d55a44" stroke-width="4"/>
+              <path d="M6 16a10 10 0 0 1 10-10" fill="none" stroke="#d55a44" stroke-width="4"/>
+            </svg>`;
+        case "scroll":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M10 10h12v14H10z" fill="#e8d1a5" stroke="#6a4a2a" stroke-width="2"/>
+              <path d="M10 10c0-2 2-3 4-3h8" fill="none" stroke="#6a4a2a" stroke-width="2"/>
+              <path d="M12 14h8M12 18h8" stroke="#8b5a2b" stroke-width="2" opacity="0.6"/>
+            </svg>`;
+        case "ticket":
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M8 10h16v12H8z" fill="#f3c44c" stroke="#7a571d" stroke-width="2"/>
+              <path d="M12 14h8M12 18h8" stroke="#7a571d" stroke-width="2" opacity="0.7"/>
+              <circle cx="10" cy="16" r="1.5" fill="#7a571d"/>
+              <circle cx="22" cy="16" r="1.5" fill="#7a571d"/>
+            </svg>`;
+        default:
+          return `
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="7" y="7" width="18" height="18" fill="#777" stroke="#333" stroke-width="2"/>
+            </svg>`;
+      }
+    }
+
+    // ====== render ======
+    const gridEl = document.getElementById("grid");
+    const detailsIconEl = document.getElementById("detailsIcon");
+    const itemNameEl = document.getElementById("itemName");
+    const flavorEl = document.getElementById("flavor");
+    const statsEl = document.getElementById("stats");
+    const costEl = document.getElementById("cost");
+    const reqEl = document.getElementById("req");
+    const useBtn = document.getElementById("useBtn");
+    const dropBtn = document.getElementById("dropBtn");
+
+    let selectedIndex = 3; // bow を初期選択
+
+    function formatNumber(n){
+      return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    }
+
+    function renderGrid(){
+      gridEl.innerHTML = "";
+      for(let i=0;i<SLOT_COUNT;i++){
+        const btn = document.createElement("button");
+        btn.className = "slot" + (i===selectedIndex ? " is-selected" : "");
+        btn.type = "button";
+        btn.setAttribute("role","gridcell");
+        btn.setAttribute("aria-label", `Slot ${i+1}`);
+
+        const item = itemsBySlot[i];
+        if(item){
+          const icon = document.createElement("span");
+          icon.className = "icon";
+          icon.innerHTML = iconSVG(item.id);
+          btn.appendChild(icon);
+
+          if(item.qty && item.qty > 1){
+            const qty = document.createElement("span");
+            qty.className = "qty";
+            qty.textContent = item.qty;
+            btn.appendChild(qty);
+          }
+        }
+
+        btn.addEventListener("click", ()=> selectSlot(i));
+        gridEl.appendChild(btn);
+      }
+    }
+
+    function selectSlot(i){
+      selectedIndex = i;
+      renderGrid();
+      renderDetails();
+    }
+
+    function renderDetails(){
+      const item = itemsBySlot[selectedIndex];
+
+      detailsIconEl.innerHTML = "";
+      statsEl.innerHTML = "";
+
+      if(!item){
+        detailsIconEl.innerHTML = `<span class="icon">${iconSVG("empty")}</span>`;
+        itemNameEl.textContent = "—";
+        flavorEl.textContent = "空のスロットを選択しています。";
+        costEl.textContent = "—";
+        reqEl.textContent = "—";
+        useBtn.disabled = true;
+        dropBtn.disabled = true;
+        return;
+      }
+
+      detailsIconEl.innerHTML = `<span class="icon">${iconSVG(item.id)}</span>`;
+      itemNameEl.textContent = item.name;
+      flavorEl.textContent = item.flavor;
+
+      (item.stats || []).forEach(s=>{
+        const li = document.createElement("li");
+        li.textContent = s;
+        statsEl.appendChild(li);
+      });
+
+      costEl.textContent = formatNumber(item.cost ?? 0);
+      reqEl.textContent = (item.req ?? 0).toString();
+
+      useBtn.disabled = false;
+      dropBtn.disabled = false;
+
+      useBtn.onclick = () => {
+        alert(`USE: ${item.name}`);
+      };
+      dropBtn.onclick = () => {
+        const ok = confirm(`DROPしますか？\n\n${item.name}`);
+        if(!ok) return;
+        itemsBySlot[selectedIndex] = null;
+        renderGrid();
+        renderDetails();
+      };
+    }
+
+    // initial
+    renderGrid();
+    renderDetails();
+  </script>
+</body>
+</html>

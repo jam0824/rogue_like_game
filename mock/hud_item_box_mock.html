@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventory Mock</title>
+  <style>
+    :root{
+      --slot-size: 64px;
+      --gap: 10px;
+
+      --frame: #7a4a1f;        /* 外枠（木） */
+      --frame-dark: #5a3315;   /* 外枠の影 */
+      --panel: #b77734;        /* 内側パネル */
+
+      --slot-bg: #c2833c;      /* スロット背景 */
+      --slot-border: #8f5a28;  /* スロット枠 */
+
+      --sel-border: #f2c261;   /* 選択枠（黄） */
+      --sel-inner:  #d29a33;   /* 選択枠の内側 */
+    }
+
+    body{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f4f4f4;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    }
+
+    .inventory{
+      position: relative;
+      display: inline-flex;
+      gap: var(--gap);
+      padding: 14px 20px;
+      background: var(--panel);
+      border: 6px solid var(--frame);
+      box-shadow:
+        inset 0 0 0 3px var(--frame-dark),
+        0 6px 0 rgba(0,0,0,0.18);
+    }
+
+    /* 両端の“支柱”っぽい飾り */
+    .inventory::before,
+    .inventory::after{
+      content:"";
+      position: absolute;
+      top: -6px;
+      bottom: -6px;
+      width: 14px;
+      background: var(--frame);
+      box-shadow: inset 0 0 0 3px var(--frame-dark);
+    }
+    .inventory::before{ left: -20px; }
+    .inventory::after { right: -20px; }
+
+    .slot{
+      width: var(--slot-size);
+      height: var(--slot-size);
+      padding: 0;
+      border: 3px solid var(--slot-border);
+      background: var(--slot-bg);
+      cursor: pointer;
+      box-shadow:
+        inset 0 0 0 3px rgba(255,255,255,0.07),
+        inset 0 -4px 0 rgba(0,0,0,0.10);
+    }
+
+    .slot.is-selected{
+      border-color: var(--sel-border);
+      box-shadow:
+        inset 0 0 0 3px var(--sel-inner),
+        inset 0 0 0 6px rgba(255,255,255,0.06),
+        inset 0 -4px 0 rgba(0,0,0,0.10);
+    }
+
+    .slot:focus-visible{
+      outline: 3px solid rgba(0,0,0,0.35);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="inventory" role="grid" aria-label="Inventory">
+    <button class="slot is-selected" role="gridcell" aria-label="Slot 1"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 2"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 3"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 4"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 5"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 6"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 7"></button>
+    <button class="slot" role="gridcell" aria-label="Slot 8"></button>
+  </div>
+
+  <script>
+    // クリックで選択枠を切り替える（モック用）
+    const slots = [...document.querySelectorAll(".slot")];
+    slots.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelector(".slot.is-selected")?.classList.remove("is-selected");
+        btn.classList.add("is-selected");
+      });
+    });
+  </script>
+</body>
+</html>
