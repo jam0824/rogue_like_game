@@ -12,6 +12,136 @@
         <canvas id="dungeon-canvas" aria-label="Dungeon canvas"></canvas>
       </div>
 
+      <section id="system-ui-layer" aria-label="System HUD">
+        <div id="system-hud-top-left" aria-label="Player HUD">
+          <div class="system-hp-row">
+            <span class="system-outline-text system-hp-label">HP</span>
+            <div id="system-hp-bar" role="img" aria-label="HP 100/100">
+              <div id="system-hp-fill"></div>
+              <div id="system-hp-text" class="system-outline-text">100/100</div>
+            </div>
+          </div>
+          <div id="system-level" class="system-outline-text">LV 1</div>
+          <div id="system-buff-list" class="system-status-row" aria-label="Buffs" hidden></div>
+          <div id="system-debuff-list" class="system-status-row" aria-label="Debuffs" hidden></div>
+        </div>
+
+        <div id="system-hud-top-right">
+          <span id="system-gold" class="system-outline-text">$0</span>
+        </div>
+
+        <div id="system-hud-bottom-center">
+          <div id="system-quick-inventory" aria-label="Quick inventory">
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="0">
+              <span class="system-item-icon" data-ui-icon>1</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="1">
+              <span class="system-item-icon" data-ui-icon>2</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="2">
+              <span class="system-item-icon" data-ui-icon>3</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="3">
+              <span class="system-item-icon" data-ui-icon>4</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="4">
+              <span class="system-item-icon" data-ui-icon>5</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="5">
+              <span class="system-item-icon" data-ui-icon>6</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="6">
+              <span class="system-item-icon" data-ui-icon>7</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+            <button type="button" class="system-quick-slot" data-ui-quick-slot="7">
+              <span class="system-item-icon" data-ui-icon>8</span>
+              <span class="system-item-qty" data-ui-qty></span>
+            </button>
+          </div>
+
+          <button id="system-bag-button" type="button" aria-label="Open inventory">
+            <img src="./graphic/ui/hud/icon_open_inventory_window.png" alt="Open inventory" />
+          </button>
+        </div>
+
+        <div id="system-ui-toast" hidden></div>
+
+        <div id="inventory-overlay" hidden></div>
+
+        <section id="inventory-window" hidden aria-label="Inventory window">
+          <header class="inventory-window-titlebar">
+            <h2 class="inventory-window-title">Inventory</h2>
+            <button id="inventory-close" type="button" aria-label="Close inventory">×</button>
+          </header>
+
+          <div class="inventory-window-content">
+            <section class="inventory-grid-wrap">
+              <div id="inventory-grid" aria-label="Inventory grid">
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="0">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="1">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="2">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="3">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="4">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="5">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="6">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="7">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="8">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+                <button type="button" class="inventory-slot" data-ui-inventory-slot="9">
+                  <span class="system-item-icon" data-ui-icon>--</span>
+                  <span class="system-item-qty" data-ui-qty></span>
+                </button>
+              </div>
+            </section>
+
+            <aside class="inventory-details" aria-label="Item details">
+              <div id="inventory-details-icon">--</div>
+              <h3 id="inventory-details-name">空きスロット</h3>
+              <p id="inventory-details-description">アイテムを選択してください。</p>
+              <p id="inventory-details-effect">効果: -</p>
+            </aside>
+          </div>
+
+          <footer class="inventory-window-footer">
+            <button id="inventory-use" type="button">USE</button>
+            <button id="inventory-drop" type="button">DROP</button>
+          </footer>
+        </section>
+      </section>
+
       <aside id="debug-panel" aria-label="Dungeon debug panel">
         <h1 class="debug-title">Dungeon Debug</h1>
         <p class="debug-desc">Seedを固定して同じマップを再現できます。</p>

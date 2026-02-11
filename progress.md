@@ -218,6 +218,49 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (8 files, 41 tests)
   - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/player-attack)
   - `npm test` -> PASS
+
+- 2026-02-12: Implemented システムUI v1 (HUD + quick inventory + inventory window) based on `spec/システムUI仕様_v1.md`.
+- 2026-02-12: Added run-scoped system UI state model and lifecycle reset behavior:
+  - `src/state/appState.js`: added `systemUi` to app state; `setDungeonState` initializes per run; `setErrorState` forces inventory window close.
+  - `src/ui/systemUiState.js`: added pure functions for initial state, item selection, quick-slot use, inventory use, drop placement search (Manhattan ring 0..6), and drop execution with no tile overlap.
+- 2026-02-12: Added JP temporary localization dictionary and formatting helpers:
+  - `src/ui/uiTextJa.js`: `tJa`, `formatGold`, icon label fallback; unknown keys render as raw `language_key`.
+- 2026-02-12: Added HUD/UI presenter module:
+  - `src/ui/systemHud.js`: DOM binding and render API for HP/LV/gold/buff/debuff, quick slots, inventory open/close, item detail pane, USE/DROP buttons, and toast messages.
+- 2026-02-12: Integrated system UI into runtime:
+  - `src/main.js`: wired `createSystemHud` handlers; synchronized HUD from runtime (`player.hp/maxHp`, `playerState.run.run_level`, `playerState.base.wallet.gold`); added inventory actions (quick use/use/drop/select/open/close).
+  - Extended `render_game_to_text` payload with:
+    - `hud.hp.current/max`, `hud.runLevel`, `hud.gold`, `hud.buffs`, `hud.debuffs`
+    - `inventory.capacity`, `inventory.quickSlots`, `inventory.selectedItemId`, `inventory.items`, `inventory.droppedItems`, `inventory.isWindowOpen`, `inventory.toastMessage`
+  - Run regeneration now resets system inventory state to starter loadout (per scope decision).
+- 2026-02-12: Added UI markup and styling:
+  - `index.html`: added `#system-ui-layer` with top HUD, bottom quick inventory (8 slots), bag button (`graphic/ui/hud/icon_open_inventory_window.png`), modal inventory window, overlay, and toast area.
+  - `styles/main.css`: added full HUD/inventory visual styles (mock-inspired), HP bar width-by-maxHP, text outline, responsive mobile layout; scoped generic button styles to `#debug-panel` to avoid collisions.
+  - Lowered debug panel z-index to avoid blocking inventory modal interactions.
+- 2026-02-12: Added/updated tests:
+  - New `tests/unit/systemUiState.test.js` (USE consumable/equipment, quick-slot use, drop non-overlap, drop failure path).
+  - New `tests/unit/systemHud.test.js` (HP/LV/gold rendering, quick-slot handler, open/close handlers, selected-item detail + button enablement).
+  - Updated `tests/unit/appState.test.js` to include `systemUi` shape and error-path window close behavior.
+  - Added Playwright action payload `tests/actions/system_ui_inventory_flow.json` for manual/iterative UI flow actions.
+- 2026-02-12: Validation complete:
+  - `npm run unit` -> PASS (13 files, 79 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
+  - `npm test` -> PASS
+  - Playwright skill client runs:
+    - `output/web-game-system-ui-open/state-0.json`: `inventory.isWindowOpen=true` after bag click; HUD fields present.
+    - `output/web-game-system-ui-use/state-0.json`: quick slot 0 consumable decremented (`3 -> 2`) and no console error artifacts.
+  - Additional playwright script checks (same runtime) confirmed:
+    - DROP appends to `inventory.droppedItems`
+    - Multiple DROPs use distinct tiles (`uniqueDropTiles == dropCount`)
+    - Outside click / close button closes inventory window.
+  - Visual artifacts reviewed:
+    - `output/web-game-system-ui/page-check-drop.png` (inventory open, details pane, toast, quick bar)
+    - `output/web-game-system-ui/page-check-close.png` (HUD + quick bar visible with window closed)
+
+- TODO: Replace temporary icon-letter rendering with actual item icon assets once item UI atlas/files are available.
+- TODO: Wire consumable USE effects to gameplay runtime (currently inventory consumption + toast only).
+- TODO: Connect dropped item records (`inventory.droppedItems`) to actual world item entities/rendering and pickup flow.
+- TODO: If long-term localization is introduced, replace `uiTextJa` fallback strategy with centralized i18n catalogs per locale.
   - Playwright skill-client smoke (`tests/actions/idle.json`) output at `output/web-game-weapon-typo-fix`:
     - `state-0.json` includes `weapon_sword_01` in `weaponDefId` / `weapon_def_id`
     - no `errors-*.json` artifacts generated.

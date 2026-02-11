@@ -16,6 +16,20 @@ describe("appState", () => {
       enemies: [],
       weapons: [],
       damagePopups: [],
+      systemUi: {
+        inventory: {
+          isWindowOpen: false,
+          capacity: 10,
+          items: [],
+          selectedItemId: null,
+          droppedItems: [],
+        },
+        statusEffects: {
+          buffs: [],
+          debuffs: [],
+        },
+        toastMessage: "",
+      },
       backdrop: null,
       error: null,
     });
@@ -36,6 +50,20 @@ describe("appState", () => {
       enemies: [{ id: "enemy-1" }],
       weapons: [{ id: "weapon-1" }],
       damagePopups: [{ id: "popup-1" }],
+      systemUi: {
+        inventory: {
+          isWindowOpen: true,
+          capacity: 10,
+          items: [{ id: "run_item_potion_small" }],
+          selectedItemId: "run_item_potion_small",
+          droppedItems: [],
+        },
+        statusEffects: {
+          buffs: [{ id: "buff_a" }],
+          debuffs: [],
+        },
+        toastMessage: "ok",
+      },
       backdrop: { widthPx: 960, heightPx: 540 },
     };
 
@@ -51,6 +79,20 @@ describe("appState", () => {
     expect(state.enemies).toEqual([{ id: "enemy-1" }]);
     expect(state.weapons).toEqual([{ id: "weapon-1" }]);
     expect(state.damagePopups).toEqual([{ id: "popup-1" }]);
+    expect(state.systemUi).toEqual({
+      inventory: {
+        isWindowOpen: true,
+        capacity: 10,
+        items: [{ id: "run_item_potion_small" }],
+        selectedItemId: "run_item_potion_small",
+        droppedItems: [],
+      },
+      statusEffects: {
+        buffs: [{ id: "buff_a" }],
+        debuffs: [],
+      },
+      toastMessage: "ok",
+    });
     expect(state.backdrop).toEqual({ widthPx: 960, heightPx: 540 });
     expect(state.error).toBeNull();
   });
@@ -66,6 +108,20 @@ describe("appState", () => {
       enemies: [{ id: "enemy" }],
       weapons: [{ id: "weapon" }],
       damagePopups: [{ id: "popup" }],
+      systemUi: {
+        inventory: {
+          isWindowOpen: true,
+          capacity: 10,
+          items: [{ id: "run_item_potion_small" }],
+          selectedItemId: "run_item_potion_small",
+          droppedItems: [],
+        },
+        statusEffects: {
+          buffs: [{ id: "buff_a" }],
+          debuffs: [{ id: "debuff_a" }],
+        },
+        toastMessage: "active",
+      },
       backdrop: { widthPx: 960, heightPx: 540 },
     });
     state.isPaused = true;
@@ -83,6 +139,20 @@ describe("appState", () => {
       enemies: [],
       weapons: [],
       damagePopups: [],
+      systemUi: {
+        inventory: {
+          isWindowOpen: false,
+          capacity: 10,
+          items: [{ id: "run_item_potion_small" }],
+          selectedItemId: "run_item_potion_small",
+          droppedItems: [],
+        },
+        statusEffects: {
+          buffs: [{ id: "buff_a" }],
+          debuffs: [{ id: "debuff_a" }],
+        },
+        toastMessage: "active",
+      },
       backdrop: null,
       error: "boom",
     });

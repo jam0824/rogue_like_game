@@ -40,6 +40,17 @@ import { loadTileAssets } from "./tiles/tileCatalog.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
+import {
+  buildQuickSlots,
+  createInitialSystemUiState,
+  dropSelectedInventoryItem,
+  QUICK_SLOT_COUNT,
+  selectInventoryItem,
+  setInventoryWindowOpen,
+  useInventoryItem,
+  useQuickSlotItem,
+} from "./ui/systemUiState.js";
+import { createSystemHud } from "./ui/systemHud.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
 import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
@@ -62,6 +73,7 @@ const appState = createAppState(INITIAL_SEED);
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
+const systemUiRoot = document.querySelector("#system-ui-layer");
 
 function getStorage() {
   try {
@@ -168,6 +180,90 @@ function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = f
   ];
 }
 
+function getRunLevel(playerState) {
+  const runLevel = Number(playerState?.run?.run_level);
+  if (!Number.isFinite(runLevel)) {
+    return 1;
+  }
+  return Math.max(1, Math.round(runLevel));
+}
+
+function getGold(playerState) {
+  const gold = Number(playerState?.base?.wallet?.gold);
+  if (!Number.isFinite(gold)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(gold));
+}
+
+function getSystemUiState() {
+  return appState.systemUi ?? createInitialSystemUiState();
+}
+
+function buildInventoryItemTextState(item) {
+  return {
+    id: item.id,
+    type: item.type,
+    count: Math.max(0, Math.floor(Number(item.count) || 0)),
+    quickSlot: Number.isInteger(item.quickSlot) ? item.quickSlot : null,
+    iconKey: item.iconKey,
+    nameKey: item.nameKey,
+    descriptionKey: item.descriptionKey,
+    effectKey: item.effectKey,
+  };
+}
+
+function buildInventoryQuickSlotTextState(slot) {
+  if (!slot?.item) {
+    return {
+      slot: slot?.slot ?? 0,
+      item: null,
+    };
+  }
+
+  return {
+    slot: slot.slot,
+    item: buildInventoryItemTextState(slot.item),
+  };
+}
+
+function buildHudTextState() {
+  return {
+    hp: {
+      current: round2(appState.player?.hp ?? 0),
+      max: round2(appState.player?.maxHp ?? 0),
+    },
+    runLevel: getRunLevel(appState.playerState),
+    gold: getGold(appState.playerState),
+    buffs: [...(getSystemUiState().statusEffects?.buffs ?? [])],
+    debuffs: [...(getSystemUiState().statusEffects?.debuffs ?? [])],
+  };
+}
+
+function buildInventoryTextState() {
+  const systemUi = getSystemUiState();
+  const items = Array.isArray(systemUi.inventory?.items) ? systemUi.inventory.items : [];
+  const droppedItems = Array.isArray(systemUi.inventory?.droppedItems) ? systemUi.inventory.droppedItems : [];
+
+  return {
+    capacity: Number(systemUi.inventory?.capacity) || 10,
+    isWindowOpen: systemUi.inventory?.isWindowOpen === true,
+    selectedItemId: typeof systemUi.inventory?.selectedItemId === "string" ? systemUi.inventory.selectedItemId : null,
+    quickSlots: buildQuickSlots(items, QUICK_SLOT_COUNT).map((slot) => buildInventoryQuickSlotTextState(slot)),
+    items: items.map((item) => buildInventoryItemTextState(item)),
+    droppedItems: droppedItems.map((item) => ({
+      id: item.id,
+      itemId: item.itemId,
+      tileX: item.tileX,
+      tileY: item.tileY,
+      xPx: round2(item.xPx),
+      yPx: round2(item.yPx),
+      droppedAtMs: item.droppedAtMs,
+    })),
+    toastMessage: typeof systemUi.toastMessage === "string" ? systemUi.toastMessage : "",
+  };
+}
+
 function buildWeaponTextState(weapon) {
   const hitbox = getWeaponHitbox(weapon);
 
@@ -272,6 +368,9 @@ function buildDamagePopupTextState(popup) {
 }
 
 function toTextState() {
+  const hudState = buildHudTextState();
+  const inventoryState = buildInventoryTextState();
+
   if (appState.error) {
     return JSON.stringify(
       {
@@ -279,6 +378,8 @@ function toTextState() {
         seed: appState.seed,
         error: appState.error,
         playerState: appState.playerState,
+        hud: hudState,
+        inventory: inventoryState,
       },
       null,
       2
@@ -291,6 +392,8 @@ function toTextState() {
         mode: "loading",
         seed: appState.seed,
         playerState: appState.playerState,
+        hud: hudState,
+        inventory: inventoryState,
       },
       null,
       2
@@ -322,6 +425,8 @@ function toTextState() {
       stats: dungeon.stats,
       player: buildPlayerTextState(appState.player, appState.weapons),
       playerState: appState.playerState,
+      hud: hudState,
+      inventory: inventoryState,
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
       damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
       startRoom: startRoom
@@ -599,6 +704,85 @@ function syncDamagePreviewUi() {
 }
 
 let lastStatsDigest = "";
+let lastSystemUiDigest = "";
+
+function applySystemUiState(nextSystemUiState) {
+  appState.systemUi = nextSystemUiState;
+  lastSystemUiDigest = "";
+  syncSystemHud();
+}
+
+const systemHud = systemUiRoot
+  ? createSystemHud(systemUiRoot, {
+      onUseQuickSlot: (slotIndex) => {
+        applySystemUiState(useQuickSlotItem(getSystemUiState(), slotIndex));
+      },
+      onOpenInventoryWindow: () => {
+        applySystemUiState(setInventoryWindowOpen(getSystemUiState(), true));
+      },
+      onCloseInventoryWindow: () => {
+        applySystemUiState(setInventoryWindowOpen(getSystemUiState(), false));
+      },
+      onSelectInventoryItem: (itemId) => {
+        applySystemUiState(selectInventoryItem(getSystemUiState(), itemId));
+      },
+      onUseSelectedItem: () => {
+        const selectedItemId = getSystemUiState().inventory?.selectedItemId;
+        applySystemUiState(useInventoryItem(getSystemUiState(), selectedItemId));
+      },
+      onDropSelectedItem: () => {
+        applySystemUiState(dropSelectedInventoryItem(getSystemUiState(), appState.dungeon, appState.player, Date.now()));
+      },
+    })
+  : null;
+
+function buildSystemUiDigest() {
+  const inventory = buildInventoryTextState();
+  const hud = buildHudTextState();
+
+  return JSON.stringify({
+    hpCurrent: hud.hp.current,
+    hpMax: hud.hp.max,
+    runLevel: hud.runLevel,
+    gold: hud.gold,
+    buffs: hud.buffs,
+    debuffs: hud.debuffs,
+    toastMessage: getSystemUiState().toastMessage,
+    inventory,
+  });
+}
+
+function syncSystemHud() {
+  if (!systemHud) {
+    return;
+  }
+
+  const digest = buildSystemUiDigest();
+  if (digest === lastSystemUiDigest) {
+    return;
+  }
+
+  const hud = buildHudTextState();
+  const inventory = buildInventoryTextState();
+  systemHud.setHud({
+    hpCurrent: hud.hp.current,
+    hpMax: hud.hp.max,
+    runLevel: hud.runLevel,
+    gold: hud.gold,
+    buffs: hud.buffs,
+    debuffs: hud.debuffs,
+  });
+  systemHud.setInventory({
+    capacity: inventory.capacity,
+    items: inventory.items,
+    selectedItemId: inventory.selectedItemId,
+    quickSlots: inventory.quickSlots,
+    isWindowOpen: inventory.isWindowOpen,
+    toastMessage: getSystemUiState().toastMessage,
+  });
+
+  lastSystemUiDigest = digest;
+}
 
 function setPaused(paused) {
   appState.isPaused = paused === true;
@@ -643,6 +827,7 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
 });
 syncPauseUi();
 syncDamagePreviewUi();
+syncSystemHud();
 
 function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
   if (!dungeon) {
@@ -763,6 +948,7 @@ function stepSimulation(dt) {
   appState.enemies = removeDefeatedEnemies(appState.enemies);
   syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
   syncStatsPanel();
+  syncSystemHud();
   followPlayerInView();
 }
 
@@ -856,6 +1042,7 @@ async function regenerate(seed) {
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
     damagePopupSeq = 0;
     syncPlayerStateFromRuntime(appState.playerState, player, weapons, nowUnixSec());
+    const systemUi = createInitialSystemUiState();
 
     setDungeonState(appState, {
       seed: normalizedSeed,
@@ -866,12 +1053,15 @@ async function regenerate(seed) {
       enemies,
       weapons,
       damagePopups: [],
+      systemUi,
       backdrop,
     });
 
     debugPanel.setSeed(normalizedSeed);
     lastStatsDigest = "";
+    lastSystemUiDigest = "";
     syncStatsPanel();
+    syncSystemHud();
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
     syncPauseUi();
     syncDamagePreviewUi();
@@ -892,10 +1082,12 @@ async function regenerate(seed) {
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
     lastStatsDigest = "";
+    lastSystemUiDigest = "";
     debugPanel.setStats([]);
     debugPanel.setError(appState.error);
     syncPauseUi();
     syncDamagePreviewUi();
+    syncSystemHud();
     renderCurrentFrame();
     persistPlayerState();
     resetLoopClock();
