@@ -156,9 +156,14 @@
           <button id="show-storage" type="button">Storage表示</button>
           <button id="reset-storage" type="button">Storageリセット</button>
           <button id="damage-preview-toggle" type="button" aria-pressed="true">被ダメ無効(演出のみ)</button>
+          <button id="toggle-player-stats" type="button" aria-pressed="false">ステータス表示</button>
         </div>
 
         <ul id="debug-stats" class="debug-stats"></ul>
+        <section id="debug-player-stats-window" class="debug-player-stats-window" hidden aria-label="Player status detail">
+          <h2 class="debug-player-stats-title">Player Stats</h2>
+          <ul id="debug-player-stats" class="debug-stats"></ul>
+        </section>
         <pre id="debug-storage" class="debug-storage" hidden></pre>
         <p id="debug-error" class="debug-error" hidden></p>
       </aside>

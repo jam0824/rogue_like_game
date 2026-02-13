@@ -564,3 +564,74 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
     - Updated `更新日` to 2026-02-13.
     - Added item UI notes for floor re-pickup and image/label fallback.
     - Removed outdated TODO about heal amount values (already fixed in section 8 use_params table).
+- 2026-02-13: Added derived status module `src/status/derivedStats.js`.
+  - Player: StatTotal(base+run+equip), MaxHP, MoveSpeed, DamageMult, Crit, Ailment/Duration/CC multipliers.
+  - Enemy: Base + Floor/Rank/tag scaling for HP/ATK/MV and ailment-related multipliers.
+- 2026-02-13: Added deterministic damage roll module `src/combat/damageRoll.js` with triangular RandMult and crit roll keyed by seed.
+- 2026-02-13: Integrated derived-status flow into runtime (`main.js`, `playerSystem.js`, `enemySystem.js`, `weaponSystem.js`).
+  - `dungeon.floor` now resolves from `playerState.run.floor` (fallback=1).
+  - Player runtime now receives recalculated derived values at regenerate: `statTotals`, `maxHp`, `moveSpeedPxPerSec`, `damageMult`, `critChance`, `critMult`, ailment multipliers, and `damageSeed`.
+  - Saved HP restore now keeps `hp = min(savedHp, recalculatedMaxHp)`; missing saved HP defaults to full HP.
+  - Enemy runtime now derives `maxHp/move/damage scale/crit/ailment` via `deriveEnemyCombatStats` with Floor/Rank/tag multipliers.
+  - Enemy attack profiles now carry per-weapon `baseDamage`; enemy attack runtime includes `attackCycle` and weapon `baseDamage`.
+  - Weapon/enemy damage paths now support deterministic seeded RandMult+Crit through `rollHitDamage`.
+- 2026-02-13: Added tests for new status/damage logic.
+  - New: `tests/unit/derivedStats.test.js`
+  - New: `tests/unit/damageRoll.test.js`
+  - Updated: `tests/unit/weaponSystem.test.js`, `tests/unit/enemySystem.test.js`
+- 2026-02-13: Updated check scripts for deterministic roll-compatible assertions.
+  - Updated: `scripts/check_player_attack.mjs`, `scripts/check_enemy_attack.mjs`
+- 2026-02-13: Validation complete after derived-status alignment:
+  - `npm run unit` -> PASS (16 files, 106 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+- 2026-02-13: Playwright smoke run executed via skill client after derived-status changes.
+  - command used with local server + `tests/actions/idle.json`.
+  - latest artifacts written to `output/web-game/shot-0.png` and `output/web-game/state-0.json`.
+  - no `errors-*.json` console artifact generated.
+- 2026-02-13: Added critical-hit popup emphasis (2x font size) and critical flag propagation.
+  - `src/weapon/weaponSystem.js`: damage events now include `isCritical` from `rollHitDamage`.
+  - `src/enemy/enemySystem.js`: player damage events now include `isCritical`.
+  - `src/combat/combatFeedbackSystem.js`: popup spawn/update preserves `isCritical`.
+  - `src/main.js`: `render_game_to_text` popup payload includes `isCritical`.
+  - `src/render/canvasRenderer.js`: `drawDamagePopups` now renders critical damage at 2x font size (`14px -> 28px`) and thicker outline.
+  - `tests/unit/combatFeedbackSystem.test.js` + `tests/unit/weaponSystem.test.js` updated for `isCritical` expectations.
+- 2026-02-13: Validation complete after critical popup update:
+  - `npm run unit` -> PASS (16 files, 106 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+- 2026-02-13: Added debug player status detail window (toggle in debug panel).
+  - `index.html`: added `#toggle-player-stats` button and `#debug-player-stats-window` (`#debug-player-stats` list).
+  - `styles/main.css`: added detail window styles (framed panel, title, max-height/scroll).
+  - `src/ui/debugPanel.js`: added `onTogglePlayerStats` handler wiring plus new APIs:
+    - `setPlayerStatsWindowOpen(open)`
+    - `setPlayerStats(rows)`
+- 2026-02-13: Added player status view-model module for deterministic UI rows/digest.
+  - New `src/ui/debugPlayerStatsViewModel.js`:
+    - `buildPlayerStatusRows(playerState, player, baseMoveSpeedPxPerSec)`
+    - `buildPlayerStatusDigest(rows)`
+  - Rows include `[基本]/[ラン]/[装備]/[合計]` six stats and derived values:
+    - `HP(現在/最大)`, `移動速度(px/s)`, `与ダメ倍率`, `クリ率`, `クリ倍率`,
+      `状態異常被適用倍率`, `持続時間倍率`, `CC時間倍率`
+  - Missing data fallback row: `状態: プレイヤーデータ未初期化`.
+- 2026-02-13: Integrated player status detail window into runtime loop (`src/main.js`).
+  - Added open-state + digest cache (`isPlayerStatsWindowOpen`, `lastPlayerStatsDigest`).
+  - Added sync/toggle functions and connected debug handler `onTogglePlayerStats`.
+  - Realtime refresh added alongside existing `syncStatsPanel()` in `stepSimulation`.
+  - Regenerate success/error paths now reset detail digest and resync detail window output.
+- 2026-02-13: Added/updated unit tests for debug player status window.
+  - Updated `tests/unit/debugPanel.test.js`:
+    - click handler call for `onTogglePlayerStats`
+    - open/close text + `aria-pressed` + `hidden` assertion
+    - `setPlayerStats` row render assertion
+  - New `tests/unit/debugPlayerStatsViewModel.test.js`:
+    - fallback row behavior
+    - base/run/equip/total + derived format checks
+    - digest stability/change checks
+- 2026-02-13: Validation complete after debug player status window update:
+  - `npm run unit` -> PASS (17 files, 112 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+  - Playwright skill-client smoke run executed with `tests/actions/idle.json`:
+    - latest artifacts updated: `output/web-game/shot-0.png`, `output/web-game/state-0.json`
+    - no `errors-*.json` console artifact generated.

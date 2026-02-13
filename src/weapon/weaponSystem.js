@@ -1,4 +1,5 @@
 import { TILE_SIZE } from "../config/constants.js";
+import { rollHitDamage } from "../combat/damageRoll.js";
 import { getEnemyCombatHitbox } from "../enemy/enemySystem.js";
 
 const MIN_ATTACK_COOLDOWN_SEC = 0.05;
@@ -217,7 +218,7 @@ function updateWeaponTransform(weapon, weaponDefinition, formationDefinition, pl
   weapon.formationId = formationDefinition.id;
 }
 
-function applyWeaponHits(weapon, weaponDefinition, enemies, events) {
+function applyWeaponHits(weapon, weaponDefinition, enemies, events, player) {
   if (!Array.isArray(enemies) || enemies.length === 0) {
     return;
   }
@@ -225,7 +226,12 @@ function applyWeaponHits(weapon, weaponDefinition, enemies, events) {
   const hitSet = sanitizeHitSet(weapon);
   const maxTargets = Math.max(1, 1 + Math.floor(toFiniteNumber(weaponDefinition.pierceCount, 0)));
   const hitNum = Math.max(1, Math.floor(toFiniteNumber(weaponDefinition.hitNum, 1)));
-  const damagePerHit = Math.max(1, Math.round(toFiniteNumber(weaponDefinition.baseDamage, 1)));
+  const baseDamage = Math.max(0, toFiniteNumber(weaponDefinition.baseDamage, 0));
+  const canUseDerivedRoll =
+    typeof player?.damageSeed === "string" &&
+    Number.isFinite(player?.damageMult) &&
+    Number.isFinite(player?.critChance) &&
+    Number.isFinite(player?.critMult);
   const weaponHitbox = getWeaponHitbox(weapon);
 
   for (const enemy of enemies) {
@@ -246,6 +252,20 @@ function applyWeaponHits(weapon, weaponDefinition, enemies, events) {
       continue;
     }
 
+    const damageRoll = canUseDerivedRoll
+      ? rollHitDamage({
+          baseDamage,
+          damageMult: player.damageMult,
+          attackScale: 1,
+          critChance: player.critChance,
+          critMult: player.critMult,
+          seedKey: `${player.damageSeed}::${weapon.id}::${weapon.attackSeq}::${enemy.id}`,
+        })
+      : {
+          damage: Math.max(1, Math.round(baseDamage)),
+          isCritical: false,
+        };
+    const damagePerHit = damageRoll.damage;
     const totalDamage = damagePerHit * hitNum;
     enemy.hp = toFiniteNumber(enemy.hp, 0) - totalDamage;
     enemy.hitFlashTimerSec = toFiniteNumber(enemy.hitFlashDurationSec, 0.12);
@@ -255,6 +275,7 @@ function applyWeaponHits(weapon, weaponDefinition, enemies, events) {
       targetType: "enemy",
       enemyId: enemy.id,
       damage: totalDamage,
+      isCritical: damageRoll.isCritical === true,
       worldX: enemy.x + enemy.width / 2,
       worldY: enemy.y + enemy.height / 2,
     });
@@ -341,7 +362,7 @@ export function updateWeaponsAndCombat(
 
     updateAttackSequence(weapon, weaponDefinition, dt);
     updateWeaponTransform(weapon, weaponDefinition, formationDefinition, player, dt);
-    applyWeaponHits(weapon, weaponDefinition, enemies, events);
+    applyWeaponHits(weapon, weaponDefinition, enemies, events, player);
   }
 
   return events;

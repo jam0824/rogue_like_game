@@ -30,6 +30,7 @@ export function spawnDamagePopupsFromEvents(events, nowSeq = 0) {
     popups.push({
       id: `popup-${nowSeq}-${eventIndex}`,
       value: damageValue,
+      isCritical: event.isCritical === true,
       text: "",
       textKey: "",
       x: toFiniteNumber(event.worldX, 0),
@@ -63,6 +64,7 @@ export function createFloatingTextPopup({
   return {
     id: typeof id === "string" && id.length > 0 ? id : `popup-text-${Date.now()}`,
     value: 0,
+    isCritical: false,
     text: typeof text === "string" ? text : "",
     textKey: typeof textKey === "string" ? textKey : "",
     x: toFiniteNumber(x, 0),
@@ -101,6 +103,7 @@ export function updateDamagePopups(popups, dt) {
     next.push({
       id: popup.id,
       value: popup.value,
+      isCritical: popup.isCritical === true,
       text: typeof popup.text === "string" ? popup.text : "",
       textKey: typeof popup.textKey === "string" ? popup.textKey : "",
       x: toFiniteNumber(popup.x, 0),

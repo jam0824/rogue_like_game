@@ -8,7 +8,7 @@ import {
 describe("combatFeedbackSystem", () => {
   it("damageイベントからポップアップを生成する", () => {
     const events = [
-      { kind: "damage", targetType: "enemy", enemyId: "enemy-1", damage: 12, worldX: 100, worldY: 200 },
+      { kind: "damage", targetType: "enemy", enemyId: "enemy-1", damage: 12, isCritical: true, worldX: 100, worldY: 200 },
       { kind: "status", enemyId: "enemy-1", value: "poison" },
       { kind: "damage", targetType: "player", enemyId: "enemy-2", damage: 7.4, worldX: 120.2, worldY: 210.9 },
     ];
@@ -19,6 +19,7 @@ describe("combatFeedbackSystem", () => {
     expect(popups[0]).toMatchObject({
       id: "popup-10-0",
       value: 12,
+      isCritical: true,
       x: 100,
       y: 200,
       ageSec: 0,
@@ -29,6 +30,7 @@ describe("combatFeedbackSystem", () => {
     expect(popups[1]).toMatchObject({
       id: "popup-10-1",
       value: 7,
+      isCritical: false,
       x: 120.2,
       y: 210.9,
       ageSec: 0,
@@ -43,6 +45,7 @@ describe("combatFeedbackSystem", () => {
       {
         id: "popup-1",
         value: 9,
+        isCritical: true,
         x: 10,
         y: 50,
         ageSec: 0,
@@ -57,6 +60,7 @@ describe("combatFeedbackSystem", () => {
     expect(after100ms[0].y).toBeCloseTo(47.2, 5);
     expect(after100ms[0].alpha).toBeCloseTo(1 - 0.1 / 0.45, 5);
     expect(after100ms[0].targetType).toBe("player");
+    expect(after100ms[0].isCritical).toBe(true);
 
     const expired = updateDamagePopups(after100ms, 0.5);
     expect(expired).toHaveLength(0);

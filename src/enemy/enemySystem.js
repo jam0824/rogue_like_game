@@ -7,17 +7,15 @@ import {
   ENEMY_WALK_SPEED_PX_PER_SEC,
   TILE_SIZE,
 } from "../config/constants.js";
+import { rollHitDamage } from "../combat/damageRoll.js";
 import { createRng, deriveSeed } from "../core/rng.js";
+import { deriveEnemyCombatStats } from "../status/derivedStats.js";
 
 const MOVE_EPSILON = 0.001;
 const MAX_SUBSTEP_PIXELS = 4;
 const TALL_ENEMY_COLLISION_SIZE = 32;
-const ENEMY_HP_BASE = 30;
-const ENEMY_HP_PER_VIT = 12;
-const ENEMY_HP_PER_FOR = 0.015;
 const ENEMY_ATTACK_BASE = 8;
 const ENEMY_ATTACK_PER_POW = 1.8;
-const ENEMY_MOVE_PER_AGI = 0.01;
 const ENEMY_HIT_FLASH_DURATION_SEC = 0.12;
 const ENEMY_ATTACK_TELEGRAPH_BLINK_HZ = 6;
 const VECTOR_EPSILON = 0.0001;
@@ -618,6 +616,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       id: `${enemyId}-weapon-${index}`,
       weaponDefId: weapon?.weaponDefId ?? null,
       formationId: weapon?.formationId ?? null,
+      baseDamage: toFiniteNumber(weapon?.baseDamage, Number.NaN),
       x: enemyCenterX - width / 2,
       y: enemyCenterY - height / 2,
       width,
@@ -653,6 +652,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       cooldownAfterRecoverSec: 0,
       weaponAimMode: "none",
       weaponVisibilityMode: "burst",
+      attackCycle: 0,
       engageRangePx: 0,
       attackRangePx: Number.POSITIVE_INFINITY,
       losRequired: false,
@@ -674,6 +674,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
     cooldownAfterRecoverSec: Math.max(0, toFiniteNumber(profile?.cooldownAfterRecoverSec, 0)),
     weaponAimMode: profile?.weaponAimMode === "move_dir" || profile?.weaponAimMode === "none" ? profile.weaponAimMode : "to_target",
     weaponVisibilityMode: visibilityMode,
+    attackCycle: 0,
     engageRangePx: rangeConfig.engageRangePx,
     attackRangePx: Math.max(0, toFiniteNumber(profile?.attackRangePx, Number.POSITIVE_INFINITY)),
     losRequired: profile?.losRequired === true,
@@ -684,28 +685,27 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
   };
 }
 
-function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfile = null) {
+function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfile = null, dungeonFloor = 1) {
   const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
   const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
   const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
   const rangeConfig = resolveEnemyRangeConfig(attackProfile);
   const vit = toFiniteNumber(definition.vit, 10);
-  const fortitude = toFiniteNumber(definition.for, 10);
-  const agi = toFiniteNumber(definition.agi, 10);
   const pow = toFiniteNumber(definition.pow, 10);
-  const hpRaw = ENEMY_HP_BASE + vit * ENEMY_HP_PER_VIT;
-  const toughMult = 1 + fortitude * ENEMY_HP_PER_FOR;
-  const maxHp = Math.max(1, Math.round(hpRaw * toughMult));
+  const derived = deriveEnemyCombatStats(definition, dungeonFloor, ENEMY_WALK_SPEED_PX_PER_SEC);
+  const maxHp = Math.max(1, toFiniteNumber(derived.maxHp, 1));
   const attackDamage = Math.max(1, Math.round(ENEMY_ATTACK_BASE + pow * ENEMY_ATTACK_PER_POW));
-  const moveSpeed = ENEMY_WALK_SPEED_PX_PER_SEC * (1 + agi * ENEMY_MOVE_PER_AGI);
+  const moveSpeed = Math.max(0, toFiniteNumber(derived.moveSpeedPxPerSec, ENEMY_WALK_SPEED_PX_PER_SEC));
 
   return {
     id: enemyId,
     dbId: definition.id,
     type: definition.type,
-    rank: definition.rank ?? "normal",
+    rank: derived.rank,
     role: definition.role ?? "chaser",
-    tags: Array.isArray(definition.tags) ? definition.tags.slice() : [],
+    tags: derived.tags,
+    floor: derived.floor,
+    statTotals: derived.statTotals,
     x,
     y,
     width: definition.width,
@@ -733,9 +733,17 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     hitFlashTimerSec: 0,
     hitFlashDurationSec: ENEMY_HIT_FLASH_DURATION_SEC,
     attackDamage,
+    damageMult: derived.damageMult,
+    attackScale: derived.attackScale,
+    critChance: derived.critChance,
+    critMult: derived.critMult,
+    ailmentTakenMult: derived.ailmentTakenMult,
+    durationMult: derived.durationMult,
+    ccDurationMult: derived.ccDurationMult,
+    damageSeed: deriveSeed(rng.seed, "damage"),
     moveSpeed,
     baseSpeedPxPerSec: moveSpeed,
-    chaseSpeedPxPerSec: moveSpeed * ENEMY_CHASE_SPEED_MULTIPLIER,
+    chaseSpeedPxPerSec: Math.max(0, toFiniteNumber(derived.chaseSpeedPxPerSec, moveSpeed * ENEMY_CHASE_SPEED_MULTIPLIER)),
     lastMoveDx: 0,
     lastMoveDy: 1,
     attack: createEnemyAttackRuntime(attackProfile, enemyId, x, y, definition.width, definition.height),
@@ -822,6 +830,7 @@ export function createEnemies(
 
   const spawnRng = createRng(deriveSeed(seed ?? dungeon.seed, "enemy-spawn"));
   const spawnRooms = dungeon.rooms.filter((room) => room.id !== dungeon.startRoomId);
+  const dungeonFloor = Math.max(1, Math.floor(toFiniteNumber(dungeon?.floor, 1)));
   const guaranteedOrder = spawnRng.shuffle(enemyDefinitions);
   const enemies = [];
   const blockedTileKeys = normalizeBlockedTileSet(blockedTiles);
@@ -845,7 +854,8 @@ export function createEnemies(
         spawn.collision,
         enemyRng,
         `enemy-${room.id}-${index}`,
-        attackProfile
+        attackProfile,
+        dungeonFloor
       )
     );
   }
@@ -1023,6 +1033,7 @@ function setEnemyAttackPhase(enemy, phase, timerSec) {
   }
 
   if (phase === ENEMY_ATTACK_PHASE.ATTACK) {
+    attack.attackCycle = Math.max(0, Math.floor(toFiniteNumber(attack.attackCycle, 0))) + 1;
     attack.telegraphAlpha = 0;
     resetEnemyAttackWeaponHits(attack);
     setEnemyWeaponVisibility(attack, true);
@@ -1098,7 +1109,6 @@ function applyEnemyWeaponHits(enemy, player, events, options = {}) {
     return;
   }
 
-  const damageValue = Math.max(1, Math.round(toFiniteNumber(enemy.attackDamage, 1)));
   const applyPlayerHpDamage = options.applyPlayerHpDamage !== false;
 
   for (const weapon of attack.weapons) {
@@ -1117,6 +1127,29 @@ function applyEnemyWeaponHits(enemy, player, events, options = {}) {
       continue;
     }
 
+    const canUseDerivedRoll =
+      Number.isFinite(weapon.baseDamage) &&
+      weapon.baseDamage > 0 &&
+      typeof enemy.damageSeed === "string" &&
+      Number.isFinite(enemy.damageMult) &&
+      Number.isFinite(enemy.attackScale) &&
+      Number.isFinite(enemy.critChance) &&
+      Number.isFinite(enemy.critMult);
+    const damageRoll = canUseDerivedRoll
+      ? rollHitDamage({
+          baseDamage: weapon.baseDamage,
+          damageMult: enemy.damageMult,
+          attackScale: enemy.attackScale,
+          critChance: enemy.critChance,
+          critMult: enemy.critMult,
+          seedKey: `${enemy.damageSeed}::${attack.attackCycle}::${weapon.id}::player`,
+        })
+      : {
+          damage: Math.max(1, Math.round(toFiniteNumber(enemy.attackDamage, 1))),
+          isCritical: false,
+        };
+    const damageValue = damageRoll.damage;
+
     if (applyPlayerHpDamage) {
       player.hp = Math.max(0, toFiniteNumber(player.hp, toFiniteNumber(player.maxHp, 100)) - damageValue);
       if (Number.isFinite(player.maxHp)) {
@@ -1134,6 +1167,7 @@ function applyEnemyWeaponHits(enemy, player, events, options = {}) {
       targetType: "player",
       enemyId: enemy.id,
       damage: damageValue,
+      isCritical: damageRoll.isCritical === true,
       worldX,
       worldY,
     });

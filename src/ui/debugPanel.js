@@ -1,6 +1,11 @@
 function renderStatsList(listElement, rows) {
+  if (!listElement) {
+    return;
+  }
+
   listElement.innerHTML = "";
-  for (const row of rows) {
+  const source = Array.isArray(rows) ? rows : [];
+  for (const row of source) {
     const item = document.createElement("li");
     item.className = "debug-stats-item";
     item.textContent = `${row.label}: ${row.value}`;
@@ -16,7 +21,10 @@ export function createDebugPanel(root, handlers) {
   const showStorageButton = root.querySelector("#show-storage");
   const resetStorageButton = root.querySelector("#reset-storage");
   const damagePreviewToggleButton = root.querySelector("#damage-preview-toggle");
+  const togglePlayerStatsButton = root.querySelector("#toggle-player-stats");
   const statsList = root.querySelector("#debug-stats");
+  const playerStatsWindow = root.querySelector("#debug-player-stats-window");
+  const playerStatsList = root.querySelector("#debug-player-stats");
   const storageView = root.querySelector("#debug-storage");
   const errorMessage = root.querySelector("#debug-error");
 
@@ -63,6 +71,14 @@ export function createDebugPanel(root, handlers) {
     });
   }
 
+  if (togglePlayerStatsButton) {
+    togglePlayerStatsButton.addEventListener("click", () => {
+      if (typeof handlers.onTogglePlayerStats === "function") {
+        handlers.onTogglePlayerStats();
+      }
+    });
+  }
+
   return {
     setSeed(seed) {
       seedInput.value = String(seed);
@@ -83,6 +99,19 @@ export function createDebugPanel(root, handlers) {
     },
     setStats(rows) {
       renderStatsList(statsList, rows);
+    },
+    setPlayerStatsWindowOpen(open) {
+      const isOpen = open === true;
+      if (togglePlayerStatsButton) {
+        togglePlayerStatsButton.textContent = isOpen ? "ステータス非表示" : "ステータス表示";
+        togglePlayerStatsButton.setAttribute("aria-pressed", isOpen ? "true" : "false");
+      }
+      if (playerStatsWindow) {
+        playerStatsWindow.hidden = !isOpen;
+      }
+    },
+    setPlayerStats(rows) {
+      renderStatsList(playerStatsList, rows);
     },
     setStorageDump(text) {
       if (!storageView) {

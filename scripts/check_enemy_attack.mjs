@@ -64,6 +64,7 @@ function createEnemyAttackProfile() {
       {
         weaponDefId: "weapon_sword_01",
         formationId: "formation_id_circle01",
+        baseDamage: 10,
         width: 32,
         height: 64,
         radiusPx: 0,
@@ -78,6 +79,7 @@ function createEnemyAttackProfile() {
       {
         weaponDefId: "weapon_sword_01",
         formationId: "formation_id_circle01",
+        baseDamage: 10,
         width: 32,
         height: 64,
         radiusPx: 0,
@@ -164,7 +166,9 @@ function main() {
   assert(enemy.attack.phase === "attack", "enemy should reach attack phase");
   assert(damageEvents.length === 2, "two enemy weapons should emit two damage events");
   assert(damageEvents.every((event) => event.targetType === "player"), "player damage events must set targetType=player");
-  assert(player.hp === 22, "player hp should be reduced by both weapon hits");
+  const totalDamage = damageEvents.reduce((sum, event) => sum + event.damage, 0);
+  assert(totalDamage > 0, "damage events should contain positive total damage");
+  assert(player.hp === 40 - totalDamage, "player hp should match summed damage from events");
   assert(getPlayerHitFlashAlpha(player) > 0, "player hit flash should trigger");
 
   const popups = spawnDamagePopupsFromEvents(damageEvents, 0);

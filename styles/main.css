@@ -130,6 +130,22 @@ body {
   background: rgba(23, 34, 57, 0.72);
 }
 
+.debug-player-stats-window {
+  margin: 10px 0 0;
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid rgba(111, 130, 170, 0.35);
+  background: rgba(19, 30, 52, 0.72);
+}
+
+.debug-player-stats-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #bed4f8;
+}
+
 .debug-error {
   margin: 10px 0 0;
   padding: 8px;

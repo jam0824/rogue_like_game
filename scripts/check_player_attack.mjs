@@ -135,6 +135,10 @@ function main() {
     facing: "right",
     pointerActive: true,
     target: { x: 900, y: 132 },
+    damageSeed: "check-player-damage-seed",
+    damageMult: 1.2,
+    critChance: 0.12,
+    critMult: 1.6,
   };
 
   const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);

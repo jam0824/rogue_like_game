@@ -26,6 +26,12 @@ function createEventTarget(initial = {}) {
     getAttribute(name) {
       return this.attributes?.[name] ?? null;
     },
+    appendChild(child) {
+      if (!Array.isArray(this.children)) {
+        this.children = [];
+      }
+      this.children.push(child);
+    },
   };
 }
 
@@ -40,7 +46,13 @@ function createDebugRoot() {
     textContent: "被ダメ有効",
     attributes: { "aria-pressed": "false" },
   });
+  const togglePlayerStatsButton = createEventTarget({
+    textContent: "ステータス表示",
+    attributes: { "aria-pressed": "false" },
+  });
   const statsList = createEventTarget({ innerHTML: "" });
+  const playerStatsWindow = createEventTarget({ hidden: true });
+  const playerStatsList = createEventTarget({ innerHTML: "" });
   const storageView = createEventTarget({ textContent: "", hidden: true });
   const errorMessage = createEventTarget({ textContent: "", hidden: true });
 
@@ -52,7 +64,10 @@ function createDebugRoot() {
     "#show-storage": showStorageButton,
     "#reset-storage": resetStorageButton,
     "#damage-preview-toggle": damagePreviewToggleButton,
+    "#toggle-player-stats": togglePlayerStatsButton,
     "#debug-stats": statsList,
+    "#debug-player-stats-window": playerStatsWindow,
+    "#debug-player-stats": playerStatsList,
     "#debug-storage": storageView,
     "#debug-error": errorMessage,
   };
@@ -67,8 +82,28 @@ function createDebugRoot() {
     showStorageButton,
     resetStorageButton,
     damagePreviewToggleButton,
+    togglePlayerStatsButton,
+    playerStatsWindow,
+    playerStatsList,
     storageView,
   };
+}
+
+function withMockDocument(run) {
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: vi.fn(() => ({ className: "", textContent: "" })),
+  };
+
+  try {
+    run();
+  } finally {
+    if (typeof originalDocument === "undefined") {
+      delete globalThis.document;
+    } else {
+      globalThis.document = originalDocument;
+    }
+  }
 }
 
 describe("debugPanel", () => {
@@ -83,6 +118,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage: vi.fn(),
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     pauseToggleButton.trigger("click");
@@ -99,6 +135,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage: vi.fn(),
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     panel.setPaused(true);
@@ -121,6 +158,7 @@ describe("debugPanel", () => {
       onShowStorage,
       onResetStorage: vi.fn(),
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     showStorageButton.trigger("click");
@@ -137,6 +175,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage: vi.fn(),
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     panel.setStorageDump("keys: 1\n\n[test]\nvalue");
@@ -159,6 +198,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage,
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     resetStorageButton.trigger("click");
@@ -176,6 +216,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage: vi.fn(),
       onToggleDamagePreview,
+      onTogglePlayerStats: vi.fn(),
     });
 
     damagePreviewToggleButton.trigger("click");
@@ -192,6 +233,7 @@ describe("debugPanel", () => {
       onShowStorage: vi.fn(),
       onResetStorage: vi.fn(),
       onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
     });
 
     panel.setDamagePreviewOnly(true);
@@ -201,5 +243,73 @@ describe("debugPanel", () => {
     panel.setDamagePreviewOnly(false);
     expect(damagePreviewToggleButton.textContent).toBe("被ダメ有効");
     expect(damagePreviewToggleButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("プレイヤーステータス表示ボタンで onTogglePlayerStats が呼ばれる", () => {
+    const { root, togglePlayerStatsButton } = createDebugRoot();
+    const onTogglePlayerStats = vi.fn();
+
+    createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats,
+    });
+
+    togglePlayerStatsButton.trigger("click");
+    expect(onTogglePlayerStats).toHaveBeenCalledTimes(1);
+  });
+
+  it("setPlayerStatsWindowOpen でボタン文言と表示状態が切り替わる", () => {
+    const { root, togglePlayerStatsButton, playerStatsWindow } = createDebugRoot();
+
+    const panel = createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
+    });
+
+    panel.setPlayerStatsWindowOpen(true);
+    expect(togglePlayerStatsButton.textContent).toBe("ステータス非表示");
+    expect(togglePlayerStatsButton.getAttribute("aria-pressed")).toBe("true");
+    expect(playerStatsWindow.hidden).toBe(false);
+
+    panel.setPlayerStatsWindowOpen(false);
+    expect(togglePlayerStatsButton.textContent).toBe("ステータス表示");
+    expect(togglePlayerStatsButton.getAttribute("aria-pressed")).toBe("false");
+    expect(playerStatsWindow.hidden).toBe(true);
+  });
+
+  it("setPlayerStats で詳細行が描画される", () => {
+    withMockDocument(() => {
+      const { root, playerStatsList } = createDebugRoot();
+
+      const panel = createDebugPanel(root, {
+        onApplySeed: vi.fn(),
+        onRegenerate: vi.fn(),
+        onTogglePause: vi.fn(),
+        onShowStorage: vi.fn(),
+        onResetStorage: vi.fn(),
+        onToggleDamagePreview: vi.fn(),
+        onTogglePlayerStats: vi.fn(),
+      });
+
+      panel.setPlayerStats([
+        { label: "[基本] VIT", value: "2" },
+        { label: "与ダメ倍率", value: "1.140" },
+      ]);
+
+      expect(Array.isArray(playerStatsList.children)).toBe(true);
+      expect(playerStatsList.children).toHaveLength(2);
+      expect(playerStatsList.children[0].textContent).toBe("[基本] VIT: 2");
+      expect(playerStatsList.children[1].textContent).toBe("与ダメ倍率: 1.140");
+    });
   });
 });

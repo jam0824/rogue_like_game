@@ -216,11 +216,12 @@ function drawDamagePopups(ctx, damagePopups) {
     return;
   }
 
+  const baseFontPx = 14;
+  const criticalFontScale = 2;
+
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 14px monospace";
-  ctx.lineWidth = 3;
 
   for (const popup of damagePopups) {
     const alpha = clamp(Number(popup.alpha) || 0, 0, 1);
@@ -235,6 +236,8 @@ function drawDamagePopups(ctx, damagePopups) {
     if (text.length <= 0) {
       continue;
     }
+    const isCritical = popup.isCritical === true;
+    const fontPx = isCritical ? baseFontPx * criticalFontScale : baseFontPx;
     const isPlayerDamage = popup.targetType === "player";
     const strokeStyle = typeof popup.strokeStyle === "string" && popup.strokeStyle.length > 0
       ? popup.strokeStyle
@@ -247,6 +250,8 @@ function drawDamagePopups(ctx, damagePopups) {
           : "#fff6f0";
 
     ctx.globalAlpha = alpha;
+    ctx.font = `bold ${fontPx}px monospace`;
+    ctx.lineWidth = isCritical ? 6 : 3;
     ctx.strokeStyle = strokeStyle;
     ctx.fillStyle = fillStyle;
     ctx.strokeText(text, x, y);
@@ -324,7 +329,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
  * @param {Array<{chest:{tileX:number,tileY:number,isOpened:boolean},asset:{image:HTMLImageElement}|null,frameWidth?:number,frameHeight?:number,frameRow?:number}>} treasureChestDrawables
  * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,label?:string,drawSize?:number}>} groundItemDrawables
- * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\")}>} damagePopups
+ * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\"),isCritical?:boolean}>} damagePopups
  */
 export function renderFrame(
   canvas,

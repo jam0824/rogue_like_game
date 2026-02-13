@@ -239,6 +239,19 @@ export function createPlayerState(dungeon) {
     animTime: 0,
     hp: PLAYER_MAX_HP_DEFAULT,
     maxHp: PLAYER_MAX_HP_DEFAULT,
+    moveSpeedPxPerSec: PLAYER_SPEED_PX_PER_SEC,
+    statTotals: {
+      vit: 0,
+      for: 0,
+      agi: 0,
+      pow: 0,
+      tec: 0,
+      arc: 0,
+    },
+    damageMult: 1,
+    critChance: 0.05,
+    critMult: 1.5,
+    damageSeed: "player-damage-default",
     hitFlashTimerSec: 0,
     hitFlashDurationSec: PLAYER_HIT_FLASH_DURATION_SEC,
   };
@@ -309,7 +322,10 @@ export function updatePlayer(player, dungeon, dt) {
     return;
   }
 
-  const travelDistance = Math.min(distance, PLAYER_SPEED_PX_PER_SEC * dt);
+  const speedPxPerSec = Number.isFinite(player.moveSpeedPxPerSec)
+    ? Math.max(0, player.moveSpeedPxPerSec)
+    : PLAYER_SPEED_PX_PER_SEC;
+  const travelDistance = Math.min(distance, speedPxPerSec * dt);
   const moveX = (toTargetX / distance) * travelDistance;
   const moveY = (toTargetY / distance) * travelDistance;
   const substeps = Math.max(1, Math.ceil(Math.hypot(moveX, moveY) / MAX_SUBSTEP_PIXELS));

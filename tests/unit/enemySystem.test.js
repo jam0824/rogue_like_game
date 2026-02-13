@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { rollHitDamage } from "../../src/combat/damageRoll.js";
 import { ENEMY_ANIM_FPS, ENEMY_ANIM_SEQUENCE, ENEMY_WALK_SPEED_PX_PER_SEC } from "../../src/config/constants.js";
 import {
   createEnemies,
@@ -461,5 +462,58 @@ describe("enemySystem", () => {
     expect(events[0]).toMatchObject({ kind: "damage", targetType: "player", damage: 9 });
     expect(player.hp).toBe(30);
     expect(player.hitFlashTimerSec).toBeGreaterThan(0);
+  });
+
+  it("weapon.baseDamage がある敵攻撃は seed 固定の Rand/Crit ダメージを使う", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-derived-roll-01" });
+    const attackProfile = createEnemyAttackProfile({
+      windupSec: 0,
+      executeSec: 0.2,
+      recoverSec: 0,
+      cooldownAfterRecoverSec: 0.1,
+      attackRangePx: 999,
+      weapons: [
+        {
+          weaponDefId: "weapon_sword_01",
+          width: 32,
+          height: 64,
+          baseDamage: 10,
+          radiusPx: 0,
+          angularSpeed: 0,
+          executeDurationSec: 0.2,
+        },
+      ],
+    });
+
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-derived-roll-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    const player = createPlayer({
+      x: enemy.x,
+      y: enemy.y,
+      hp: 100,
+      maxHp: 100,
+    });
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const events = updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const [weapon] = getEnemyWeaponRuntimes(enemy);
+    const expectedDamage = rollHitDamage({
+      baseDamage: 10,
+      damageMult: enemy.damageMult,
+      attackScale: enemy.attackScale,
+      critChance: enemy.critChance,
+      critMult: enemy.critMult,
+      seedKey: `${enemy.damageSeed}::${enemy.attack.attackCycle}::${weapon.id}::player`,
+    }).damage;
+
+    expect(events).toHaveLength(1);
+    expect(events[0].damage).toBe(expectedDamage);
+    expect(player.hp).toBe(100 - expectedDamage);
   });
 });

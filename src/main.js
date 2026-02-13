@@ -1,4 +1,12 @@
-import { INITIAL_SEED, PLAYER_FOOT_HITBOX_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from "./config/constants.js";
+import {
+  INITIAL_SEED,
+  PLAYER_FOOT_HITBOX_HEIGHT,
+  PLAYER_HEIGHT,
+  PLAYER_SPEED_PX_PER_SEC,
+  PLAYER_WIDTH,
+  TILE_SIZE,
+} from "./config/constants.js";
+import { deriveSeed } from "./core/rng.js";
 import { loadEnemyAssets } from "./enemy/enemyAsset.js";
 import { loadEnemyAiProfiles } from "./enemy/enemyAiProfileDb.js";
 import { loadEnemyDefinitions } from "./enemy/enemyDb.js";
@@ -46,10 +54,12 @@ import {
 } from "./player/playerStateStore.js";
 import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
+import { derivePlayerCombatStats } from "./status/derivedStats.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
+import { buildPlayerStatusDigest, buildPlayerStatusRows } from "./ui/debugPlayerStatsViewModel.js";
 import {
   clearToastMessage,
   buildQuickSlots,
@@ -429,6 +439,7 @@ function buildEnemyTextState(enemy) {
 function buildDamagePopupTextState(popup) {
   return {
     value: Math.max(0, Math.round(Number(popup?.value) || 0)),
+    isCritical: popup?.isCritical === true,
     text: typeof popup?.text === "string" ? popup.text : "",
     textKey: typeof popup?.textKey === "string" ? popup.textKey : "",
     x: round2(popup?.x ?? 0),
@@ -655,6 +666,7 @@ function buildEnemyAttackProfilesByDbId() {
       resolvedWeapons.push({
         weaponDefId: weaponDefinition.id,
         formationId,
+        baseDamage: Number(weaponDefinition.baseDamage) || 0,
         width: weaponDefinition.width,
         height: weaponDefinition.height,
         radiusPx: (Number(formationDefinition.radiusBase) || 0) * TILE_SIZE,
@@ -799,9 +811,30 @@ function syncDamagePreviewUi() {
 }
 
 let lastStatsDigest = "";
+let lastPlayerStatsDigest = "";
 let lastSystemUiDigest = "";
 let pointerDownFeetTileSnapshot = null;
 let toastAutoClearTimerId = null;
+let isPlayerStatsWindowOpen = false;
+
+function syncPlayerStatsWindowVisibility() {
+  debugPanel.setPlayerStatsWindowOpen(isPlayerStatsWindowOpen);
+}
+
+function syncPlayerStatsWindow() {
+  if (!isPlayerStatsWindowOpen) {
+    return;
+  }
+
+  const rows = buildPlayerStatusRows(appState.playerState, appState.player, PLAYER_SPEED_PX_PER_SEC);
+  const digest = buildPlayerStatusDigest(rows);
+  if (digest === lastPlayerStatsDigest) {
+    return;
+  }
+
+  debugPanel.setPlayerStats(rows);
+  lastPlayerStatsDigest = digest;
+}
 
 function clearToastAutoClearTimer() {
   if (toastAutoClearTimerId === null) {
@@ -1146,7 +1179,16 @@ function toggleDamagePreview() {
   appState.debugPlayerDamagePreviewOnly = appState.debugPlayerDamagePreviewOnly !== true;
   syncDamagePreviewUi();
   lastStatsDigest = "";
+  lastPlayerStatsDigest = "";
   syncStatsPanel();
+  syncPlayerStatsWindow();
+}
+
+function togglePlayerStatsWindow() {
+  isPlayerStatsWindowOpen = !isPlayerStatsWindowOpen;
+  syncPlayerStatsWindowVisibility();
+  lastPlayerStatsDigest = "";
+  syncPlayerStatsWindow();
 }
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
@@ -1170,9 +1212,13 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   onToggleDamagePreview: () => {
     toggleDamagePreview();
   },
+  onTogglePlayerStats: () => {
+    togglePlayerStatsWindow();
+  },
 });
 syncPauseUi();
 syncDamagePreviewUi();
+syncPlayerStatsWindowVisibility();
 syncSystemHud();
 
 function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
@@ -1344,6 +1390,7 @@ function stepSimulation(dt) {
   appState.enemies = removeDefeatedEnemies(appState.enemies);
   syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
   syncStatsPanel();
+  syncPlayerStatsWindow();
   syncSystemHud();
   followPlayerInView();
 }
@@ -1388,13 +1435,28 @@ async function regenerate(seed) {
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
+    dungeon.floor = Math.max(1, Math.floor(Number(appState.playerState?.run?.floor) || 1));
 
     const player = createPlayerState(dungeon);
+    const playerDerived = derivePlayerCombatStats(appState.playerState, PLAYER_SPEED_PX_PER_SEC);
+    player.statTotals = playerDerived.statTotals;
+    player.maxHp = playerDerived.maxHp;
+    player.moveSpeedPxPerSec = playerDerived.moveSpeedPxPerSec;
+    player.damageMult = playerDerived.damageMult;
+    player.critChance = playerDerived.critChance;
+    player.critMult = playerDerived.critMult;
+    player.ailmentTakenMult = playerDerived.ailmentTakenMult;
+    player.durationMult = playerDerived.durationMult;
+    player.ccDurationMult = playerDerived.ccDurationMult;
+    player.damageSeed = deriveSeed(dungeon.seed, "player-damage");
+
     if (appState.playerState?.run?.pos) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
     if (Number.isFinite(appState.playerState?.run?.hp)) {
       player.hp = clamp(appState.playerState.run.hp, 0, player.maxHp);
+    } else {
+      player.hp = player.maxHp;
     }
     const herbDefinition = itemDefinitionsById?.[HERB_ITEM_ID];
     if (!herbDefinition) {
@@ -1472,8 +1534,10 @@ async function regenerate(seed) {
 
     debugPanel.setSeed(normalizedSeed);
     lastStatsDigest = "";
+    lastPlayerStatsDigest = "";
     lastSystemUiDigest = "";
     syncStatsPanel();
+    syncPlayerStatsWindow();
     syncSystemHud();
     debugPanel.setError(validation.ok ? "" : validation.errors.join(" | "));
     syncPauseUi();
@@ -1495,8 +1559,10 @@ async function regenerate(seed) {
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
     lastStatsDigest = "";
+    lastPlayerStatsDigest = "";
     lastSystemUiDigest = "";
     debugPanel.setStats([]);
+    syncPlayerStatsWindow();
     debugPanel.setError(appState.error);
     syncPauseUi();
     syncDamagePreviewUi();
