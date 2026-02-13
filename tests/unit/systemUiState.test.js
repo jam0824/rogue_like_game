@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearToastMessage,
   createInitialSystemUiState,
   dropSelectedInventoryItemToGround,
   findDropTileNearPlayer,
@@ -24,6 +25,15 @@ function createPlayerAtFeetTile(tileX, tileY) {
 }
 
 describe("systemUiState", () => {
+  it("clearToastMessage は toastMessage を空にする", () => {
+    const state = createInitialSystemUiState();
+    state.toastMessage = "temporary";
+
+    const next = clearToastMessage(state);
+    expect(next.toastMessage).toBe("");
+    expect(state.toastMessage).toBe("temporary");
+  });
+
   it("consumable の USE で個数が減り 0 で削除される", () => {
     const state = createInitialSystemUiState();
 

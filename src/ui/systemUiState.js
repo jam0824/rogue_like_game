@@ -185,6 +185,12 @@ function withToast(nextState, messageKey) {
   };
 }
 
+export function clearToastMessage(systemUi) {
+  const nextState = cloneSystemUiState(systemUi);
+  nextState.toastMessage = "";
+  return nextState;
+}
+
 function normalizeIncomingInventoryItem(item) {
   if (!item || typeof item !== "object" || typeof item.id !== "string" || item.id.length <= 0) {
     return null;

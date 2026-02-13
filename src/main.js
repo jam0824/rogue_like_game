@@ -51,6 +51,7 @@ import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import {
+  clearToastMessage,
   buildQuickSlots,
   createInitialSystemUiState,
   dropSelectedInventoryItemToGround,
@@ -80,6 +81,7 @@ const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "weapon_sword_01";
 const HERB_ITEM_ID = "item_herb_01";
 const HERB_HEAL_AMOUNT = 50;
+const SYSTEM_UI_TOAST_DURATION_MS = 1800;
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
 
@@ -799,11 +801,40 @@ function syncDamagePreviewUi() {
 let lastStatsDigest = "";
 let lastSystemUiDigest = "";
 let pointerDownFeetTileSnapshot = null;
+let toastAutoClearTimerId = null;
+
+function clearToastAutoClearTimer() {
+  if (toastAutoClearTimerId === null) {
+    return;
+  }
+  window.clearTimeout(toastAutoClearTimerId);
+  toastAutoClearTimerId = null;
+}
+
+function scheduleToastAutoClear(systemUiState) {
+  clearToastAutoClearTimer();
+  const nextToast = typeof systemUiState?.toastMessage === "string" ? systemUiState.toastMessage.trim() : "";
+  if (nextToast.length <= 0) {
+    return;
+  }
+
+  toastAutoClearTimerId = window.setTimeout(() => {
+    toastAutoClearTimerId = null;
+    const currentSystemUi = getSystemUiState();
+    const currentToast =
+      typeof currentSystemUi?.toastMessage === "string" ? currentSystemUi.toastMessage.trim() : "";
+    if (currentToast.length <= 0 || currentToast !== nextToast) {
+      return;
+    }
+    applySystemUiState(clearToastMessage(currentSystemUi));
+  }, SYSTEM_UI_TOAST_DURATION_MS);
+}
 
 function applySystemUiState(nextSystemUiState) {
   appState.systemUi = nextSystemUiState;
   lastSystemUiDigest = "";
   syncSystemHud();
+  scheduleToastAutoClear(nextSystemUiState);
 }
 
 function getInventoryItemCount(systemUi, itemId) {

@@ -539,3 +539,28 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
     - `output/web-game-drop-grounditems-manual/verification.json` confirms round-trip:
       - `beforeCount=3 -> afterDropCount=2 -> afterPickupCount=3`
       - `beforeGroundCount=0 -> afterDropGroundCount=1 -> afterPickupGroundCount=0`.
+- 2026-02-13: Added auto-dismiss for HUD toast messages (e.g. "アイテムを捨てました。") so they do not remain indefinitely.
+  - `src/ui/systemUiState.js`: added `clearToastMessage(systemUi)` helper.
+  - `src/main.js`: added toast auto-clear scheduler in `applySystemUiState` with timeout `SYSTEM_UI_TOAST_DURATION_MS = 1800`.
+    - Any new non-empty toast starts/restarts timer.
+    - Timer clears toast only if message is unchanged at fire time (prevents clearing a newer toast).
+- 2026-02-13: Added unit coverage for toast clear helper.
+  - `tests/unit/systemUiState.test.js`: `clearToastMessage` returns cleared copy and does not mutate source.
+- 2026-02-13: Validation complete for toast auto-dismiss:
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 11 tests)
+  - `npm run unit` -> PASS (14 files, 100 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright runtime check confirmed toast transition:
+    - `toastAfterDrop: "アイテムを捨てました。"`
+    - `toastAfterWait (2.2s): ""`
+- 2026-02-13: Spec sync update after DROP/ground-item/toast implementations.
+  - `spec/ダンジョン仕様_v1.md`:
+    - Added `7.8 宝箱インタラクト（v1実装確定）` (placement on walkable, non-walkable chest tile, strict click+distance open rule, pointer-down feet reference, nearby-walkable drop with radius expansion and fail-safe).
+    - Added `8.1 床アイテム管理（v1実装確定）` (`groundItems` unified management, `sourceType` usage, runtime-item pickup path, no-image label fallback).
+  - `spec/システムUI仕様_v1.md`:
+    - Added `HUDトースト（v1実装確定）` with auto-dismiss timing (~1.8s) and timer reset behavior on newer toast.
+    - Clarified DROP behavior (1 item per action, near-player walkable placement, no overlap with feet/occupied tile, world visibility and re-pickup, image-or-label rendering rule).
+  - `spec/アイテム・装備・スキル仕様_v1.md`:
+    - Updated `更新日` to 2026-02-13.
+    - Added item UI notes for floor re-pickup and image/label fallback.
+    - Removed outdated TODO about heal amount values (already fixed in section 8 use_params table).
