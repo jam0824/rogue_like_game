@@ -1,0 +1,15 @@
+{
+    "id": "item_herb_01",
+    "name_key": "name_item_herb_01",
+    "description_key": "desc_item_herb_01",
+    "icon_file_name": "item_herb_01.png",
+  
+    "category": "consumable",
+    "sub_type": "heal",
+    "max_stack": 20,
+    "usable_in_quickslot": true,
+  
+    "use_params": {
+      "heal_tier": "small"
+    }
+  }
