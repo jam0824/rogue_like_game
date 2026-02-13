@@ -276,14 +276,40 @@ function drawTreasureChest(ctx, drawable) {
 function drawGroundItem(ctx, drawable) {
   const asset = drawable.asset;
   const groundItem = drawable.groundItem;
-  if (!asset?.image || !groundItem) {
+  if (!groundItem) {
     return;
   }
 
   const drawSize = Math.max(8, Math.floor(Number(drawable.drawSize) || TILE_SIZE));
   const dx = Math.round((Number(groundItem.xPx) || 0) - drawSize / 2);
   const dy = Math.round((Number(groundItem.yPx) || 0) - drawSize / 2);
-  ctx.drawImage(asset.image, dx, dy, drawSize, drawSize);
+
+  if (asset?.image) {
+    ctx.drawImage(asset.image, dx, dy, drawSize, drawSize);
+    return;
+  }
+
+  const label = typeof drawable.label === "string" ? drawable.label.trim() : "";
+  if (label.length <= 0) {
+    return;
+  }
+
+  const displayLabel = label.slice(0, 2).toUpperCase();
+  ctx.save();
+  ctx.fillStyle = "rgba(56, 38, 20, 0.95)";
+  ctx.fillRect(dx, dy, drawSize, drawSize);
+  ctx.strokeStyle = "#c59b5a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(dx + 1, dy + 1, Math.max(2, drawSize - 2), Math.max(2, drawSize - 2));
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold ${Math.max(9, Math.floor(drawSize * 0.36))}px monospace`;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#000000";
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeText(displayLabel, dx + drawSize / 2, dy + drawSize / 2 + 1);
+  ctx.fillText(displayLabel, dx + drawSize / 2, dy + drawSize / 2 + 1);
+  ctx.restore();
 }
 
 /**
@@ -297,7 +323,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
  * @param {Array<{chest:{tileX:number,tileY:number,isOpened:boolean},asset:{image:HTMLImageElement}|null,frameWidth?:number,frameHeight?:number,frameRow?:number}>} treasureChestDrawables
- * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,drawSize?:number}>} groundItemDrawables
+ * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,label?:string,drawSize?:number}>} groundItemDrawables
  * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\")}>} damagePopups
  */
 export function renderFrame(
@@ -389,7 +415,12 @@ export function renderFrame(
   }
 
   for (const drawable of groundItemDrawables) {
-    if (!drawable?.asset?.image || !drawable?.groundItem) {
+    if (!drawable?.groundItem) {
+      continue;
+    }
+    const hasImage = Boolean(drawable?.asset?.image);
+    const hasLabel = typeof drawable?.label === "string" && drawable.label.trim().length > 0;
+    if (!hasImage && !hasLabel) {
       continue;
     }
 

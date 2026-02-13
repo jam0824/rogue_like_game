@@ -498,3 +498,44 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
 - 2026-02-13: Validation complete after chest interaction re-tuning:
   - `npm run unit` -> PASS (14 files, 97 tests)
   - `npm run test:checks` -> PASS
+- 2026-02-13: Adjusted inventory DROP placement to avoid player overlap.
+  - `src/ui/systemUiState.js`: `findDropTileNearPlayer(...)` now skips the player's feet tile candidate, while keeping nearby walkable + occupied-tile avoidance behavior.
+  - `dropSelectedInventoryItem(...)` continues using the same near-player walkable search, so dropped items are placed near the player but not on the player's tile.
+- 2026-02-13: Updated tests for DROP overlap rule.
+  - `tests/unit/systemUiState.test.js`: added assertion that first DROP tile is not the player's feet tile; updated helper test title/inputs to validate player-tile avoidance explicitly.
+- 2026-02-13: Validation complete for DROP placement adjustment:
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 8 tests)
+  - `npm run unit` -> PASS (14 files, 97 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Unified inventory DROP to world `groundItems` to fix invisible dropped-item issue.
+  - Root cause: inventory `DROP` updated `inventory.droppedItems` only, while world render/pickup used `appState.groundItems`.
+  - `src/ui/systemUiState.js`:
+    - Added `dropSelectedInventoryItemToGround(systemUi, dungeon, player, groundItems, nowMs)`.
+    - New API decrements selected inventory item by 1 and returns `{ systemUi, success, droppedGroundItem }`.
+    - Returned `droppedGroundItem` now includes `sourceType: "inventory_drop"` and `runtimeItem` payload for DB-independent re-pickup.
+  - `src/main.js`:
+    - Switched inventory DROP handler to `dropSelectedInventoryItemToGround(...)`.
+    - On success, appends returned item into `appState.groundItems` (no longer relying on `inventory.droppedItems` for world behavior).
+    - Extended ground pickup flow to prefer `groundItem.runtimeItem` when present; falls back to item DB path for chest drops.
+    - Added `sourceType` / `iconKey` to `render_game_to_text` `groundItems` output.
+    - Ground drawable generation now adds label fallback (`getIconLabelForKey(...)`) for non-asset dropped items.
+  - `src/render/canvasRenderer.js`:
+    - `drawGroundItem` now supports text-tile fallback when no image asset exists (small tile + outlined 2-letter label).
+    - Ground item queue accepts drawables with either image or label.
+  - `src/item/treasureSystem.js`:
+    - Chest drop ground items now explicitly mark `sourceType: "chest_drop"` for consistent text-state/debug visibility.
+- 2026-02-13: Updated unit tests for DROP-to-ground flow.
+  - `tests/unit/systemUiState.test.js`:
+    - Added coverage for `dropSelectedInventoryItemToGround` success return shape and dropped item payload.
+    - Validates non-overlap with player feet tile and existing `groundItems` occupancy.
+    - Validates inventory decrement / remove-on-zero behavior and drop-failure inventory preservation.
+    - Validates `runtimeItem` key fields (`iconKey/nameKey/descriptionKey/effectKey/iconImageSrc`).
+- 2026-02-13: Validation complete after DROP unification.
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 10 tests)
+  - `npm run unit` -> PASS (14 files, 99 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright verification artifacts:
+    - `output/web-game-drop-grounditems-manual/shot-after-drop.png` confirms visible fallback tile label (`HP`) for image-less dropped potion.
+    - `output/web-game-drop-grounditems-manual/verification.json` confirms round-trip:
+      - `beforeCount=3 -> afterDropCount=2 -> afterPickupCount=3`
+      - `beforeGroundCount=0 -> afterDropGroundCount=1 -> afterPickupGroundCount=0`.

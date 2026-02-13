@@ -471,6 +471,10 @@ export function findDropTileNearPlayer(
   for (let radius = 0; radius <= searchRadius; radius += 1) {
     const candidates = iterateRingCandidates(feetTile.tileX, feetTile.tileY, radius);
     for (const candidate of candidates) {
+      if (candidate.tileX === feetTile.tileX && candidate.tileY === feetTile.tileY) {
+        continue;
+      }
+
       const key = `${candidate.tileX}:${candidate.tileY}`;
       if (occupiedTiles.has(key)) {
         continue;
@@ -536,4 +540,78 @@ export function dropSelectedInventoryItem(systemUi, dungeon, player, nowMs = Dat
   );
 
   return withToast(nextState, "ui_hint_item_dropped");
+}
+
+export function dropSelectedInventoryItemToGround(
+  systemUi,
+  dungeon,
+  player,
+  groundItems = [],
+  nowMs = Date.now()
+) {
+  const nextState = cloneSystemUiState(systemUi);
+  const selectedItemId = nextState.inventory.selectedItemId;
+  const index = findItemIndexById(nextState.inventory.items, selectedItemId);
+
+  if (index < 0) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_none_selected"),
+      success: false,
+      droppedGroundItem: null,
+    };
+  }
+
+  const dropPosition = findDropTileNearPlayer(
+    dungeon,
+    player,
+    Array.isArray(groundItems) ? groundItems : [],
+    DROP_SEARCH_MAX_RADIUS
+  );
+  if (!dropPosition) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_drop_failed"),
+      success: false,
+      droppedGroundItem: null,
+    };
+  }
+
+  const item = nextState.inventory.items[index];
+  const runtimeItem = cloneInventoryItem({
+    ...item,
+    count: 1,
+    quickSlot: null,
+  });
+  item.count = Math.max(0, toNonNegativeInt(item.count, 0) - 1);
+
+  if (item.count <= 0) {
+    nextState.inventory.items.splice(index, 1);
+  }
+
+  nextState.inventory.selectedItemId = pickNextSelectedItemId(
+    nextState.inventory.items,
+    nextState.inventory.selectedItemId
+  );
+
+  const dropId = `ground_drop_${toNonNegativeInt(nowMs, Date.now())}_${toNonNegativeInt(
+    Array.isArray(groundItems) ? groundItems.length : 0,
+    0
+  )}`;
+  const droppedGroundItem = {
+    id: dropId,
+    sourceType: "inventory_drop",
+    sourceChestId: null,
+    itemId: runtimeItem.id,
+    count: 1,
+    tileX: dropPosition.tileX,
+    tileY: dropPosition.tileY,
+    xPx: dropPosition.xPx,
+    yPx: dropPosition.yPx,
+    runtimeItem,
+  };
+
+  return {
+    systemUi: withToast(nextState, "ui_hint_item_dropped"),
+    success: true,
+    droppedGroundItem,
+  };
 }

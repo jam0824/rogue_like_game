@@ -446,6 +446,7 @@ export function tryOpenChestByClick(
     ...currentGroundItems,
     {
       id: `ground_${chest.id}`,
+      sourceType: "chest_drop",
       sourceChestId: chest.id,
       itemId: dropItemId,
       count: 1,

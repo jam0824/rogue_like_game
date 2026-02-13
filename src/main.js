@@ -53,7 +53,7 @@ import { createDebugPanel } from "./ui/debugPanel.js";
 import {
   buildQuickSlots,
   createInitialSystemUiState,
-  dropSelectedInventoryItem,
+  dropSelectedInventoryItemToGround,
   QUICK_SLOT_COUNT,
   selectInventoryItem,
   setInventoryWindowOpen,
@@ -62,7 +62,7 @@ import {
   useQuickSlotItem,
 } from "./ui/systemUiState.js";
 import { createSystemHud } from "./ui/systemHud.js";
-import { tJa } from "./ui/uiTextJa.js";
+import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
 import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
@@ -293,10 +293,23 @@ function buildTreasureChestTextState(chest) {
 }
 
 function buildGroundItemTextState(item) {
+  const iconKey = typeof item?.runtimeItem?.iconKey === "string" && item.runtimeItem.iconKey.length > 0
+    ? item.runtimeItem.iconKey
+    : item?.itemId === HERB_ITEM_ID
+      ? "herb"
+      : "";
+
   return {
     id: item.id,
     sourceChestId: item.sourceChestId ?? null,
+    sourceType:
+      typeof item?.sourceType === "string" && item.sourceType.length > 0
+        ? item.sourceType
+        : item?.sourceChestId
+          ? "chest_drop"
+          : "unknown",
     itemId: item.itemId,
+    iconKey,
     count: Math.max(1, Math.floor(Number(item.count) || 1)),
     tileX: item.tileX,
     tileY: item.tileY,
@@ -910,24 +923,50 @@ function syncGroundItemPickup() {
       continue;
     }
 
-    const itemDefinition = itemDefinitionsById?.[groundItem.itemId];
-    if (!itemDefinition) {
-      keptGroundItems.push(groundItem);
-      continue;
-    }
-
-    const runtimeItem = toRuntimeInventoryItem(
-      itemDefinition,
-      itemAssetsById?.[itemDefinition.id],
-      groundItem.count
-    );
+    const runtimeGroundItem = groundItem?.runtimeItem;
+    const runtimeItemFromGround =
+      runtimeGroundItem &&
+      typeof runtimeGroundItem === "object" &&
+      typeof runtimeGroundItem.id === "string" &&
+      runtimeGroundItem.id.length > 0
+        ? {
+            id: runtimeGroundItem.id,
+            type: typeof runtimeGroundItem.type === "string" ? runtimeGroundItem.type : "consumable",
+            count: Math.max(1, Math.floor(Number(groundItem.count) || Number(runtimeGroundItem.count) || 1)),
+            quickSlot: null,
+            iconKey: typeof runtimeGroundItem.iconKey === "string" ? runtimeGroundItem.iconKey : "item",
+            nameKey:
+              typeof runtimeGroundItem.nameKey === "string" && runtimeGroundItem.nameKey.length > 0
+                ? runtimeGroundItem.nameKey
+                : "ui_label_inventory_empty",
+            descriptionKey:
+              typeof runtimeGroundItem.descriptionKey === "string" && runtimeGroundItem.descriptionKey.length > 0
+                ? runtimeGroundItem.descriptionKey
+                : "ui_label_inventory_placeholder",
+            effectKey:
+              typeof runtimeGroundItem.effectKey === "string" && runtimeGroundItem.effectKey.length > 0
+                ? runtimeGroundItem.effectKey
+                : "ui_label_inventory_effect_placeholder",
+            iconImageSrc:
+              typeof runtimeGroundItem.iconImageSrc === "string" ? runtimeGroundItem.iconImageSrc : "",
+          }
+        : null;
+    const itemDefinition = itemDefinitionsById?.[groundItem.itemId] ?? null;
+    const runtimeItemFromDefinition = itemDefinition
+      ? toRuntimeInventoryItem(
+          itemDefinition,
+          itemAssetsById?.[itemDefinition.id],
+          groundItem.count
+        )
+      : null;
+    const runtimeItem = runtimeItemFromGround ?? runtimeItemFromDefinition;
     if (!runtimeItem) {
       keptGroundItems.push(groundItem);
       continue;
     }
 
     const addResult = tryAddInventoryItem(systemUi, runtimeItem, {
-      maxStack: itemDefinition.maxStack,
+      maxStack: itemDefinition?.maxStack ?? Number.MAX_SAFE_INTEGER,
       successMessageKey: "",
       fullMessageKey: "ui_hint_inventory_full",
     });
@@ -935,9 +974,15 @@ function syncGroundItemPickup() {
     systemUi = addResult.systemUi;
     systemUiChanged = true;
     if (addResult.success) {
-      if (typeof itemDefinition.nameKey === "string" && itemDefinition.nameKey.length > 0) {
+      const pickupNameKey =
+        typeof runtimeItem.nameKey === "string" && runtimeItem.nameKey.length > 0
+          ? runtimeItem.nameKey
+          : typeof itemDefinition?.nameKey === "string"
+            ? itemDefinition.nameKey
+            : "";
+      if (pickupNameKey.length > 0) {
         pushFloatingPickupPopup(
-          itemDefinition.nameKey,
+          pickupNameKey,
           appState.player.x + PLAYER_WIDTH / 2,
           appState.player.y - 10
         );
@@ -984,7 +1029,24 @@ const systemHud = systemUiRoot
         applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
       },
       onDropSelectedItem: () => {
-        applySystemUiState(dropSelectedInventoryItem(getSystemUiState(), appState.dungeon, appState.player, Date.now()));
+        if (!appState.dungeon || !appState.player) {
+          return;
+        }
+
+        const dropResult = dropSelectedInventoryItemToGround(
+          getSystemUiState(),
+          appState.dungeon,
+          appState.player,
+          appState.groundItems,
+          Date.now()
+        );
+        applySystemUiState(dropResult.systemUi);
+        if (!dropResult.success || !dropResult.droppedGroundItem) {
+          return;
+        }
+
+        const currentGroundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
+        appState.groundItems = [...currentGroundItems, dropResult.droppedGroundItem];
       },
     })
   : null;
@@ -1202,6 +1264,7 @@ function renderCurrentFrame() {
   const groundItemDrawables = (appState.groundItems ?? []).map((groundItem) => ({
     groundItem,
     asset: itemAssetsById[groundItem.itemId] ?? null,
+    label: getIconLabelForKey(groundItem?.runtimeItem?.iconKey ?? groundItem?.itemId ?? "empty"),
     drawSize: TILE_SIZE,
   }));
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createInitialSystemUiState,
-  dropSelectedInventoryItem,
+  dropSelectedInventoryItemToGround,
   findDropTileNearPlayer,
   tryAddInventoryItem,
   useInventoryItem,
@@ -53,43 +53,88 @@ describe("systemUiState", () => {
     expect(potion?.count).toBe(2);
   });
 
-  it("DROP は同一タイルに重ならない", () => {
+  it("dropSelectedInventoryItemToGround は足元以外かつ既存groundItemsと重ならない", () => {
     const dungeon = createWalkableDungeon(8, 8, true);
     const player = createPlayerAtFeetTile(3, 3);
     const state = createInitialSystemUiState();
 
-    const firstDrop = dropSelectedInventoryItem(state, dungeon, player, 1000);
-    expect(firstDrop.inventory.droppedItems.length).toBe(1);
+    const firstDrop = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
+    expect(firstDrop.success).toBe(true);
+    expect(firstDrop.droppedGroundItem).toBeTruthy();
+    expect(`${firstDrop.droppedGroundItem.tileX}:${firstDrop.droppedGroundItem.tileY}`).not.toBe("3:3");
 
-    const secondDrop = dropSelectedInventoryItem(firstDrop, dungeon, player, 1001);
-    expect(secondDrop.inventory.droppedItems.length).toBe(2);
+    const secondDrop = dropSelectedInventoryItemToGround(
+      firstDrop.systemUi,
+      dungeon,
+      player,
+      [firstDrop.droppedGroundItem],
+      1001
+    );
+    expect(secondDrop.success).toBe(true);
+    expect(secondDrop.droppedGroundItem).toBeTruthy();
 
-    const tileA = secondDrop.inventory.droppedItems[0];
-    const tileB = secondDrop.inventory.droppedItems[1];
+    const tileA = firstDrop.droppedGroundItem;
+    const tileB = secondDrop.droppedGroundItem;
     expect(`${tileA.tileX}:${tileA.tileY}`).not.toBe(`${tileB.tileX}:${tileB.tileY}`);
   });
 
-  it("DROP の配置先がない場合は失敗する", () => {
+  it("dropSelectedInventoryItemToGround は在庫を減らし、0になったアイテムを削除する", () => {
+    const dungeon = createWalkableDungeon(8, 8, true);
+    const player = createPlayerAtFeetTile(3, 3);
+    const state = createInitialSystemUiState();
+    state.inventory.selectedItemId = "run_item_antidote";
+
+    const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
+    expect(next.success).toBe(true);
+    expect(next.droppedGroundItem).toBeTruthy();
+    expect(next.systemUi.inventory.items.some((item) => item.id === "run_item_antidote")).toBe(false);
+    expect(next.systemUi.toastMessage).toContain("捨てました");
+  });
+
+  it("dropSelectedInventoryItemToGround は配置先がない場合は失敗し在庫を維持する", () => {
     const dungeon = createWalkableDungeon(6, 6, false);
     const player = createPlayerAtFeetTile(3, 3);
     const state = createInitialSystemUiState();
 
-    const next = dropSelectedInventoryItem(state, dungeon, player, 1000);
-    expect(next.inventory.droppedItems.length).toBe(0);
-    expect(next.toastMessage).toContain("置ける場所がありません");
+    const beforePotionCount = state.inventory.items.find((item) => item.id === "run_item_potion_small")?.count;
+    const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
+    expect(next.success).toBe(false);
+    expect(next.droppedGroundItem).toBeNull();
+    expect(next.systemUi.toastMessage).toContain("置ける場所がありません");
+    const afterPotionCount = next.systemUi.inventory.items.find((item) => item.id === "run_item_potion_small")?.count;
+    expect(afterPotionCount).toBe(beforePotionCount);
   });
 
-  it("findDropTileNearPlayer は占有タイルを避ける", () => {
+  it("findDropTileNearPlayer はプレイヤー足元と占有タイルを避ける", () => {
     const dungeon = createWalkableDungeon(7, 7, true);
     const player = createPlayerAtFeetTile(3, 3);
     const drop = findDropTileNearPlayer(dungeon, player, [
-      { tileX: 3, tileY: 3 },
       { tileX: 2, tileY: 3 },
     ]);
 
     expect(drop).not.toBeNull();
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("3:3");
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("2:3");
+  });
+
+  it("dropSelectedInventoryItemToGround は runtimeItem の主要情報を保持する", () => {
+    const dungeon = createWalkableDungeon(8, 8, true);
+    const player = createPlayerAtFeetTile(3, 3);
+    const state = createInitialSystemUiState();
+
+    const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
+    expect(next.success).toBe(true);
+    expect(next.droppedGroundItem?.sourceType).toBe("inventory_drop");
+    expect(next.droppedGroundItem?.runtimeItem).toMatchObject({
+      id: "run_item_potion_small",
+      type: "consumable",
+      iconKey: "potion_red",
+      nameKey: "item_name_potion_small",
+      descriptionKey: "item_desc_potion_small",
+      effectKey: "item_effect_potion_small",
+      count: 1,
+    });
+    expect(typeof next.droppedGroundItem?.runtimeItem?.iconImageSrc).toBe("string");
   });
 
   it("tryAddInventoryItem は既存スタックに加算し、画像srcを保持する", () => {
