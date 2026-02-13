@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { spawnDamagePopupsFromEvents, updateDamagePopups } from "../../src/combat/combatFeedbackSystem.js";
+import {
+  createFloatingTextPopup,
+  spawnDamagePopupsFromEvents,
+  updateDamagePopups,
+} from "../../src/combat/combatFeedbackSystem.js";
 
 describe("combatFeedbackSystem", () => {
   it("damageイベントからポップアップを生成する", () => {
@@ -56,5 +60,39 @@ describe("combatFeedbackSystem", () => {
 
     const expired = updateDamagePopups(after100ms, 0.5);
     expect(expired).toHaveLength(0);
+  });
+
+  it("テキストポップアップを生成してフェード更新できる", () => {
+    const popup = createFloatingTextPopup({
+      id: "pickup-1",
+      text: "薬草",
+      textKey: "name_item_herb_01",
+      x: 10,
+      y: 20,
+      lifetimeSec: 0.8,
+      riseSpeedPxPerSec: 30,
+      fillStyle: "#ffffff",
+      strokeStyle: "#000000",
+    });
+
+    expect(popup).toMatchObject({
+      id: "pickup-1",
+      text: "薬草",
+      textKey: "name_item_herb_01",
+      x: 10,
+      y: 20,
+      lifetimeSec: 0.8,
+      riseSpeedPxPerSec: 30,
+      fillStyle: "#ffffff",
+      strokeStyle: "#000000",
+      alpha: 1,
+    });
+
+    const next = updateDamagePopups([popup], 0.2);
+    expect(next).toHaveLength(1);
+    expect(next[0].text).toBe("薬草");
+    expect(next[0].textKey).toBe("name_item_herb_01");
+    expect(next[0].y).toBeCloseTo(14, 5);
+    expect(next[0].alpha).toBeCloseTo(1 - 0.2 / 0.8, 5);
   });
 });

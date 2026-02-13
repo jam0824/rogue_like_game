@@ -29,6 +29,8 @@ export function createAppState(initialSeed) {
     enemies: [],
     weapons: [],
     damagePopups: [],
+    treasureChests: [],
+    groundItems: [],
     systemUi: createEmptySystemUiState(),
     backdrop: null,
     error: null,
@@ -46,6 +48,8 @@ export function setDungeonState(state, payload) {
   state.enemies = payload.enemies ?? [];
   state.weapons = payload.weapons ?? [];
   state.damagePopups = payload.damagePopups ?? [];
+  state.treasureChests = payload.treasureChests ?? [];
+  state.groundItems = payload.groundItems ?? [];
   state.systemUi = payload.systemUi ?? createEmptySystemUiState();
   state.backdrop = payload.backdrop ?? null;
   state.error = null;
@@ -61,6 +65,8 @@ export function setErrorState(state, seed, error) {
   state.enemies = [];
   state.weapons = [];
   state.damagePopups = [];
+  state.treasureChests = [];
+  state.groundItems = [];
   if (!state.systemUi) {
     state.systemUi = createEmptySystemUiState();
   } else {

@@ -3,6 +3,7 @@ import {
   createInitialSystemUiState,
   dropSelectedInventoryItem,
   findDropTileNearPlayer,
+  tryAddInventoryItem,
   useInventoryItem,
   useQuickSlotItem,
 } from "../../src/ui/systemUiState.js";
@@ -89,5 +90,83 @@ describe("systemUiState", () => {
     expect(drop).not.toBeNull();
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("3:3");
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("2:3");
+  });
+
+  it("tryAddInventoryItem は既存スタックに加算し、画像srcを保持する", () => {
+    const state = createInitialSystemUiState();
+
+    const result = tryAddInventoryItem(
+      state,
+      {
+        id: "item_herb_01",
+        type: "consumable",
+        count: 1,
+        iconKey: "herb",
+        iconImageSrc: "/graphic/item/item_herb_01.png",
+        nameKey: "name_item_herb_01",
+        descriptionKey: "desc_item_herb_01",
+        effectKey: "item_effect_herb_01",
+      },
+      { maxStack: 20 }
+    );
+
+    expect(result.success).toBe(true);
+    const herb = result.systemUi.inventory.items.find((item) => item.id === "item_herb_01");
+    expect(herb).toBeTruthy();
+    expect(herb.count).toBe(1);
+    expect(herb.iconImageSrc).toContain("item_herb_01.png");
+
+    const stacked = tryAddInventoryItem(
+      result.systemUi,
+      {
+        id: "item_herb_01",
+        type: "consumable",
+        count: 2,
+        iconKey: "herb",
+        nameKey: "name_item_herb_01",
+        descriptionKey: "desc_item_herb_01",
+        effectKey: "item_effect_herb_01",
+      },
+      { maxStack: 20 }
+    );
+    const stackedHerb = stacked.systemUi.inventory.items.find((item) => item.id === "item_herb_01");
+    expect(stackedHerb.count).toBe(3);
+  });
+
+  it("tryAddInventoryItem は空き枠がない場合に失敗する", () => {
+    const state = createInitialSystemUiState();
+    state.inventory.capacity = 1;
+    state.inventory.items = [
+      {
+        id: "item_herb_01",
+        type: "consumable",
+        count: 20,
+        quickSlot: null,
+        iconKey: "herb",
+        nameKey: "name_item_herb_01",
+        descriptionKey: "desc_item_herb_01",
+        effectKey: "item_effect_herb_01",
+      },
+    ];
+    state.inventory.selectedItemId = "item_herb_01";
+
+    const result = tryAddInventoryItem(
+      state,
+      {
+        id: "item_herb_01",
+        type: "consumable",
+        count: 1,
+        iconKey: "herb",
+        nameKey: "name_item_herb_01",
+        descriptionKey: "desc_item_herb_01",
+        effectKey: "item_effect_herb_01",
+      },
+      { maxStack: 20 }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.systemUi.toastMessage).toContain("いっぱい");
+    const herb = result.systemUi.inventory.items.find((item) => item.id === "item_herb_01");
+    expect(herb.count).toBe(20);
   });
 });

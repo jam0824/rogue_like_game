@@ -230,17 +230,60 @@ function drawDamagePopups(ctx, damagePopups) {
 
     const x = Math.round(popup.x);
     const y = Math.round(popup.y);
-    const text = String(Math.max(0, Math.round(Number(popup.value) || 0)));
+    const explicitText = typeof popup.text === "string" ? popup.text.trim() : "";
+    const text = explicitText.length > 0 ? explicitText : String(Math.max(0, Math.round(Number(popup.value) || 0)));
+    if (text.length <= 0) {
+      continue;
+    }
     const isPlayerDamage = popup.targetType === "player";
+    const strokeStyle = typeof popup.strokeStyle === "string" && popup.strokeStyle.length > 0
+      ? popup.strokeStyle
+      : "rgba(24, 24, 24, 0.75)";
+    const fillStyle =
+      typeof popup.fillStyle === "string" && popup.fillStyle.length > 0
+        ? popup.fillStyle
+        : isPlayerDamage
+          ? "#ff4a4a"
+          : "#fff6f0";
 
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = "rgba(24, 24, 24, 0.75)";
-    ctx.fillStyle = isPlayerDamage ? "#ff4a4a" : "#fff6f0";
+    ctx.strokeStyle = strokeStyle;
+    ctx.fillStyle = fillStyle;
     ctx.strokeText(text, x, y);
     ctx.fillText(text, x, y);
   }
 
   ctx.restore();
+}
+
+function drawTreasureChest(ctx, drawable) {
+  const asset = drawable.asset;
+  const chest = drawable.chest;
+  if (!asset?.image || !chest) {
+    return;
+  }
+
+  const frameWidth = Number(drawable.frameWidth) || TILE_SIZE;
+  const frameHeight = Number(drawable.frameHeight) || TILE_SIZE;
+  const frameRow = drawable.frameRow === 1 ? 1 : 0;
+  const dx = Math.round(chest.tileX * TILE_SIZE);
+  const dy = Math.round(chest.tileY * TILE_SIZE);
+  const sy = frameRow * frameHeight;
+
+  ctx.drawImage(asset.image, 0, sy, frameWidth, frameHeight, dx, dy, frameWidth, frameHeight);
+}
+
+function drawGroundItem(ctx, drawable) {
+  const asset = drawable.asset;
+  const groundItem = drawable.groundItem;
+  if (!asset?.image || !groundItem) {
+    return;
+  }
+
+  const drawSize = Math.max(8, Math.floor(Number(drawable.drawSize) || TILE_SIZE));
+  const dx = Math.round((Number(groundItem.xPx) || 0) - drawSize / 2);
+  const dy = Math.round((Number(groundItem.yPx) || 0) - drawSize / 2);
+  ctx.drawImage(asset.image, dx, dy, drawSize, drawSize);
 }
 
 /**
@@ -253,6 +296,8 @@ function drawDamagePopups(ctx, damagePopups) {
  * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
+ * @param {Array<{chest:{tileX:number,tileY:number,isOpened:boolean},asset:{image:HTMLImageElement}|null,frameWidth?:number,frameHeight?:number,frameRow?:number}>} treasureChestDrawables
+ * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,drawSize?:number}>} groundItemDrawables
  * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\")}>} damagePopups
  */
 export function renderFrame(
@@ -265,6 +310,8 @@ export function renderFrame(
   enemyDrawables = [],
   weaponDrawables = [],
   enemyWeaponDrawables = [],
+  treasureChestDrawables = [],
+  groundItemDrawables = [],
   damagePopups = []
 ) {
   if (!backdrop) {
@@ -324,6 +371,33 @@ export function renderFrame(
         drawSprite(ctx, drawable.asset, drawable.frame, drawable.weapon, {
           rotationRad: drawable.rotationRad ?? 0,
         });
+      },
+    });
+  }
+
+  for (const drawable of treasureChestDrawables) {
+    if (!drawable?.asset?.image || !drawable?.chest) {
+      continue;
+    }
+
+    drawQueue.push({
+      feetY: drawable.chest.tileY * TILE_SIZE + TILE_SIZE,
+      draw() {
+        drawTreasureChest(ctx, drawable);
+      },
+    });
+  }
+
+  for (const drawable of groundItemDrawables) {
+    if (!drawable?.asset?.image || !drawable?.groundItem) {
+      continue;
+    }
+
+    const yPx = Number(drawable.groundItem.yPx) || 0;
+    drawQueue.push({
+      feetY: yPx + TILE_SIZE / 2,
+      draw() {
+        drawGroundItem(ctx, drawable);
       },
     });
   }

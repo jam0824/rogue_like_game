@@ -50,6 +50,24 @@ function createCanvasMock({
 }
 
 describe("pointerController", () => {
+  it("クリック時のみ onPointerClick が呼ばれ、ドラッグ時は呼ばれない", () => {
+    const onPointerTarget = vi.fn();
+    const onPointerClick = vi.fn();
+    const { canvas, dispatch } = createCanvasMock();
+
+    createPointerController(canvas, { onPointerTarget, onPointerClick });
+
+    dispatch("pointerdown", { pointerId: 11, button: 0, clientX: 150, clientY: 60 });
+    dispatch("pointerup", { pointerId: 11, clientX: 150, clientY: 60 });
+    expect(onPointerClick).toHaveBeenCalledTimes(1);
+    expect(onPointerClick).toHaveBeenLastCalledWith(200, 150);
+
+    dispatch("pointerdown", { pointerId: 12, button: 0, clientX: 150, clientY: 60 });
+    dispatch("pointermove", { pointerId: 12, clientX: 180, clientY: 60 });
+    dispatch("pointerup", { pointerId: 12, clientX: 180, clientY: 60 });
+    expect(onPointerClick).toHaveBeenCalledTimes(1);
+  });
+
   it("左クリックのみ受理する", () => {
     const onPointerTarget = vi.fn();
     const { canvas, dispatch } = createCanvasMock();

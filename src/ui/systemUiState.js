@@ -112,6 +112,7 @@ function cloneInventoryItem(item) {
     nameKey: typeof item.nameKey === "string" ? item.nameKey : "ui_label_inventory_empty",
     descriptionKey: typeof item.descriptionKey === "string" ? item.descriptionKey : "ui_label_inventory_placeholder",
     effectKey: typeof item.effectKey === "string" ? item.effectKey : "ui_label_inventory_effect_placeholder",
+    iconImageSrc: typeof item.iconImageSrc === "string" ? item.iconImageSrc : "",
   };
 }
 
@@ -182,6 +183,24 @@ function withToast(nextState, messageKey) {
     ...nextState,
     toastMessage: tJa(messageKey, messageKey),
   };
+}
+
+function normalizeIncomingInventoryItem(item) {
+  if (!item || typeof item !== "object" || typeof item.id !== "string" || item.id.length <= 0) {
+    return null;
+  }
+
+  return cloneInventoryItem({
+    id: item.id,
+    type: typeof item.type === "string" ? item.type : "consumable",
+    count: Math.max(1, toNonNegativeInt(item.count, 1)),
+    quickSlot: Number.isInteger(item.quickSlot) ? item.quickSlot : null,
+    iconKey: item.iconKey,
+    nameKey: item.nameKey,
+    descriptionKey: item.descriptionKey,
+    effectKey: item.effectKey,
+    iconImageSrc: item.iconImageSrc,
+  });
 }
 
 function getPlayerFeetTile(player) {
@@ -357,6 +376,81 @@ export function useQuickSlotItem(systemUi, slotIndex) {
   }
 
   return useInventoryItem(nextState, item.id);
+}
+
+export function tryAddInventoryItem(systemUi, item, options = {}) {
+  const nextState = cloneSystemUiState(systemUi);
+  const incoming = normalizeIncomingInventoryItem(item);
+  if (!incoming) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_not_found"),
+      success: false,
+      addedCount: 0,
+    };
+  }
+
+  const maxStack = Math.max(1, toNonNegativeInt(options.maxStack, Number.MAX_SAFE_INTEGER));
+  let remaining = Math.max(1, toNonNegativeInt(incoming.count, 1));
+  let addedCount = 0;
+
+  while (remaining > 0) {
+    const stackableItem = nextState.inventory.items.find(
+      (inventoryItem) =>
+        inventoryItem.id === incoming.id &&
+        inventoryItem.type === incoming.type &&
+        inventoryItem.count < maxStack
+    );
+
+    if (stackableItem) {
+      const addable = Math.min(remaining, maxStack - stackableItem.count);
+      stackableItem.count += addable;
+      remaining -= addable;
+      addedCount += addable;
+      continue;
+    }
+
+    if (nextState.inventory.items.length >= nextState.inventory.capacity) {
+      break;
+    }
+
+    const stackSize = Math.min(remaining, maxStack);
+    nextState.inventory.items.push(
+      cloneInventoryItem({
+        ...incoming,
+        count: stackSize,
+        quickSlot: null,
+      })
+    );
+    remaining -= stackSize;
+    addedCount += stackSize;
+  }
+
+  nextState.inventory.selectedItemId = pickNextSelectedItemId(
+    nextState.inventory.items,
+    nextState.inventory.selectedItemId
+  );
+
+  if (remaining > 0) {
+    const fullMessageKey =
+      typeof options.fullMessageKey === "string" && options.fullMessageKey.length > 0
+        ? options.fullMessageKey
+        : "ui_hint_inventory_full";
+    return {
+      systemUi: withToast(nextState, fullMessageKey),
+      success: false,
+      addedCount,
+    };
+  }
+
+  const successMessageKey =
+    typeof options.successMessageKey === "string" && options.successMessageKey.length > 0
+      ? options.successMessageKey
+      : "";
+  return {
+    systemUi: successMessageKey ? withToast(nextState, successMessageKey) : nextState,
+    success: true,
+    addedCount,
+  };
 }
 
 export function findDropTileNearPlayer(

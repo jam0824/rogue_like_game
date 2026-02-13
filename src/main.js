@@ -16,6 +16,16 @@ import {
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
+import { loadItemAssets } from "./item/itemAsset.js";
+import { loadItemDefinitions } from "./item/itemDb.js";
+import {
+  applyChestBlockingToWalkableGrid,
+  buildBlockedTileSetFromChests,
+  createCommonTreasureChest,
+  loadTreasureChestAssets,
+  TREASURE_CHEST_RENDER_FRAME_SIZE,
+  tryOpenChestByClick,
+} from "./item/treasureSystem.js";
 import {
   createPlayerState,
   getPlayerFeetHitbox,
@@ -47,12 +57,14 @@ import {
   QUICK_SLOT_COUNT,
   selectInventoryItem,
   setInventoryWindowOpen,
+  tryAddInventoryItem,
   useInventoryItem,
   useQuickSlotItem,
 } from "./ui/systemUiState.js";
 import { createSystemHud } from "./ui/systemHud.js";
+import { tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
-import { spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
+import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
 import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
 import { loadFormationDefinitions } from "./weapon/formationDb.js";
 import { loadWeaponAssets } from "./weapon/weaponAsset.js";
@@ -66,6 +78,8 @@ import {
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "weapon_sword_01";
+const HERB_ITEM_ID = "item_herb_01";
+const HERB_HEAL_AMOUNT = 50;
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
 
@@ -210,6 +224,7 @@ function buildInventoryItemTextState(item) {
     nameKey: item.nameKey,
     descriptionKey: item.descriptionKey,
     effectKey: item.effectKey,
+    iconImageSrc: typeof item.iconImageSrc === "string" ? item.iconImageSrc : "",
   };
 }
 
@@ -261,6 +276,45 @@ function buildInventoryTextState() {
       droppedAtMs: item.droppedAtMs,
     })),
     toastMessage: typeof systemUi.toastMessage === "string" ? systemUi.toastMessage : "",
+  };
+}
+
+function buildTreasureChestTextState(chest) {
+  return {
+    id: chest.id,
+    tier: chest.tier,
+    roomId: chest.roomId,
+    tileX: chest.tileX,
+    tileY: chest.tileY,
+    xPx: round2(chest.xPx),
+    yPx: round2(chest.yPx),
+    isOpened: chest.isOpened === true,
+  };
+}
+
+function buildGroundItemTextState(item) {
+  return {
+    id: item.id,
+    sourceChestId: item.sourceChestId ?? null,
+    itemId: item.itemId,
+    count: Math.max(1, Math.floor(Number(item.count) || 1)),
+    tileX: item.tileX,
+    tileY: item.tileY,
+    xPx: round2(item.xPx),
+    yPx: round2(item.yPx),
+  };
+}
+
+function getPlayerFeetTile(player) {
+  if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) {
+    return null;
+  }
+
+  const feetX = player.x + PLAYER_WIDTH / 2;
+  const feetY = player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
+  return {
+    tileX: Math.floor(feetX / TILE_SIZE),
+    tileY: Math.floor(feetY / TILE_SIZE),
   };
 }
 
@@ -360,16 +414,22 @@ function buildEnemyTextState(enemy) {
 function buildDamagePopupTextState(popup) {
   return {
     value: Math.max(0, Math.round(Number(popup?.value) || 0)),
+    text: typeof popup?.text === "string" ? popup.text : "",
+    textKey: typeof popup?.textKey === "string" ? popup.textKey : "",
     x: round2(popup?.x ?? 0),
     y: round2(popup?.y ?? 0),
     alpha: round2(popup?.alpha ?? 0),
     targetType: popup?.targetType === "player" ? "player" : "enemy",
+    fillStyle: typeof popup?.fillStyle === "string" ? popup.fillStyle : "",
+    strokeStyle: typeof popup?.strokeStyle === "string" ? popup.strokeStyle : "",
   };
 }
 
 function toTextState() {
   const hudState = buildHudTextState();
   const inventoryState = buildInventoryTextState();
+  const treasureChests = Array.isArray(appState.treasureChests) ? appState.treasureChests : [];
+  const groundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
 
   if (appState.error) {
     return JSON.stringify(
@@ -380,6 +440,8 @@ function toTextState() {
         playerState: appState.playerState,
         hud: hudState,
         inventory: inventoryState,
+        treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
+        groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
       },
       null,
       2
@@ -394,6 +456,8 @@ function toTextState() {
         playerState: appState.playerState,
         hud: hudState,
         inventory: inventoryState,
+        treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
+        groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
       },
       null,
       2
@@ -427,6 +491,8 @@ function toTextState() {
       playerState: appState.playerState,
       hud: hudState,
       inventory: inventoryState,
+      treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
+      groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
       damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
       startRoom: startRoom
@@ -506,6 +572,10 @@ let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
 let weaponAssets = {};
+let itemDefinitions = [];
+let itemDefinitionsById = {};
+let itemAssetsById = {};
+let treasureChestAssets = {};
 let damagePopupSeq = 0;
 
 function resolveStarterWeaponDefId() {
@@ -640,6 +710,16 @@ async function refreshWeaponResources() {
   weaponAssets = assets;
 }
 
+async function refreshItemResources() {
+  const [definitions, chestAssets] = await Promise.all([loadItemDefinitions(), loadTreasureChestAssets()]);
+  const assets = await loadItemAssets(definitions);
+
+  itemDefinitions = definitions;
+  itemDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+  itemAssetsById = assets;
+  treasureChestAssets = chestAssets;
+}
+
 function ensurePlayerStateLoaded() {
   if (appState.playerState) {
     return;
@@ -705,6 +785,7 @@ function syncDamagePreviewUi() {
 
 let lastStatsDigest = "";
 let lastSystemUiDigest = "";
+let pointerDownFeetTileSnapshot = null;
 
 function applySystemUiState(nextSystemUiState) {
   appState.systemUi = nextSystemUiState;
@@ -712,10 +793,179 @@ function applySystemUiState(nextSystemUiState) {
   syncSystemHud();
 }
 
+function getInventoryItemCount(systemUi, itemId) {
+  const items = Array.isArray(systemUi?.inventory?.items) ? systemUi.inventory.items : [];
+  const found = items.find((item) => item.id === itemId);
+  return Math.max(0, Math.floor(Number(found?.count) || 0));
+}
+
+function getQuickSlotItemId(systemUi, slotIndex) {
+  const items = Array.isArray(systemUi?.inventory?.items) ? systemUi.inventory.items : [];
+  const found = items.find((item) => item.quickSlot === slotIndex);
+  return typeof found?.id === "string" ? found.id : null;
+}
+
+function applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, consumedItemId) {
+  if (!appState.player || consumedItemId !== HERB_ITEM_ID) {
+    return;
+  }
+
+  const beforeCount = getInventoryItemCount(beforeSystemUi, HERB_ITEM_ID);
+  const afterCount = getInventoryItemCount(afterSystemUi, HERB_ITEM_ID);
+  if (afterCount >= beforeCount) {
+    return;
+  }
+
+  const currentHp = Number(appState.player.hp) || 0;
+  const maxHp = Number(appState.player.maxHp) || 0;
+  const nextHp = clamp(currentHp + HERB_HEAL_AMOUNT, 0, maxHp);
+  const healedAmount = Math.max(0, Math.round(nextHp - currentHp));
+  appState.player.hp = nextHp;
+
+  if (healedAmount > 0) {
+    pushFloatingHealPopup(healedAmount, appState.player.x + PLAYER_WIDTH / 2, appState.player.y - 16);
+  }
+}
+
+function pushFloatingPickupPopup(textKey, x, y) {
+  const text = tJa(textKey, textKey);
+  appState.damagePopups = [
+    ...appState.damagePopups,
+    createFloatingTextPopup({
+      id: `pickup-text-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      text,
+      textKey,
+      x,
+      y,
+      lifetimeSec: 0.75,
+      riseSpeedPxPerSec: 22,
+      fillStyle: "#ffffff",
+      strokeStyle: "#000000",
+    }),
+  ];
+}
+
+function pushFloatingHealPopup(amount, x, y) {
+  const healValue = Math.max(0, Math.floor(Number(amount) || 0));
+  if (healValue <= 0) {
+    return;
+  }
+
+  appState.damagePopups = [
+    ...appState.damagePopups,
+    createFloatingTextPopup({
+      id: `heal-text-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      text: `+${healValue}`,
+      x,
+      y,
+      lifetimeSec: 0.7,
+      riseSpeedPxPerSec: 24,
+      fillStyle: "#94ff87",
+      strokeStyle: "#000000",
+    }),
+  ];
+}
+
+function toRuntimeInventoryItem(itemDefinition, itemAsset, count = 1) {
+  if (!itemDefinition) {
+    return null;
+  }
+
+  return {
+    id: itemDefinition.id,
+    type: itemDefinition.category === "consumable" ? "consumable" : "equipment",
+    count: Math.max(1, Math.floor(Number(count) || 1)),
+    quickSlot: null,
+    iconKey: itemDefinition.id === HERB_ITEM_ID ? "herb" : "item",
+    nameKey: itemDefinition.nameKey,
+    descriptionKey: itemDefinition.descriptionKey,
+    effectKey: itemDefinition.id === HERB_ITEM_ID ? "item_effect_herb_01" : "ui_label_inventory_effect_placeholder",
+    iconImageSrc: itemAsset?.src ?? "",
+  };
+}
+
+function syncGroundItemPickup() {
+  if (!appState.player || !Array.isArray(appState.groundItems) || appState.groundItems.length <= 0) {
+    return;
+  }
+
+  const feetTile = getPlayerFeetTile(appState.player);
+  if (!feetTile) {
+    return;
+  }
+
+  const keptGroundItems = [];
+  let systemUi = getSystemUiState();
+  let systemUiChanged = false;
+  let groundChanged = false;
+
+  for (const groundItem of appState.groundItems) {
+    const touched =
+      Number.isFinite(groundItem?.tileX) &&
+      Number.isFinite(groundItem?.tileY) &&
+      Math.floor(groundItem.tileX) === feetTile.tileX &&
+      Math.floor(groundItem.tileY) === feetTile.tileY;
+    if (!touched) {
+      keptGroundItems.push(groundItem);
+      continue;
+    }
+
+    const itemDefinition = itemDefinitionsById?.[groundItem.itemId];
+    if (!itemDefinition) {
+      keptGroundItems.push(groundItem);
+      continue;
+    }
+
+    const runtimeItem = toRuntimeInventoryItem(
+      itemDefinition,
+      itemAssetsById?.[itemDefinition.id],
+      groundItem.count
+    );
+    if (!runtimeItem) {
+      keptGroundItems.push(groundItem);
+      continue;
+    }
+
+    const addResult = tryAddInventoryItem(systemUi, runtimeItem, {
+      maxStack: itemDefinition.maxStack,
+      successMessageKey: "",
+      fullMessageKey: "ui_hint_inventory_full",
+    });
+
+    systemUi = addResult.systemUi;
+    systemUiChanged = true;
+    if (addResult.success) {
+      if (typeof itemDefinition.nameKey === "string" && itemDefinition.nameKey.length > 0) {
+        pushFloatingPickupPopup(
+          itemDefinition.nameKey,
+          appState.player.x + PLAYER_WIDTH / 2,
+          appState.player.y - 10
+        );
+      }
+      groundChanged = true;
+      continue;
+    }
+
+    keptGroundItems.push(groundItem);
+  }
+
+  if (groundChanged) {
+    appState.groundItems = keptGroundItems;
+  }
+
+  if (systemUiChanged) {
+    applySystemUiState(systemUi);
+  }
+}
+
 const systemHud = systemUiRoot
   ? createSystemHud(systemUiRoot, {
       onUseQuickSlot: (slotIndex) => {
-        applySystemUiState(useQuickSlotItem(getSystemUiState(), slotIndex));
+        const beforeSystemUi = getSystemUiState();
+        const quickSlotItemId = getQuickSlotItemId(beforeSystemUi, slotIndex);
+        const afterSystemUi = useQuickSlotItem(beforeSystemUi, slotIndex);
+        applySystemUiState(afterSystemUi);
+        applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
       },
       onOpenInventoryWindow: () => {
         applySystemUiState(setInventoryWindowOpen(getSystemUiState(), true));
@@ -727,8 +977,11 @@ const systemHud = systemUiRoot
         applySystemUiState(selectInventoryItem(getSystemUiState(), itemId));
       },
       onUseSelectedItem: () => {
-        const selectedItemId = getSystemUiState().inventory?.selectedItemId;
-        applySystemUiState(useInventoryItem(getSystemUiState(), selectedItemId));
+        const beforeSystemUi = getSystemUiState();
+        const selectedItemId = beforeSystemUi.inventory?.selectedItemId;
+        const afterSystemUi = useInventoryItem(beforeSystemUi, selectedItemId);
+        applySystemUiState(afterSystemUi);
+        applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
       },
       onDropSelectedItem: () => {
         applySystemUiState(dropSelectedInventoryItem(getSystemUiState(), appState.dungeon, appState.player, Date.now()));
@@ -862,13 +1115,47 @@ function syncStatsPanel() {
 
 createPointerController(canvas, {
   onPointerTarget: (active, worldX, worldY) => {
+    if (active !== true) {
+      pointerDownFeetTileSnapshot = null;
+    }
+
     if (!appState.player || appState.error) {
       return;
     }
+
+    if (active === true && pointerDownFeetTileSnapshot === null) {
+      pointerDownFeetTileSnapshot = getPlayerFeetTile(appState.player);
+    }
+
     if (appState.isPaused && active) {
       return;
     }
     setPointerTarget(appState.player, active, worldX, worldY);
+  },
+  onPointerClick: (worldX, worldY) => {
+    if (!appState.player || !appState.dungeon || appState.error) {
+      return;
+    }
+
+    const openResult = tryOpenChestByClick(
+      appState.treasureChests,
+      appState.groundItems,
+      appState.player,
+      worldX,
+      worldY,
+      {
+        dropItemId: HERB_ITEM_ID,
+        interactRangeTiles: 1,
+        playerFeetTileOverride: pointerDownFeetTileSnapshot,
+        dungeon: appState.dungeon,
+      }
+    );
+    if (!openResult.opened) {
+      return;
+    }
+
+    appState.treasureChests = openResult.treasureChests;
+    appState.groundItems = openResult.groundItems;
   },
 });
 
@@ -905,6 +1192,18 @@ function renderCurrentFrame() {
         rotationRad: weapon.rotationRad ?? 0,
       }))
   );
+  const treasureChestDrawables = (appState.treasureChests ?? []).map((chest) => ({
+    chest,
+    asset: treasureChestAssets[chest.tier] ?? null,
+    frameWidth: TREASURE_CHEST_RENDER_FRAME_SIZE,
+    frameHeight: TREASURE_CHEST_RENDER_FRAME_SIZE,
+    frameRow: chest.isOpened === true ? 1 : 0,
+  }));
+  const groundItemDrawables = (appState.groundItems ?? []).map((groundItem) => ({
+    groundItem,
+    asset: itemAssetsById[groundItem.itemId] ?? null,
+    drawSize: TILE_SIZE,
+  }));
 
   renderFrame(
     canvas,
@@ -916,6 +1215,8 @@ function renderCurrentFrame() {
     enemyDrawables,
     weaponDrawables,
     enemyWeaponDrawables,
+    treasureChestDrawables,
+    groundItemDrawables,
     appState.damagePopups
   );
 }
@@ -926,6 +1227,7 @@ function stepSimulation(dt) {
   }
 
   updatePlayer(appState.player, appState.dungeon, dt);
+  syncGroundItemPickup();
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
   const playerCombatEvents = updateWeaponsAndCombat(
     appState.weapons,
@@ -981,7 +1283,7 @@ async function regenerate(seed) {
   const requestId = (regenerateRequestId += 1);
 
   try {
-    await Promise.all([refreshEnemyResources(), refreshWeaponResources()]);
+    await Promise.all([refreshEnemyResources(), refreshWeaponResources(), refreshItemResources()]);
     if (requestId !== regenerateRequestId) {
       return;
     }
@@ -1000,7 +1302,22 @@ async function regenerate(seed) {
     if (Number.isFinite(appState.playerState?.run?.hp)) {
       player.hp = clamp(appState.playerState.run.hp, 0, player.maxHp);
     }
-    const enemies = createEnemies(dungeon, enemyDefinitions, normalizedSeed, enemyAttackProfilesByDbId);
+    const herbDefinition = itemDefinitionsById?.[HERB_ITEM_ID];
+    if (!herbDefinition) {
+      throw new Error(`Item DB is missing required herb item: ${HERB_ITEM_ID}`);
+    }
+    const commonTreasureChest = createCommonTreasureChest(dungeon, normalizedSeed);
+    const treasureChests = commonTreasureChest ? [commonTreasureChest] : [];
+    dungeon.walkableGrid = applyChestBlockingToWalkableGrid(dungeon.walkableGrid, treasureChests);
+    const blockedEnemyTiles = buildBlockedTileSetFromChests(treasureChests);
+    const enemies = createEnemies(
+      dungeon,
+      enemyDefinitions,
+      normalizedSeed,
+      enemyAttackProfilesByDbId,
+      blockedEnemyTiles
+    );
+    const groundItems = [];
     const starterWeaponDefId = resolveStarterWeaponDefId();
     if (!starterWeaponDefId) {
       throw new Error("Weapon DB is empty.");
@@ -1053,6 +1370,8 @@ async function regenerate(seed) {
       enemies,
       weapons,
       damagePopups: [],
+      treasureChests,
+      groundItems,
       systemUi,
       backdrop,
     });

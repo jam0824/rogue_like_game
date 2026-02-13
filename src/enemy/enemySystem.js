@@ -742,7 +742,7 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
   };
 }
 
-function findSpawnForRoom(room, definition, dungeon, spawnRng) {
+function findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys = null) {
   const collision = definition.type === "walk" ? buildCollisionProfileForWalk(definition.width, definition.height) : null;
   const roomTiles = [];
 
@@ -754,6 +754,10 @@ function findSpawnForRoom(room, definition, dungeon, spawnRng) {
 
   const shuffledTiles = spawnRng.shuffle(roomTiles);
   for (const tile of shuffledTiles) {
+    if (blockedTileKeys?.has(`${tile.tileX}:${tile.tileY}`)) {
+      continue;
+    }
+
     const centerX = tile.tileX * TILE_SIZE + TILE_SIZE / 2;
     const centerY = tile.tileY * TILE_SIZE + TILE_SIZE / 2;
     const x = centerX - definition.width / 2;
@@ -775,7 +779,43 @@ function chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOr
   return spawnRng.pick(enemyDefinitions);
 }
 
-export function createEnemies(dungeon, enemyDefinitions, seed, enemyAttackProfilesByDbId = null) {
+function normalizeBlockedTileSet(blockedTiles) {
+  if (blockedTiles instanceof Set) {
+    return blockedTiles;
+  }
+
+  if (!Array.isArray(blockedTiles)) {
+    return null;
+  }
+
+  return new Set(
+    blockedTiles
+      .map((tile) => {
+        if (!tile) {
+          return null;
+        }
+
+        if (typeof tile === "string") {
+          return tile;
+        }
+
+        if (Number.isFinite(tile.tileX) && Number.isFinite(tile.tileY)) {
+          return `${Math.floor(tile.tileX)}:${Math.floor(tile.tileY)}`;
+        }
+
+        return null;
+      })
+      .filter((value) => typeof value === "string")
+  );
+}
+
+export function createEnemies(
+  dungeon,
+  enemyDefinitions,
+  seed,
+  enemyAttackProfilesByDbId = null,
+  blockedTiles = null
+) {
   if (!Array.isArray(enemyDefinitions) || enemyDefinitions.length === 0) {
     return [];
   }
@@ -784,11 +824,12 @@ export function createEnemies(dungeon, enemyDefinitions, seed, enemyAttackProfil
   const spawnRooms = dungeon.rooms.filter((room) => room.id !== dungeon.startRoomId);
   const guaranteedOrder = spawnRng.shuffle(enemyDefinitions);
   const enemies = [];
+  const blockedTileKeys = normalizeBlockedTileSet(blockedTiles);
 
   for (let index = 0; index < spawnRooms.length; index += 1) {
     const room = spawnRooms[index];
     const definition = chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOrder);
-    const spawn = findSpawnForRoom(room, definition, dungeon, spawnRng);
+    const spawn = findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys);
 
     if (!spawn) {
       throw new Error(`Failed to spawn enemy in room ${room.id} (type=${definition.type})`);
@@ -812,9 +853,15 @@ export function createEnemies(dungeon, enemyDefinitions, seed, enemyAttackProfil
   return enemies;
 }
 
-export function createWalkEnemies(dungeon, walkEnemyDefinitions, seed, enemyAttackProfilesByDbId = null) {
+export function createWalkEnemies(
+  dungeon,
+  walkEnemyDefinitions,
+  seed,
+  enemyAttackProfilesByDbId = null,
+  blockedTiles = null
+) {
   const onlyWalkDefinitions = (walkEnemyDefinitions ?? []).filter((definition) => definition.type === "walk");
-  return createEnemies(dungeon, onlyWalkDefinitions, seed, enemyAttackProfilesByDbId);
+  return createEnemies(dungeon, onlyWalkDefinitions, seed, enemyAttackProfilesByDbId, blockedTiles);
 }
 
 function updateEnemy(enemy, dungeon, dt, player) {

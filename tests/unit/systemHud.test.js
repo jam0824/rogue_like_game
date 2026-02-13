@@ -149,6 +149,7 @@ function createHudRoot() {
     inventoryOverlay,
     inventoryWindow,
     inventoryClose,
+    detailsIcon,
     detailsName,
     detailsDescription,
     detailsEffect,
@@ -196,6 +197,7 @@ describe("systemHud", () => {
           count: 3,
           quickSlot: 0,
           iconKey: "potion_red",
+          iconImageSrc: "/graphic/item/item_herb_01.png",
           nameKey: "item_name_potion_small",
           descriptionKey: "item_desc_potion_small",
           effectKey: "item_effect_potion_small",
@@ -239,6 +241,7 @@ describe("systemHud", () => {
           count: 3,
           quickSlot: 0,
           iconKey: "potion_red",
+          iconImageSrc: "/graphic/item/item_herb_01.png",
           nameKey: "item_name_potion_small",
           descriptionKey: "item_desc_potion_small",
           effectKey: "item_effect_potion_small",
@@ -252,6 +255,7 @@ describe("systemHud", () => {
 
     expect(refs.inventoryOverlay.hidden).toBe(false);
     expect(refs.inventoryWindow.hidden).toBe(false);
+    expect(refs.detailsIcon.innerHTML).toContain("<img");
     expect(refs.detailsName.textContent).toContain("ポーション");
     expect(refs.useButton.disabled).toBe(false);
     expect(refs.dropButton.disabled).toBe(false);

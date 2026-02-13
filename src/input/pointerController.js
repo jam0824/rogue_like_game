@@ -2,6 +2,8 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const CLICK_MOVE_THRESHOLD_PX = 6;
+
 function toWorldPoint(canvas, event) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
@@ -17,10 +19,21 @@ function toWorldPoint(canvas, event) {
 
 export function createPointerController(canvas, handlers) {
   let activePointerId = null;
+  let downPoint = null;
+  let movedDuringDrag = false;
 
   function emitActiveTarget(event) {
     const point = toWorldPoint(canvas, event);
     handlers.onPointerTarget(true, point.x, point.y);
+  }
+
+  function notifyPointerClick(event) {
+    if (typeof handlers.onPointerClick !== "function") {
+      return;
+    }
+
+    const point = toWorldPoint(canvas, event);
+    handlers.onPointerClick(point.x, point.y);
   }
 
   function releasePointer(event) {
@@ -29,6 +42,8 @@ export function createPointerController(canvas, handlers) {
     }
 
     activePointerId = null;
+    downPoint = null;
+    movedDuringDrag = false;
     handlers.onPointerTarget(false, null, null);
   }
 
@@ -38,6 +53,8 @@ export function createPointerController(canvas, handlers) {
     }
 
     activePointerId = event.pointerId;
+    downPoint = toWorldPoint(canvas, event);
+    movedDuringDrag = false;
     canvas.setPointerCapture(event.pointerId);
     emitActiveTarget(event);
     event.preventDefault();
@@ -48,10 +65,21 @@ export function createPointerController(canvas, handlers) {
       return;
     }
 
+    const point = toWorldPoint(canvas, event);
+    if (downPoint) {
+      const travel = Math.hypot(point.x - downPoint.x, point.y - downPoint.y);
+      if (travel > CLICK_MOVE_THRESHOLD_PX) {
+        movedDuringDrag = true;
+      }
+    }
+
     emitActiveTarget(event);
   }
 
   function onPointerUp(event) {
+    if (event.pointerId === activePointerId && movedDuringDrag !== true) {
+      notifyPointerClick(event);
+    }
     releasePointer(event);
   }
 

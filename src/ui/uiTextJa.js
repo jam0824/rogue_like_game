@@ -13,6 +13,8 @@ const UI_TEXT_JA = {
   ui_hint_item_dropped: "アイテムを捨てました。",
   ui_hint_item_drop_failed: "近くにアイテムを置ける場所がありません。",
   ui_hint_item_none_selected: "選択中のアイテムがありません。",
+  ui_hint_inventory_full: "道具袋がいっぱいで拾えない。",
+  ui_hint_pickup_herb: "薬草を拾った。",
   item_name_potion_small: "小回復ポーション",
   item_desc_potion_small: "携帯しやすい回復薬。少量のHPを回復する。",
   item_effect_potion_small: "効果: HPを少し回復",
@@ -37,6 +39,9 @@ const UI_TEXT_JA = {
   item_name_leather_boots: "革のブーツ",
   item_desc_leather_boots: "軽量で歩きやすいブーツ。",
   item_effect_leather_boots: "効果: 装備品",
+  name_item_herb_01: "薬草",
+  desc_item_herb_01: "香りの強い薬草。傷をやわらげる。",
+  item_effect_herb_01: "効果: HPを50回復",
 };
 
 const ITEM_ICON_LABELS = {
@@ -48,6 +53,7 @@ const ITEM_ICON_LABELS = {
   knife: "KN",
   sword: "SW",
   boots: "BT",
+  herb: "HB",
   empty: "--",
   buff: "BF",
   debuff: "DB",

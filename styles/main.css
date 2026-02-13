@@ -343,6 +343,13 @@ body {
   letter-spacing: 0.5px;
 }
 
+.system-item-icon-image {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .system-item-qty {
   position: absolute;
   right: 4px;
@@ -495,9 +502,19 @@ body {
   background: linear-gradient(to bottom, #3a2416, #2c1a10);
   display: grid;
   place-items: center;
+  overflow: hidden;
   font-size: 42px;
   font-weight: 900;
   color: #f3e7cf;
+}
+
+.inventory-details-icon-image {
+  width: 112px;
+  height: 112px;
+  display: block;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
 }
 
 #inventory-details-name {

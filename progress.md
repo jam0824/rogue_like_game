@@ -395,3 +395,106 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (11 files, 69 tests)
   - `npm run test:checks` -> PASS
   - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-enemy-attack-start-fix`; no `errors-*.json` artifacts.
+- 2026-02-13: Implemented common treasure chest -> herb pickup -> inventory use HP recovery flow.
+- 2026-02-13: Added item data/asset loading pipeline:
+  - `src/item/itemDb.js` for ItemDef discovery + normalization from `db/item_db/*.json`.
+  - `src/item/itemAsset.js` for `graphic/item/*` loading.
+  - `src/item/treasureSystem.js` for common chest placement, near-click open rule, drop spawn, and chest asset loading.
+- 2026-02-13: Extended runtime app state with `treasureChests` / `groundItems` and included both in `render_game_to_text`.
+- 2026-02-13: Integrated chest and ground-item rendering in `src/render/canvasRenderer.js` with shared feetY z-sort.
+- 2026-02-13: Added click-interaction support in `src/input/pointerController.js` via optional `onPointerClick(worldX, worldY)`; click emits only when drag distance stays below threshold.
+- 2026-02-13: Main loop integration in `src/main.js`:
+  - regenerate now loads item resources and spawns exactly one common chest outside start/stairs.
+  - enemy spawn now avoids chest tile via blocked-tile set.
+  - pointer click attempts chest open only when clicked tile matches chest and player is adjacent (Manhattan <= 1).
+  - opened chest drops herb (`item_herb_01`) into `groundItems`.
+  - player contact with `groundItems` tries add-to-bag with max stack and bag-full handling.
+  - using herb (`item_herb_01`) now heals player HP by fixed +50 when item count actually decreases.
+- 2026-02-13: Inventory/UI updates:
+  - `src/ui/systemUiState.js` now supports `iconImageSrc` and provides `tryAddInventoryItem(...)`.
+  - `src/ui/systemHud.js` details icon can render `<img>` when `iconImageSrc` exists, else falls back to text icon.
+  - `src/ui/uiTextJa.js` added herb texts and inventory-full/pickup messages; icon label map includes `herb`.
+  - `styles/main.css` added `.inventory-details-icon-image`.
+- 2026-02-13: Extended tests:
+  - updated `tests/unit/pointerController.test.js` for click-vs-drag behavior.
+  - updated `tests/unit/appState.test.js` for `treasureChests` / `groundItems`.
+  - updated `tests/unit/systemUiState.test.js` for `tryAddInventoryItem` (stacking/full/src retention).
+  - updated `tests/unit/systemHud.test.js` for detail image rendering path.
+  - added `tests/unit/treasureSystem.test.js` for chest placement/open/drop/blocked-tiles.
+- 2026-02-13: Validation complete:
+  - `npm run unit` -> PASS (14 files, 87 tests)
+  - `npm run test:checks` -> PASS (all check scripts)
+  - `npm test` -> PASS
+  - Playwright smoke (`$WEB_GAME_CLIENT` + `tests/actions/idle.json`) produced updated `output/web-game/state-0.json` including `treasureChests`/`groundItems` and no console error artifact file.
+
+- TODO: Add an automated Playwright action payload dedicated to chest opening + herb pickup + herb use so the full loop is validated in one deterministic browser run.
+- 2026-02-13: Updated dungeon spec §8 pickup feedback implementation:
+  - Added floating text popup support for non-damage messages in `src/combat/combatFeedbackSystem.js` (`createFloatingTextPopup`).
+  - Pickup success now spawns a white text popup with black outline above player using item `name_key` text resolution (`src/main.js`).
+  - Popup fades out with rise motion (lifetime/rise speed configurable per popup).
+- 2026-02-13: Added inventory icon graphic rendering for items with `iconImageSrc`:
+  - `src/ui/systemHud.js` now renders item image in slot icon area when available (fallback remains text icon).
+  - Added `.system-item-icon-image` style in `styles/main.css`.
+- 2026-02-13: Extended tests:
+  - `tests/unit/combatFeedbackSystem.test.js` now covers text popup creation/update.
+- 2026-02-13: Validation complete after popup/icon changes:
+  - `npm run unit` -> PASS (14 files, 88 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Follow-up fix for herb UI/feedback requests.
+  - `styles/main.css`: enlarged inventory detail herb image (`.inventory-details-icon-image` size up + `scale(1.2)`) and enabled `overflow: hidden` on detail icon frame.
+  - `src/main.js`: added herb-use heal popup (`+<healed>` text, green fill + black outline) when `item_herb_01` is actually consumed; popup amount uses real clamped heal delta.
+- 2026-02-13: Revalidation after follow-up fix:
+  - `npm run unit` -> PASS (14 files, 88 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill-client run (`tests/actions/system_ui_inventory_flow.json`) -> artifacts at `output/web-game-herb-popup-fix` (shot/state captured, no `errors-*.json`).
+- 2026-02-13: Fixed chest spawn overlap with tall walls (`B/F/G`) by changing chest placement to walkable-tile based selection.
+  - `src/item/treasureSystem.js`:
+    - `createCommonTreasureChest` now iterates seed-shuffled candidate rooms and selects the first room that has at least one valid walkable tile.
+    - Added room walkable search helper using `dungeon.walkableGrid ?? dungeon.floorGrid`.
+    - Tile selection policy is "nearest to room center" by Manhattan distance, tie-broken deterministically by `tileY asc` then `tileX asc`.
+    - If no walkable tile exists in any candidate room, returns `null`.
+- 2026-02-13: Expanded unit coverage in `tests/unit/treasureSystem.test.js`.
+  - Added cases for:
+    - center tile blocked -> nearest walkable fallback tile selection,
+    - selected tile is always walkable,
+    - no walkable tile in candidate room -> returns `null`.
+- 2026-02-13: Validation complete after chest placement fix:
+  - `npm run unit` -> PASS (14 files, 91 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Tightened chest open distance handling to prevent long-press/open exploit.
+  - `src/item/treasureSystem.js`:
+    - added optional `options.playerFeetTileOverride` support in `tryOpenChestByClick(...)`.
+    - distance check now resolves feet tile from override first, else falls back to runtime player feet tile.
+    - kept strict rule `Manhattan <= interactRangeTiles` (no extra tolerance).
+  - `src/main.js`:
+    - added pointer-session snapshot `pointerDownFeetTileSnapshot`.
+    - snapshot captured on first `onPointerTarget(active=true)` and cleared on `active=false`.
+    - chest open call now passes `playerFeetTileOverride` so click-start feet tile is authoritative.
+- 2026-02-13: Enlarged inventory detail image to near full inner frame without trimming.
+  - `styles/main.css`:
+    - `.inventory-details-icon-image` updated to `112x112`, `object-fit: contain`, removed transform scaling.
+- 2026-02-13: Expanded unit coverage in `tests/unit/treasureSystem.test.js`.
+  - added override-distance tests:
+    - distance 2 override does not open,
+    - distance 1 override opens.
+- 2026-02-13: Validation complete after click-range + icon-fill updates.
+  - `npm run unit` -> PASS (14 files, 93 tests)
+  - `npm run test:checks` -> PASS
+  - Custom Playwright verification (headless script) confirmed no open on press-start distance >= 2 after long hold:
+    - output: `{ seed: "click-range-check-0", initialDistance: 51, openedAfterPressHoldRelease: false }`
+  - Playwright skill-client run captured smoke artifacts at `output/web-game-click-range-and-icon-fill`.
+- 2026-02-13: Re-tuned chest interaction spec (non-walkable chest tile + strict near-click open + nearby walkable drop).
+  - `src/item/treasureSystem.js`:
+    - Added `applyChestBlockingToWalkableGrid(walkableGrid, treasureChests)` (pure clone) to mark chest tiles non-walkable.
+    - `tryOpenChestByClick(...)` kept strict conditions: clicked tile must equal chest tile, and player feet Manhattan distance must be `<= 1` (with `playerFeetTileOverride` support retained).
+    - Added nearby drop resolver (`findNearestWalkableDropTileAroundChest`) using Manhattan ring expansion from chest tile; requires `walkable=true` and no existing ground-item occupancy.
+    - If no walkable drop tile exists map-wide, open is rejected (`opened=false`) to avoid item loss.
+  - `src/main.js`:
+    - In `regenerate`, applied chest blocking to `dungeon.walkableGrid` immediately after chest spawn.
+    - Continued passing chest blocked tiles to enemy spawn and passing `dungeon` into chest-open options for drop placement.
+    - Kept pointer-down feet snapshot override flow for deterministic range checks.
+  - `tests/unit/treasureSystem.test.js`:
+    - Added/updated coverage for non-chest click rejection, distance override behavior, nearby walkable drop placement, radius expansion fallback, all-nonwalkable open rejection, and chest walkable-grid blocking helper purity.
+- 2026-02-13: Validation complete after chest interaction re-tuning:
+  - `npm run unit` -> PASS (14 files, 97 tests)
+  - `npm run test:checks` -> PASS
