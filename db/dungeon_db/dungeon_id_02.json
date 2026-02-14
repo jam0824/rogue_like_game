@@ -8,7 +8,7 @@
     "tip_set":{
         "tile":["tile_01.png"],
         "A":["left_top_01.png"],
-        "B":["top_01.png","top_02.png","top_03.png","top_04.png"],
+        "B":["top_01.png","top_02.png","top_03.png","top_04.png","top_05.png","top_06.png","top_07.png","top_08.png","top_09.png","top_10.png","top_11.png","top_12.png"],
         "C":["right_top.png"],
         "D":["left_01.png","left_02.png","left_03.png"],
         "E":["right_01.png","right_02.png","right_03.png"],
@@ -19,5 +19,16 @@
         "J":["right_bottom_corner.png"],
         "K":["left_bottom_01.png"],
         "L":["right_bottom_01.png"]
-    }
+    },
+    "walkable_tile_decoration":[
+        "decoration_01.png",
+        "decoration_02.png",
+        "decoration_03.png",
+        "decoration_04.png",
+        "decoration_05.png",
+        "decoration_06.png",
+        "decoration_07.png",
+        "decoration_08.png",
+        "decoration_09.png"
+    ]
 }

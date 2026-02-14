@@ -17,5 +17,16 @@
         "H":["left_bottom_corner.png"],
         "I":["bottom_01.png"],
         "J":["right_bottom_corner.png"]
-    }
+    },
+    "walkable_tile_decoration":[
+        "decoration_01.png",
+        "decoration_02.png",
+        "decoration_03.png",
+        "decoration_04.png",
+        "decoration_05.png",
+        "decoration_06.png",
+        "decoration_07.png",
+        "decoration_08.png",
+        "decoration_09.png"
+    ]
 }
