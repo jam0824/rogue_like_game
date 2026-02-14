@@ -1,7 +1,7 @@
 import { TILE_SIZE } from "../config/constants.js";
-import { STANDARD_WALL_SYMBOLS, TALL_WALL_SYMBOLS } from "../tiles/tileCatalog.js";
+import { resolveTileVariantAsset, STANDARD_WALL_SYMBOLS, TALL_WALL_SYMBOLS } from "../tiles/tileCatalog.js";
 
-function drawSymbolLayer(ctx, assets, symbolGrid, symbols) {
+function drawSymbolLayer(ctx, assets, symbolGrid, symbols, seed) {
   const height = symbolGrid.length;
   const width = symbolGrid[0].length;
 
@@ -12,8 +12,8 @@ function drawSymbolLayer(ctx, assets, symbolGrid, symbols) {
         continue;
       }
 
-      const asset = assets[symbol];
-      if (!asset) {
+      const asset = resolveTileVariantAsset(assets, symbol, seed, x, y);
+      if (!asset?.image) {
         continue;
       }
 
@@ -22,14 +22,20 @@ function drawSymbolLayer(ctx, assets, symbolGrid, symbols) {
   }
 }
 
-function drawFloor(ctx, assets, floorGrid) {
-  const tile = assets[" "];
+function drawBaseTiles(ctx, assets, floorGrid, symbolGrid, seed) {
   const height = floorGrid.length;
   const width = floorGrid[0].length;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (!floorGrid[y][x]) {
+      const isFloor = floorGrid[y][x] === true;
+      const hasWallSymbol = symbolGrid?.[y]?.[x] != null;
+      if (!isFloor && !hasWallSymbol) {
+        continue;
+      }
+
+      const tile = resolveTileVariantAsset(assets, " ", seed, x, y);
+      if (!tile?.image) {
         continue;
       }
       ctx.drawImage(tile.image, x * TILE_SIZE, y * TILE_SIZE);
@@ -146,9 +152,10 @@ function drawDungeonBase(ctx, assets, dungeon) {
   ctx.fillStyle = "#050609";
   ctx.fillRect(0, 0, widthPx, heightPx);
 
-  drawFloor(ctx, assets, dungeon.floorGrid);
-  drawSymbolLayer(ctx, assets, dungeon.symbolGrid, TALL_WALL_SYMBOLS);
-  drawSymbolLayer(ctx, assets, dungeon.symbolGrid, STANDARD_WALL_SYMBOLS);
+  // Layer order: base tile first, then wall overlays.
+  drawBaseTiles(ctx, assets, dungeon.floorGrid, dungeon.symbolGrid ?? null, dungeon.seed);
+  drawSymbolLayer(ctx, assets, dungeon.symbolGrid, TALL_WALL_SYMBOLS, dungeon.seed);
+  drawSymbolLayer(ctx, assets, dungeon.symbolGrid, STANDARD_WALL_SYMBOLS, dungeon.seed);
 
   const startRoom = dungeon.rooms.find((room) => room.id === dungeon.startRoomId);
   const stairsRoom = dungeon.rooms.find((room) => room.id === dungeon.stairsRoomId);
@@ -163,7 +170,7 @@ function drawDungeonBase(ctx, assets, dungeon) {
 }
 
 /**
- * @param {Record<string, {image:HTMLImageElement}>} assets
+ * @param {Record<string, {variants:{image:HTMLImageElement}[]}>} assets
  * @param {import("../generation/dungeonGenerator.js").DungeonResult & {symbolGrid:(string|null)[][]}} dungeon
  */
 export function buildDungeonBackdrop(assets, dungeon) {

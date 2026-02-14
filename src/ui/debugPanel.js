@@ -15,6 +15,7 @@ function renderStatsList(listElement, rows) {
 
 export function createDebugPanel(root, handlers) {
   const seedInput = root.querySelector("#seed-input");
+  const dungeonIdSelect = root.querySelector("#dungeon-id-select");
   const applySeedButton = root.querySelector("#apply-seed");
   const regenerateButton = root.querySelector("#regen-random");
   const pauseToggleButton = root.querySelector("#pause-toggle");
@@ -79,9 +80,45 @@ export function createDebugPanel(root, handlers) {
     });
   }
 
+  if (dungeonIdSelect) {
+    dungeonIdSelect.addEventListener("change", () => {
+      if (typeof handlers.onDungeonIdChange === "function") {
+        handlers.onDungeonIdChange(dungeonIdSelect.value);
+      }
+    });
+  }
+
   return {
     setSeed(seed) {
       seedInput.value = String(seed);
+    },
+    setDungeonOptions(options, selectedId) {
+      if (!dungeonIdSelect) {
+        return;
+      }
+
+      dungeonIdSelect.innerHTML = "";
+      const source = Array.isArray(options) ? options : [];
+      for (const optionDef of source) {
+        if (!optionDef || typeof optionDef.id !== "string" || optionDef.id.length <= 0) {
+          continue;
+        }
+
+        const option = document.createElement("option");
+        option.value = optionDef.id;
+        option.textContent = optionDef.label ?? optionDef.id;
+        dungeonIdSelect.appendChild(option);
+      }
+
+      if (typeof selectedId === "string" && selectedId.length > 0) {
+        dungeonIdSelect.value = selectedId;
+      }
+    },
+    setDungeonId(dungeonId) {
+      if (!dungeonIdSelect) {
+        return;
+      }
+      dungeonIdSelect.value = String(dungeonId);
     },
     setPaused(paused) {
       const nextPaused = paused === true;

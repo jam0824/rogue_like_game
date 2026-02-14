@@ -5,7 +5,14 @@ function createBaseWalkableGrid(floorGrid) {
   return floorGrid.map((row) => row.map((cell) => cell === true));
 }
 
-function applyTallWallBlocking(walkableGrid, symbolGrid) {
+function normalizeTallWallTileHeight(value) {
+  if (!Number.isFinite(value)) {
+    return TALL_WALL_TILE_HEIGHT;
+  }
+  return Math.max(1, Math.floor(Number(value)));
+}
+
+function applyTallWallBlocking(walkableGrid, symbolGrid, tallWallTileHeight) {
   const height = symbolGrid.length;
   const width = symbolGrid[0].length;
 
@@ -16,7 +23,7 @@ function applyTallWallBlocking(walkableGrid, symbolGrid) {
         continue;
       }
 
-      for (let offset = 0; offset < TALL_WALL_TILE_HEIGHT; offset += 1) {
+      for (let offset = 0; offset < tallWallTileHeight; offset += 1) {
         const targetY = y + offset;
         if (targetY < 0 || targetY >= height) {
           break;
@@ -30,10 +37,12 @@ function applyTallWallBlocking(walkableGrid, symbolGrid) {
 /**
  * @param {boolean[][]} floorGrid
  * @param {(string|null)[][]} symbolGrid
+ * @param {{tallWallTileHeight?:number}} [options]
  * @returns {boolean[][]}
  */
-export function buildWalkableGrid(floorGrid, symbolGrid) {
+export function buildWalkableGrid(floorGrid, symbolGrid, options = {}) {
   const walkableGrid = createBaseWalkableGrid(floorGrid);
-  applyTallWallBlocking(walkableGrid, symbolGrid);
+  const tallWallTileHeight = normalizeTallWallTileHeight(options?.tallWallTileHeight);
+  applyTallWallBlocking(walkableGrid, symbolGrid, tallWallTileHeight);
   return walkableGrid;
 }

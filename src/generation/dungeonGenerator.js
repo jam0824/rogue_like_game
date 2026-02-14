@@ -3,14 +3,13 @@ import {
   BRANCH_COUNT_MIN,
   BRANCH_LENGTH_MAX,
   BRANCH_LENGTH_MIN,
+  CORRIDOR_WALKABLE_HEIGHT,
   GRID_HEIGHT,
   GRID_WIDTH,
-  HORIZONTAL_CORRIDOR_HEIGHT,
   INITIAL_SEED,
   MAIN_PATH_MAX,
   MAIN_PATH_MIN,
   MAX_GENERATION_ATTEMPTS,
-  MIN_ROOM_GAP,
   ROOM_COUNT_MAX,
   ROOM_COUNT_MIN,
   ROOM_SIZE_MAX,
@@ -63,11 +62,28 @@ import { createRng, deriveSeed, normalizeSeed } from "../core/rng.js";
  * @property {DungeonGraph} graph
  * @property {number} startRoomId
  * @property {number} stairsRoomId
+ * @property {number} wallHeightTiles
  * @property {DungeonStats} stats
  */
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeWallHeightTiles(value) {
+  if (!Number.isFinite(value)) {
+    return TALL_WALL_TILE_HEIGHT;
+  }
+  return Math.max(1, Math.floor(Number(value)));
+}
+
+function buildGenerationMetrics(wallHeightTiles) {
+  const normalizedWallHeight = normalizeWallHeightTiles(wallHeightTiles);
+  return {
+    wallHeightTiles: normalizedWallHeight,
+    horizontalCorridorHeight: normalizedWallHeight + CORRIDOR_WALKABLE_HEIGHT,
+    minRoomGap: normalizedWallHeight,
+  };
 }
 
 function computeCenter(x, y, w, h) {
@@ -208,11 +224,11 @@ function pickDirection(rng, edgeKind) {
   ]);
 }
 
-function placeRoomNearParent(parent, width, height, edgeKind, placedRooms, rng) {
+function placeRoomNearParent(parent, width, height, edgeKind, placedRooms, rng, metrics) {
   for (let attempt = 0; attempt < 96; attempt += 1) {
     const direction = pickDirection(rng, edgeKind);
     const horizontalGap = rng.int(3, 8);
-    const verticalGap = rng.int(HORIZONTAL_CORRIDOR_HEIGHT, HORIZONTAL_CORRIDOR_HEIGHT + 4);
+    const verticalGap = rng.int(metrics.horizontalCorridorHeight, metrics.horizontalCorridorHeight + 4);
     const jitter = rng.int(-2, 2);
 
     let x = parent.x;
@@ -237,7 +253,7 @@ function placeRoomNearParent(parent, width, height, edgeKind, placedRooms, rng) 
     }
 
     const candidate = { x, y, w: width, h: height };
-    const overlaps = placedRooms.some((room) => roomsOverlapWithGap(candidate, room, MIN_ROOM_GAP));
+    const overlaps = placedRooms.some((room) => roomsOverlapWithGap(candidate, room, metrics.minRoomGap));
     if (overlaps) {
       continue;
     }
@@ -248,7 +264,7 @@ function placeRoomNearParent(parent, width, height, edgeKind, placedRooms, rng) 
   return null;
 }
 
-function placeRooms(graph, rng) {
+function placeRooms(graph, rng, metrics) {
   const treeEdges = graph.edges.filter((edge) => edge.kind !== "loop");
   const parentByRoom = new Map(treeEdges.map((edge) => [edge.to, edge.from]));
   const kindByRoom = new Map(treeEdges.map((edge) => [edge.to, edge.kind]));
@@ -270,7 +286,7 @@ function placeRooms(graph, rng) {
       const parentId = parentByRoom.get(roomId);
       const parentRoom = roomsById.get(parentId);
       const edgeKind = kindByRoom.get(roomId) ?? "branch";
-      roomPosition = placeRoomNearParent(parentRoom, w, h, edgeKind, placedRooms, rng);
+      roomPosition = placeRoomNearParent(parentRoom, w, h, edgeKind, placedRooms, rng, metrics);
     }
 
     if (!roomPosition) {
@@ -319,40 +335,41 @@ function carveVertical(grid, y1, y2, x, width) {
   }
 }
 
-function getCorridorWalkY(room) {
-  return clamp(room.centerY, room.y + TALL_WALL_TILE_HEIGHT, room.y + room.h - 1);
+function getCorridorWalkY(room, wallHeightTiles) {
+  return clamp(room.centerY, room.y + wallHeightTiles, room.y + room.h - 1);
 }
 
-function carveCorridor(grid, fromRoom, toRoom, horizontalFirst) {
+function carveCorridor(grid, fromRoom, toRoom, horizontalFirst, metrics) {
   const startX = fromRoom.centerX;
   const endX = toRoom.centerX;
-  const startY = getCorridorWalkY(fromRoom);
-  const endY = getCorridorWalkY(toRoom);
+  const startY = getCorridorWalkY(fromRoom, metrics.wallHeightTiles);
+  const endY = getCorridorWalkY(toRoom, metrics.wallHeightTiles);
 
   if (horizontalFirst) {
-    carveHorizontal(grid, startX, endX, startY, HORIZONTAL_CORRIDOR_HEIGHT);
+    carveHorizontal(grid, startX, endX, startY, metrics.horizontalCorridorHeight);
     carveVertical(grid, startY, endY, endX, VERTICAL_CORRIDOR_WIDTH);
     return;
   }
 
   carveVertical(grid, startY, endY, startX, VERTICAL_CORRIDOR_WIDTH);
-  carveHorizontal(grid, startX, endX, endY, HORIZONTAL_CORRIDOR_HEIGHT);
+  carveHorizontal(grid, startX, endX, endY, metrics.horizontalCorridorHeight);
 }
 
 /**
- * @param {{ seed?: string|number, maxAttempts?: number }} [options]
+ * @param {{ seed?: string|number, maxAttempts?: number, wallHeightTiles?: number }} [options]
  * @returns {DungeonResult}
  */
 export function generateDungeon(options = {}) {
   const seed = normalizeSeed(options.seed ?? INITIAL_SEED);
   const maxAttempts = options.maxAttempts ?? MAX_GENERATION_ATTEMPTS;
+  const metrics = buildGenerationMetrics(options.wallHeightTiles);
 
   for (let generationAttempt = 1; generationAttempt <= maxAttempts; generationAttempt += 1) {
     const rng = createRng(deriveSeed(seed, generationAttempt));
 
     const plan = buildRoomPlan(rng);
     const graph = buildGraph(plan, rng);
-    const roomsById = placeRooms(graph, rng);
+    const roomsById = placeRooms(graph, rng, metrics);
 
     if (!roomsById) {
       continue;
@@ -368,7 +385,7 @@ export function generateDungeon(options = {}) {
     graph.edges.forEach((edge, index) => {
       const fromRoom = roomsById.get(edge.from);
       const toRoom = roomsById.get(edge.to);
-      carveCorridor(floorGrid, fromRoom, toRoom, index % 2 === 0);
+      carveCorridor(floorGrid, fromRoom, toRoom, index % 2 === 0, metrics);
     });
 
     const startRoomId = graph.mainPathRoomIds[0];
@@ -392,6 +409,7 @@ export function generateDungeon(options = {}) {
       graph,
       startRoomId,
       stairsRoomId,
+      wallHeightTiles: metrics.wallHeightTiles,
       stats: {
         roomCount: rooms.length,
         mainPathCount: graph.mainPathRoomIds.length,

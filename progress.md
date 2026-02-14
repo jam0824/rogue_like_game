@@ -635,3 +635,40 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - Playwright skill-client smoke run executed with `tests/actions/idle.json`:
     - latest artifacts updated: `output/web-game/shot-0.png`, `output/web-game/state-0.json`
     - no `errors-*.json` console artifact generated.
+- 2026-02-14: Implemented dungeon tile DB driven pipeline (`db/dungeon_db`) and variable wall-height integration.
+  - Added `src/tiles/dungeonTileDb.js` with strict validation for required dungeon keys and `tip_set` keys (`tile`, `A`-`L`), directory discovery + cache-bust loading, and duplicate-id checks.
+  - Reworked `src/tiles/tileCatalog.js` to load tile assets from selected dungeon definition (`tip_set_root_path` + `tip_set`) and support deterministic per-tile variant selection from `seed + symbol + tileX + tileY`.
+  - Updated renderer (`src/render/canvasRenderer.js`) to resolve tile variants at draw-time for floor/walls while preserving draw-layer order.
+  - Updated generator (`src/generation/dungeonGenerator.js`) to accept `options.wallHeightTiles` and derive corridor/min-gap metrics dynamically from wall height; `DungeonResult` now returns `wallHeightTiles`.
+  - Updated walkable grid (`src/tiles/walkableGrid.js`) to accept `options.tallWallTileHeight` so `B/F/G` blocking height is configurable per dungeon.
+- 2026-02-14: Added dungeon-id switch UI in debug panel.
+  - Added `Dungeon ID` select in `index.html`.
+  - Extended `src/ui/debugPanel.js` with `onDungeonIdChange`, `setDungeonOptions`, and `setDungeonId`.
+  - `src/main.js` now loads dungeon definitions at startup, defaults selection to `dungeon_id_02` (non-persistent), regenerates on selection change, and applies selected definition to generation/walkable/backdrop.
+  - Added dungeon diagnostics output: `dungeon_id` and `wall_height` in debug stats; `dungeonId` and `wallHeightTiles` in `render_game_to_text`.
+- 2026-02-14: Added/updated tests.
+  - Added `tests/unit/dungeonTileDb.test.js` (load success, tip_set key validation, wall_height validation, duplicate id).
+  - Added `tests/unit/walkableGrid.test.js` (tall wall blocking with height 3/5 and non-tall symbol behavior).
+  - Extended `tests/unit/debugPanel.test.js` for dungeon select change callback and option/selection updates.
+- 2026-02-14: Validation results.
+  - `npm run unit` -> PASS (19 files, 121 tests).
+  - `npm run check:generation` -> PASS (100/100).
+  - `npm run check:enemy-walk` -> PASS.
+  - `npm run check:enemy-fly` -> PASS.
+  - Playwright/manual verification:
+    - `output/web-game-dungeon-id-02/state-select.json`: `dungeonId=dungeon_id_02`, `wallHeightTiles=3`.
+    - `output/web-game-dungeon-id-01/state-select.json`: `dungeonId=dungeon_id_01`, `wallHeightTiles=5`.
+    - Screenshots reviewed: `output/web-game-dungeon-id-02/shot-select.png`, `output/web-game-dungeon-id-01/shot-select.png`.
+- 2026-02-14: Fixed wall-underlay rendering order so wall cells always have base floor tile beneath.
+  - Updated `src/render/canvasRenderer.js`:
+    - Replaced floor-only pass with `drawBaseTiles(...)` behavior (`floorGrid===true || symbolGrid cell != null`).
+    - Base tile now renders on wall-symbol cells before wall layers, preventing black background leakage behind lower walls.
+    - Explicit layer order kept as base tile -> tall walls (`B/F/G`) -> standard walls (`A/C/D/E/H/I/J/K/L`).
+  - Validation:
+    - `npm run unit` PASS (19 files, 121 tests)
+    - `npm run check:generation` PASS (100/100)
+    - `npm run check:enemy-walk` PASS
+    - `npm run check:enemy-fly` PASS
+  - Visual checks:
+    - `output/web-game-floor-under-wall-id02/state-0.json` (`dungeonId=dungeon_id_02`, `wallHeightTiles=3`) + `shot-0.png`
+    - `output/web-game-floor-under-wall-id01/state-0.json` (`dungeonId=dungeon_id_01`, `wallHeightTiles=5`) + `shot-0.png`

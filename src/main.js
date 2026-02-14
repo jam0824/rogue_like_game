@@ -56,6 +56,7 @@ import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { derivePlayerCombatStats } from "./status/derivedStats.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
+import { loadDungeonDefinitions } from "./tiles/dungeonTileDb.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
@@ -89,6 +90,7 @@ import {
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "weapon_sword_01";
+const DEFAULT_DUNGEON_ID = "dungeon_id_02";
 const HERB_ITEM_ID = "item_herb_01";
 const HERB_HEAL_AMOUNT = 50;
 const SYSTEM_UI_TOAST_DURATION_MS = 1800;
@@ -188,6 +190,8 @@ function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = f
 
   return [
     { label: "seed", value: dungeon.seed },
+    { label: "dungeon_id", value: dungeon.dungeonId ?? "-" },
+    { label: "wall_height", value: dungeon.wallHeightTiles ?? "-" },
     { label: "HP", value: hpValue },
     { label: "被ダメ設定", value: damageMode },
     { label: "部屋数", value: dungeon.stats.roomCount },
@@ -462,6 +466,7 @@ function toTextState() {
       {
         mode: "error",
         seed: appState.seed,
+        dungeonId: selectedDungeonId || null,
         error: appState.error,
         playerState: appState.playerState,
         hud: hudState,
@@ -479,6 +484,7 @@ function toTextState() {
       {
         mode: "loading",
         seed: appState.seed,
+        dungeonId: selectedDungeonId || null,
         playerState: appState.playerState,
         hud: hudState,
         inventory: inventoryState,
@@ -498,6 +504,8 @@ function toTextState() {
     {
       mode: "dungeon",
       seed: dungeon.seed,
+      dungeonId: dungeon.dungeonId ?? null,
+      wallHeightTiles: dungeon.wallHeightTiles ?? null,
       isPaused: appState.isPaused === true,
       debug: {
         playerDamagePreviewOnly: appState.debugPlayerDamagePreviewOnly === true,
@@ -588,7 +596,7 @@ function followPlayerInView() {
   canvasScroll.scrollTop = clamp(feetCenterY - viewHeight / 2, 0, maxTop);
 }
 
-const [tileAssets, playerAsset] = await Promise.all([loadTileAssets(), loadPlayerAsset()]);
+const playerAsset = await loadPlayerAsset();
 let enemyDefinitions = [];
 let enemyAssets = {};
 let enemyAiProfilesById = {};
@@ -603,6 +611,54 @@ let itemDefinitionsById = {};
 let itemAssetsById = {};
 let treasureChestAssets = {};
 let damagePopupSeq = 0;
+let dungeonDefinitions = [];
+let dungeonDefinitionsById = {};
+let selectedDungeonId = DEFAULT_DUNGEON_ID;
+const tileAssetsByDungeonId = new Map();
+
+function getSelectedDungeonDefinition() {
+  if (dungeonDefinitionsById[selectedDungeonId]) {
+    return dungeonDefinitionsById[selectedDungeonId];
+  }
+  return dungeonDefinitions[0] ?? null;
+}
+
+function normalizeSelectedDungeonId() {
+  if (dungeonDefinitionsById[selectedDungeonId]) {
+    return;
+  }
+
+  if (dungeonDefinitionsById[DEFAULT_DUNGEON_ID]) {
+    selectedDungeonId = DEFAULT_DUNGEON_ID;
+    return;
+  }
+
+  selectedDungeonId = dungeonDefinitions[0]?.id ?? "";
+}
+
+async function refreshDungeonResources() {
+  const definitions = await loadDungeonDefinitions();
+  dungeonDefinitions = definitions;
+  dungeonDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+  normalizeSelectedDungeonId();
+}
+
+async function ensureTileAssetsForDungeon(dungeonDefinition) {
+  if (!dungeonDefinition || typeof dungeonDefinition.id !== "string" || dungeonDefinition.id.length <= 0) {
+    throw new Error("Failed to resolve dungeon tile assets: dungeon definition is invalid.");
+  }
+
+  const cached = tileAssetsByDungeonId.get(dungeonDefinition.id);
+  if (cached) {
+    return cached;
+  }
+
+  const assets = await loadTileAssets(dungeonDefinition);
+  tileAssetsByDungeonId.set(dungeonDefinition.id, assets);
+  return assets;
+}
+
+await refreshDungeonResources();
 
 function resolveStarterWeaponDefId() {
   if (weaponDefinitionsById?.[INITIAL_WEAPON_ID]) {
@@ -1200,6 +1256,14 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
     const nextSeed = makeRandomSeed();
     void regenerate(nextSeed);
   },
+  onDungeonIdChange: (dungeonId) => {
+    if (!dungeonDefinitionsById[dungeonId]) {
+      return;
+    }
+    selectedDungeonId = dungeonId;
+    debugPanel.setDungeonId(selectedDungeonId);
+    void regenerate(appState.seed);
+  },
   onTogglePause: () => {
     togglePause();
   },
@@ -1216,6 +1280,13 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
     togglePlayerStatsWindow();
   },
 });
+debugPanel.setDungeonOptions(
+  dungeonDefinitions.map((definition) => ({
+    id: definition.id,
+    label: definition.id,
+  })),
+  selectedDungeonId
+);
 syncPauseUi();
 syncDamagePreviewUi();
 syncPlayerStatsWindowVisibility();
@@ -1228,6 +1299,8 @@ function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
 
   return [
     dungeon.seed,
+    dungeon.dungeonId ?? "",
+    dungeon.wallHeightTiles ?? 0,
     dungeon.stats?.roomCount ?? 0,
     dungeon.stats?.mainPathCount ?? 0,
     dungeon.stats?.branchCount ?? 0,
@@ -1430,11 +1503,25 @@ async function regenerate(seed) {
     }
     buildEnemyAttackProfilesByDbId();
     ensurePlayerStateLoaded();
+    const dungeonDefinition = getSelectedDungeonDefinition();
+    if (!dungeonDefinition) {
+      throw new Error("Dungeon DB is empty.");
+    }
+    selectedDungeonId = dungeonDefinition.id;
+    debugPanel.setDungeonId(selectedDungeonId);
+    const tileAssets = await ensureTileAssetsForDungeon(dungeonDefinition);
 
-    const dungeon = generateDungeon({ seed: normalizedSeed });
+    const dungeon = generateDungeon({
+      seed: normalizedSeed,
+      wallHeightTiles: dungeonDefinition.wallHeightTiles,
+    });
+    dungeon.dungeonId = dungeonDefinition.id;
+    dungeon.wallHeightTiles = dungeonDefinition.wallHeightTiles;
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
-    dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid);
+    dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid, {
+      tallWallTileHeight: dungeonDefinition.wallHeightTiles,
+    });
     dungeon.floor = Math.max(1, Math.floor(Number(appState.playerState?.run?.floor) || 1));
 
     const player = createPlayerState(dungeon);

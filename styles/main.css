@@ -76,7 +76,8 @@ body {
   color: #bed4f8;
 }
 
-#seed-input {
+#seed-input,
+#dungeon-id-select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #445779;
@@ -84,6 +85,10 @@ body {
   background: #0e1526;
   color: var(--text-main);
   font-family: inherit;
+}
+
+#dungeon-id-select {
+  margin-bottom: 2px;
 }
 
 .debug-actions {

@@ -37,6 +37,7 @@ function createEventTarget(initial = {}) {
 
 function createDebugRoot() {
   const seedInput = createEventTarget({ value: "", textContent: "" });
+  const dungeonIdSelect = createEventTarget({ value: "", innerHTML: "" });
   const applySeedButton = createEventTarget({ textContent: "Apply Seed" });
   const regenerateButton = createEventTarget({ textContent: "再生成" });
   const pauseToggleButton = createEventTarget({ textContent: "一時停止", attributes: { "aria-pressed": "false" } });
@@ -58,6 +59,7 @@ function createDebugRoot() {
 
   const elements = {
     "#seed-input": seedInput,
+    "#dungeon-id-select": dungeonIdSelect,
     "#apply-seed": applySeedButton,
     "#regen-random": regenerateButton,
     "#pause-toggle": pauseToggleButton,
@@ -78,6 +80,7 @@ function createDebugRoot() {
 
   return {
     root,
+    dungeonIdSelect,
     pauseToggleButton,
     showStorageButton,
     resetStorageButton,
@@ -310,6 +313,58 @@ describe("debugPanel", () => {
       expect(playerStatsList.children).toHaveLength(2);
       expect(playerStatsList.children[0].textContent).toBe("[基本] VIT: 2");
       expect(playerStatsList.children[1].textContent).toBe("与ダメ倍率: 1.140");
+    });
+  });
+
+  it("dungeon id 変更で onDungeonIdChange が呼ばれる", () => {
+    const { root, dungeonIdSelect } = createDebugRoot();
+    const onDungeonIdChange = vi.fn();
+
+    createDebugPanel(root, {
+      onApplySeed: vi.fn(),
+      onRegenerate: vi.fn(),
+      onTogglePause: vi.fn(),
+      onShowStorage: vi.fn(),
+      onResetStorage: vi.fn(),
+      onToggleDamagePreview: vi.fn(),
+      onTogglePlayerStats: vi.fn(),
+      onDungeonIdChange,
+    });
+
+    dungeonIdSelect.value = "dungeon_id_01";
+    dungeonIdSelect.trigger("change");
+    expect(onDungeonIdChange).toHaveBeenCalledWith("dungeon_id_01");
+  });
+
+  it("setDungeonOptions と setDungeonId が選択状態を更新する", () => {
+    withMockDocument(() => {
+      const { root, dungeonIdSelect } = createDebugRoot();
+
+      const panel = createDebugPanel(root, {
+        onApplySeed: vi.fn(),
+        onRegenerate: vi.fn(),
+        onTogglePause: vi.fn(),
+        onShowStorage: vi.fn(),
+        onResetStorage: vi.fn(),
+        onToggleDamagePreview: vi.fn(),
+        onTogglePlayerStats: vi.fn(),
+        onDungeonIdChange: vi.fn(),
+      });
+
+      panel.setDungeonOptions(
+        [
+          { id: "dungeon_id_01", label: "dungeon_id_01" },
+          { id: "dungeon_id_02", label: "dungeon_id_02" },
+        ],
+        "dungeon_id_02"
+      );
+
+      expect(Array.isArray(dungeonIdSelect.children)).toBe(true);
+      expect(dungeonIdSelect.children).toHaveLength(2);
+      expect(dungeonIdSelect.value).toBe("dungeon_id_02");
+
+      panel.setDungeonId("dungeon_id_01");
+      expect(dungeonIdSelect.value).toBe("dungeon_id_01");
     });
   });
 });
