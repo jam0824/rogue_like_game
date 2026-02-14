@@ -272,6 +272,9 @@ describe("systemHud", () => {
 
     expect(refs.inventoryOverlay.hidden).toBe(true);
     expect(refs.inventoryWindow.hidden).toBe(true);
+    expect(refs.quickSlots[0].icon.textContent).toBe("");
+    expect(refs.inventorySlots[0].icon.textContent).toBe("");
+    expect(refs.detailsIcon.textContent).toBe("");
     expect(refs.detailsDescription.textContent).toContain("選択");
     expect(refs.useButton.disabled).toBe(true);
     expect(refs.dropButton.disabled).toBe(true);

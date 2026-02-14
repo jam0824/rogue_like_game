@@ -27,7 +27,7 @@ function setHidden(element, hidden) {
   element.hidden = hidden === true;
 }
 
-function setButtonItem(button, item, { selected = false, emptyLabel = "--", disableWhenEmpty = true } = {}) {
+function setButtonItem(button, item, { selected = false, emptyLabel = "", disableWhenEmpty = true } = {}) {
   if (!button) {
     return;
   }
@@ -84,7 +84,7 @@ function setDetailsIcon(element, item) {
   }
 
   element.innerHTML = "";
-  setText(element, getIconLabelForKey(item?.iconKey ?? "empty"));
+  setText(element, "");
 }
 
 function resolveStatusName(status) {
@@ -246,7 +246,7 @@ export function createSystemHud(root, handlers = {}) {
         const slotEntry = normalizedQuickSlots[index];
         setButtonItem(button, slotEntry?.item ?? null, {
           selected: false,
-          emptyLabel: String(index + 1),
+          emptyLabel: "",
           disableWhenEmpty: true,
         });
       }
@@ -261,7 +261,7 @@ export function createSystemHud(root, handlers = {}) {
         const item = normalizedItems[index] ?? null;
         setButtonItem(button, item, {
           selected: item?.id === selectedItem?.id,
-          emptyLabel: "--",
+          emptyLabel: "",
           disableWhenEmpty: true,
         });
       }

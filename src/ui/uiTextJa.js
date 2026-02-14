@@ -54,7 +54,7 @@ const ITEM_ICON_LABELS = {
   sword: "SW",
   boots: "BT",
   herb: "HB",
-  empty: "--",
+  empty: "",
   buff: "BF",
   debuff: "DB",
 };

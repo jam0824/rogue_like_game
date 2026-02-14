@@ -777,3 +777,12 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - artifact: `output/web-game-system-ui-empty/state-0.json` shows `inventory.items: []`, `selectedItemId: null`, and all `quickSlots[*].item: null`.
   - screenshot reviewed: `output/web-game-system-ui-empty/shot-0.png`.
   - no `errors-*.json` artifact generated.
+- 2026-02-14: Removed empty-slot placeholder glyphs from system/inventory UI.
+  - `index.html`: cleared static placeholder text in quick slots (`1..8`), inventory slots (`--`), and inventory details icon (`--`).
+  - `src/ui/systemHud.js`: empty render path now uses empty labels for quick/inventory slots and clears details icon text when no item is selected.
+  - `src/ui/uiTextJa.js`: `ITEM_ICON_LABELS.empty` changed to empty string to avoid fallback `--` reappearance.
+  - `tests/unit/systemHud.test.js`: added assertions that quick slot icon, inventory slot icon, and details icon are empty for empty inventory state.
+- 2026-02-14: Validation after placeholder removal.
+  - `npm run unit` -> PASS (24 files, 146 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
+  - Playwright flow run (`tests/actions/system_ui_inventory_flow.json`): output in `output/web-game-system-ui-no-placeholder/` with `state-0.json` confirming empty inventory/quick slots and no `errors-*.json` artifact.
