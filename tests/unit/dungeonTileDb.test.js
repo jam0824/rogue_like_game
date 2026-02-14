@@ -7,6 +7,7 @@ function createDungeonRecord(overrides = {}) {
     name_key: "name_dungeon_01",
     description_key: "description_dungeon_01",
     tip_set_root_path: "graphic/dungeon_tip/dungeon_id_01",
+    bgm: "sounds/bgm/KIRI.mp3",
     wall_height: 5,
     tip_set: {
       tile: ["tile_normal.png"],
@@ -120,6 +121,7 @@ describe("dungeonTileDb", () => {
       nameKey: "name_dungeon_01",
       descriptionKey: "description_dungeon_01",
       tipSetRootPath: "graphic/dungeon_tip/dungeon_id_01",
+      bgmPath: "sounds/bgm/KIRI.mp3",
       wallHeightTiles: 5,
     });
     expect(definitions[0].tipSet.tile).toEqual(["tile_normal.png"]);
@@ -151,6 +153,31 @@ describe("dungeonTileDb", () => {
     await expect(loadDungeonDefinitions()).rejects.toThrow("invalid wall_height");
   });
 
+  it("bgm 欠損はエラー", async () => {
+    const invalidRecord = createDungeonRecord();
+    delete invalidRecord.bgm;
+
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": invalidRecord,
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("missing required key: bgm");
+  });
+
+  it("bgm が空文字ならエラー", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({ bgm: "   " }),
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("invalid bgm");
+  });
+
   it("id 重複はエラー", async () => {
     setupFetchMock({
       fileNames: ["dungeon_alpha.json", "dungeon_beta.json"],
@@ -168,4 +195,3 @@ describe("dungeonTileDb", () => {
     await expect(loadDungeonDefinitions()).rejects.toThrow("duplicate id: dungeon_dup_id");
   });
 });
-

@@ -86,6 +86,7 @@ import {
   removeDefeatedEnemies,
   updateWeaponsAndCombat,
 } from "./weapon/weaponSystem.js";
+import { createDungeonBgmPlayer } from "./audio/dungeonBgmPlayer.js";
 
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
@@ -98,10 +99,18 @@ const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
 
 const appState = createAppState(INITIAL_SEED);
+const dungeonBgmPlayer = createDungeonBgmPlayer();
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
 const systemUiRoot = document.querySelector("#system-ui-layer");
+
+function retryDungeonBgmPlayback() {
+  void dungeonBgmPlayer.retryPending();
+}
+
+window.addEventListener("pointerdown", retryDungeonBgmPlayback);
+window.addEventListener("keydown", retryDungeonBgmPlayback);
 
 function getStorage() {
   try {
@@ -1634,6 +1643,7 @@ async function regenerate(seed) {
       return;
     }
 
+    void dungeonBgmPlayer.playLoop(dungeonDefinition.bgmPath);
     renderCurrentFrame();
     followPlayerInView();
     persistPlayerState();
@@ -1643,6 +1653,7 @@ async function regenerate(seed) {
       return;
     }
 
+    dungeonBgmPlayer.stop();
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
     lastStatsDigest = "";
@@ -1688,8 +1699,12 @@ window.__regenDungeon = (seed) => {
 setInterval(() => {
   persistPlayerState();
 }, PLAYER_STATE_SAVE_INTERVAL_MS);
+
 window.addEventListener("beforeunload", () => {
   persistPlayerState();
+  window.removeEventListener("pointerdown", retryDungeonBgmPlayback);
+  window.removeEventListener("keydown", retryDungeonBgmPlayback);
+  dungeonBgmPlayer.stop();
 });
 
 void regenerate(INITIAL_SEED);

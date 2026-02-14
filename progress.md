@@ -672,3 +672,29 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - Visual checks:
     - `output/web-game-floor-under-wall-id02/state-0.json` (`dungeonId=dungeon_id_02`, `wallHeightTiles=3`) + `shot-0.png`
     - `output/web-game-floor-under-wall-id01/state-0.json` (`dungeonId=dungeon_id_01`, `wallHeightTiles=5`) + `shot-0.png`
+- 2026-02-14: Implemented dungeon BGM loop playback from dungeon DB (`bgm` key).
+  - Updated `src/tiles/dungeonTileDb.js`:
+    - Added `bgm` to required keys.
+    - Added `bgm` validation (`non-empty string`).
+    - Normalized output now includes `bgmPath`.
+  - Added `src/audio/dungeonBgmPlayer.js`:
+    - New `createDungeonBgmPlayer()` with `playLoop(src)`, `retryPending()`, `stop()`.
+    - Uses one `HTMLAudioElement`, always `loop=true`.
+    - Catches `audio.play()` rejection and keeps pending-retry state (autoplay block recovery).
+    - Logs warnings on playback failure and never throws unhandled promise rejections.
+  - Integrated BGM in `src/main.js`:
+    - Created single player instance at startup.
+    - Added user-gesture retry hooks via `window` `pointerdown` / `keydown`.
+    - On regenerate success (latest request), starts selected dungeon BGM (`dungeonDefinition.bgmPath`).
+    - On regenerate error, stops BGM.
+    - On `beforeunload`, persists state + removes retry listeners + stops BGM.
+  - Added/updated tests:
+    - `tests/unit/dungeonTileDb.test.js`: added `bgmPath` expectation + missing/empty `bgm` error cases.
+    - `tests/unit/dungeonBgmPlayer.test.js`: added loop/switch/stop/retry/autoplay-block/unhandled-rejection coverage.
+  - Validation:
+    - `npm run unit` -> PASS (20 files, 129 tests).
+    - `npm test` -> PASS (unit + all check scripts).
+    - Playwright skill client run:
+      - command used `tests/actions/player_move_click.json` against local server.
+      - artifacts: `output/web-game-bgm-verify/shot-0.png`, `output/web-game-bgm-verify/state-0.json`.
+      - no `errors-*.json` artifact generated.

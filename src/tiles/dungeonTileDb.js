@@ -5,6 +5,7 @@ const REQUIRED_KEYS = [
   "name_key",
   "description_key",
   "tip_set_root_path",
+  "bgm",
   "wall_height",
   "tip_set",
 ];
@@ -54,6 +55,10 @@ function assertDungeonShape(rawDungeon, fileName) {
     throw new Error(`Dungeon DB ${fileName} has invalid tip_set_root_path: ${rawDungeon.tip_set_root_path}`);
   }
 
+  if (typeof rawDungeon.bgm !== "string" || rawDungeon.bgm.trim().length <= 0) {
+    throw new Error(`Dungeon DB ${fileName} has invalid bgm: ${rawDungeon.bgm}`);
+  }
+
   if (!Number.isFinite(rawDungeon.wall_height) || rawDungeon.wall_height <= 0) {
     throw new Error(`Dungeon DB ${fileName} has invalid wall_height: ${rawDungeon.wall_height}`);
   }
@@ -79,6 +84,7 @@ function normalizeDungeonRecord(rawDungeon, fileName) {
     nameKey: rawDungeon.name_key,
     descriptionKey: rawDungeon.description_key,
     tipSetRootPath: rawDungeon.tip_set_root_path,
+    bgmPath: rawDungeon.bgm.trim(),
     wallHeightTiles: Math.max(1, Math.floor(Number(rawDungeon.wall_height))),
     tipSet: normalizeTipSet(rawDungeon.tip_set),
   };
@@ -168,4 +174,3 @@ export async function loadDungeonDefinitions() {
 
   return definitions;
 }
-
