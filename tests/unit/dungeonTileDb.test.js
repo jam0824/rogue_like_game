@@ -123,9 +123,24 @@ describe("dungeonTileDb", () => {
       tipSetRootPath: "graphic/dungeon_tip/dungeon_id_01",
       bgmPath: "sounds/bgm/KIRI.mp3",
       wallHeightTiles: 5,
+      walkableTileDecoration: [],
     });
     expect(definitions[0].tipSet.tile).toEqual(["tile_normal.png"]);
     expect(definitions[0].tipSet.B).toEqual(["top_01.png"]);
+  });
+
+  it("walkable_tile_decoration を正規化する", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({
+          walkable_tile_decoration: [" decoration_01.png ", "decoration_02.png"],
+        }),
+      },
+    });
+
+    const definitions = await loadDungeonDefinitions();
+    expect(definitions[0].walkableTileDecoration).toEqual(["decoration_01.png", "decoration_02.png"]);
   });
 
   it("tip_set の必須キー欠損はエラー", async () => {
@@ -176,6 +191,32 @@ describe("dungeonTileDb", () => {
     });
 
     await expect(loadDungeonDefinitions()).rejects.toThrow("invalid bgm");
+  });
+
+  it("walkable_tile_decoration が配列でないならエラー", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({
+          walkable_tile_decoration: "decoration_01.png",
+        }),
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("invalid walkable_tile_decoration");
+  });
+
+  it("walkable_tile_decoration に空文字があればエラー", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({
+          walkable_tile_decoration: ["decoration_01.png", "  "],
+        }),
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("invalid walkable_tile_decoration[1]");
   });
 
   it("id 重複はエラー", async () => {

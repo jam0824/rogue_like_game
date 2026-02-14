@@ -698,3 +698,31 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
       - command used `tests/actions/player_move_click.json` against local server.
       - artifacts: `output/web-game-bgm-verify/shot-0.png`, `output/web-game-bgm-verify/state-0.json`.
       - no `errors-*.json` artifact generated.
+- 2026-02-14: Implemented `walkable_tile_decoration` pipeline from dungeon DB to tile asset loading and renderer overlay.
+  - `src/tiles/dungeonTileDb.js`:
+    - Added optional validation for `walkable_tile_decoration` (must be an array of non-empty strings when present).
+    - Added normalization to `walkableTileDecoration` (trimmed string array) with default `[]` when omitted.
+  - `src/tiles/tileCatalog.js`:
+    - Added loading of `dungeonDefinition.walkableTileDecoration` images under `tipSetRootPath`.
+    - Added `walkableTileDecoration` asset bucket to return object.
+    - Added `resolveWalkableTileDecorationAsset(assets, seed, tileX, tileY, probability=0.05)` with deterministic hash-based roll and deterministic variant pick.
+  - `src/render/canvasRenderer.js`:
+    - Added walkable overlay draw pass over `dungeon.walkableGrid ?? dungeon.floorGrid` true cells.
+    - Fixed dungeon layer order to `base tile -> walkable decoration -> tall walls -> standard walls`.
+- 2026-02-14: Added/updated unit tests for walkable decoration feature.
+  - Updated `tests/unit/dungeonTileDb.test.js`:
+    - asserts default `walkableTileDecoration: []` when key is omitted
+    - normalization test for trimmed `walkable_tile_decoration`
+    - invalid non-array / invalid empty-string element error cases
+  - Added `tests/unit/tileCatalog.test.js`:
+    - loads `walkableTileDecoration` variants
+    - deterministic resolution for same seed/tile
+    - probability edge cases (`0` and `1`)
+    - approximate 5% appearance-rate coverage
+- 2026-02-14: Validation complete for walkable tile decoration update.
+  - `npm run unit` -> PASS (21 files, 136 tests)
+  - `npm run check:generation` -> PASS (100/100)
+  - Playwright skill client run (`tests/actions/idle.json`) captured artifacts:
+    - `output/web-game-walkable-decoration/shot-0.png`
+    - `output/web-game-walkable-decoration/state-0.json` (`dungeonId=dungeon_id_02`, `wallHeightTiles=3`)
+    - no `errors-*.json` artifact generated in this run

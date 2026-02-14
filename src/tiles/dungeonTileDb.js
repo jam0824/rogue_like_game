@@ -64,6 +64,23 @@ function assertDungeonShape(rawDungeon, fileName) {
   }
 
   assertTipSetShape(rawDungeon.tip_set, fileName);
+  assertWalkableTileDecorationShape(rawDungeon.walkable_tile_decoration, fileName);
+}
+
+function assertWalkableTileDecorationShape(rawWalkableTileDecoration, fileName) {
+  if (rawWalkableTileDecoration === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(rawWalkableTileDecoration)) {
+    throw new Error(`Dungeon DB ${fileName} has invalid walkable_tile_decoration: must be an array`);
+  }
+
+  rawWalkableTileDecoration.forEach((value, index) => {
+    if (typeof value !== "string" || value.trim().length <= 0) {
+      throw new Error(`Dungeon DB ${fileName} has invalid walkable_tile_decoration[${index}]: ${value}`);
+    }
+  });
 }
 
 function normalizeTipSet(rawTipSet) {
@@ -73,6 +90,14 @@ function normalizeTipSet(rawTipSet) {
       rawTipSet[key].map((value) => value.trim()),
     ])
   );
+}
+
+function normalizeWalkableTileDecoration(rawWalkableTileDecoration) {
+  if (!Array.isArray(rawWalkableTileDecoration)) {
+    return [];
+  }
+
+  return rawWalkableTileDecoration.map((value) => value.trim());
 }
 
 function normalizeDungeonRecord(rawDungeon, fileName) {
@@ -87,6 +112,7 @@ function normalizeDungeonRecord(rawDungeon, fileName) {
     bgmPath: rawDungeon.bgm.trim(),
     wallHeightTiles: Math.max(1, Math.floor(Number(rawDungeon.wall_height))),
     tipSet: normalizeTipSet(rawDungeon.tip_set),
+    walkableTileDecoration: normalizeWalkableTileDecoration(rawDungeon.walkable_tile_decoration),
   };
 }
 

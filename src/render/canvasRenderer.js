@@ -1,5 +1,10 @@
 import { TILE_SIZE } from "../config/constants.js";
-import { resolveTileVariantAsset, STANDARD_WALL_SYMBOLS, TALL_WALL_SYMBOLS } from "../tiles/tileCatalog.js";
+import {
+  resolveTileVariantAsset,
+  resolveWalkableTileDecorationAsset,
+  STANDARD_WALL_SYMBOLS,
+  TALL_WALL_SYMBOLS,
+} from "../tiles/tileCatalog.js";
 
 function drawSymbolLayer(ctx, assets, symbolGrid, symbols, seed) {
   const height = symbolGrid.length;
@@ -39,6 +44,30 @@ function drawBaseTiles(ctx, assets, floorGrid, symbolGrid, seed) {
         continue;
       }
       ctx.drawImage(tile.image, x * TILE_SIZE, y * TILE_SIZE);
+    }
+  }
+}
+
+function drawWalkableTileDecorations(ctx, assets, walkableGrid, seed) {
+  if (!Array.isArray(walkableGrid) || walkableGrid.length <= 0 || !Array.isArray(walkableGrid[0])) {
+    return;
+  }
+
+  const height = walkableGrid.length;
+  const width = walkableGrid[0].length;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (walkableGrid[y][x] !== true) {
+        continue;
+      }
+
+      const asset = resolveWalkableTileDecorationAsset(assets, seed, x, y);
+      if (!asset?.image) {
+        continue;
+      }
+
+      ctx.drawImage(asset.image, x * TILE_SIZE, y * TILE_SIZE);
     }
   }
 }
@@ -152,8 +181,9 @@ function drawDungeonBase(ctx, assets, dungeon) {
   ctx.fillStyle = "#050609";
   ctx.fillRect(0, 0, widthPx, heightPx);
 
-  // Layer order: base tile first, then wall overlays.
+  // Layer order: base tile -> walkable decorations -> wall overlays.
   drawBaseTiles(ctx, assets, dungeon.floorGrid, dungeon.symbolGrid ?? null, dungeon.seed);
+  drawWalkableTileDecorations(ctx, assets, dungeon.walkableGrid ?? dungeon.floorGrid, dungeon.seed);
   drawSymbolLayer(ctx, assets, dungeon.symbolGrid, TALL_WALL_SYMBOLS, dungeon.seed);
   drawSymbolLayer(ctx, assets, dungeon.symbolGrid, STANDARD_WALL_SYMBOLS, dungeon.seed);
 
