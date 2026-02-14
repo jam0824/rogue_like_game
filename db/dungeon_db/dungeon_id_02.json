@@ -3,9 +3,10 @@
     "name_key": "name_dungeon_02",
     "description_key": "description_dungeon_02",
     "tip_set_root_path": "graphic/dungeon_tip/dungeon_id_02",
+    "bgm":"sounds/bgm/KIRI.mp3",
     "wall_height": 3,
     "tip_set":{
-        "tile":["tile_01.png","tile_02.png","tile_03.png","tile_04.png"],
+        "tile":["tile_01.png"],
         "A":["left_top_01.png"],
         "B":["top_01.png","top_02.png","top_03.png","top_04.png"],
         "C":["right_top.png"],
