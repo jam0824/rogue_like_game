@@ -65,6 +65,7 @@ function normalizeItemRecord(rawItem, fileName) {
     category: rawItem.category,
     subType: rawItem.sub_type,
     maxStack: Math.max(1, Math.floor(Number(rawItem.max_stack) || 1)),
+    seKeyUseItem: typeof rawItem.se_key_use_item === "string" ? rawItem.se_key_use_item.trim() : "",
     usableInQuickslot: rawItem.usable_in_quickslot !== false,
     useParams: { ...rawItem.use_params },
   };

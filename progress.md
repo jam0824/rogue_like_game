@@ -726,3 +726,38 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
     - `output/web-game-walkable-decoration/shot-0.png`
     - `output/web-game-walkable-decoration/state-0.json` (`dungeonId=dungeon_id_02`, `wallHeightTiles=3`)
     - no `errors-*.json` artifact generated in this run
+- 2026-02-14: Implemented SE system integration per `spec_logic/音設定.md` and updated weapon/item specs.
+- 2026-02-14: Added sound DB loader and normalization:
+  - `src/audio/soundDb.js`: loads `db/dungeon_db/sound_db/sound_db.json` and flattens top-level + `weapon` + `skill` keys into `key -> src` map.
+- 2026-02-14: Added sound effect runtime player:
+  - `src/audio/soundEffectPlayer.js`: `playByKey(key, repeat)` with event-count playback policy and `retryPending()` for autoplay-blocked sounds.
+- 2026-02-14: Extended DB normalization:
+  - `src/weapon/weaponDb.js`: exposes `seKeyStartAttack` / `seKeyHitAttack` with fallback from legacy `sound_key_*`.
+  - `src/item/itemDb.js`: exposes `seKeyUseItem` from `se_key_use_item`.
+- 2026-02-14: Integrated SE triggers in `src/main.js`:
+  - chest open -> `se_key_open_chest`
+  - ground item pickup -> `se_key_get_item`
+  - inventory drop success -> `se_key_put_item`
+  - item consume success -> `ItemDef.seKeyUseItem`
+  - player damage event count -> `se_key_player_get_damage`
+  - newly defeated enemy count -> `se_key_enemy_death`
+  - weapon attack-start (`attackSeq` delta) -> `WeaponDef.seKeyStartAttack`
+  - weapon hit (`hitSet` delta) -> `WeaponDef.seKeyHitAttack`
+- 2026-02-14: Added sound resources refresh on regenerate (`refreshSoundResources`) and linked SE retry to existing pointer/keyboard autoplay-unlock hooks.
+- 2026-02-14: Added tests:
+  - `tests/unit/soundDb.test.js`
+  - `tests/unit/soundEffectPlayer.test.js`
+  - `tests/unit/itemDb.test.js`
+  - updated `tests/unit/weaponDb.test.js` for `se_key_*` and legacy fallback behavior.
+- 2026-02-14: Validation complete:
+  - `npm run unit` -> PASS (24 files, 144 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill client run on local server with `tests/actions/idle.json` -> updated `output/web-game/shot-0.png` + `state-0.json`; no `errors-*.json` artifacts.
+- TODO: When dedicated item categories/skills are implemented, map their per-skill SFX keys and add focused integration checks for each trigger.
+- 2026-02-14: Follow-up fix for sound DB relocation (`db/sound_db/sound_db.json`).
+- 2026-02-14: Updated `src/audio/soundDb.js` to load from new path first and fallback to legacy `db/dungeon_db/sound_db/sound_db.json` for compatibility.
+- 2026-02-14: Added/updated tests in `tests/unit/soundDb.test.js` to verify new-path priority and legacy fallback behavior.
+- 2026-02-14: Re-validated after fix:
+  - `npm run unit` -> PASS (24 files, 145 tests)
+  - `npm run test:checks` -> PASS
+- Note: With the new sound DB path now resolvable, weapon hit SFX (`se_key_hit_sword_01`) is expected to trigger through existing `playWeaponCombatSe` flow.

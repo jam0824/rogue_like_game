@@ -9,6 +9,8 @@ function createWeaponRecord(overrides = {}) {
     weapon_file_name: "weapon_sword_01.png",
     width: 32,
     height: 64,
+    se_key_start_attack: "se_key_start_sword_01",
+    se_key_hit_attack: "se_key_hit_sword_01",
     rarity: "rare",
     weapon_plus: 0,
     base_damage: 12,
@@ -115,6 +117,8 @@ describe("weaponDb", () => {
 
     expect(definitions).toHaveLength(1);
     expect(definitions[0].id).toBe("weapon_sword_01");
+    expect(definitions[0].seKeyStartAttack).toBe("se_key_start_sword_01");
+    expect(definitions[0].seKeyHitAttack).toBe("se_key_hit_sword_01");
   });
 
   it("ファイル名とJSON idが不一致なら警告しつつ JSON id を使う", async () => {
@@ -163,5 +167,25 @@ describe("weaponDb", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await expect(loadWeaponDefinitions()).rejects.toThrow("duplicate id: weapon_dup_01");
+  });
+
+  it("se_key_* が空なら sound_key_* をフォールバック採用する", async () => {
+    setupFetchMock({
+      fileNames: ["weapon_sword_01.json"],
+      recordsByFileName: {
+        "weapon_sword_01.json": createWeaponRecord({
+          se_key_start_attack: "",
+          se_key_hit_attack: "",
+          sound_key_start_attack: "se_key_start_legacy",
+          sound_key_hit_attack: "se_key_hit_legacy",
+        }),
+      },
+    });
+
+    const definitions = await loadWeaponDefinitions();
+
+    expect(definitions).toHaveLength(1);
+    expect(definitions[0].seKeyStartAttack).toBe("se_key_start_legacy");
+    expect(definitions[0].seKeyHitAttack).toBe("se_key_hit_legacy");
   });
 });

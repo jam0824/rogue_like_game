@@ -70,6 +70,22 @@ function assertWeaponShape(rawWeapon, fileName) {
   }
 }
 
+function normalizeSeKey(rawValue) {
+  if (typeof rawValue !== "string") {
+    return "";
+  }
+  return rawValue.trim();
+}
+
+function resolveWeaponSeKey(rawWeapon, seKeyName, legacyKeyName) {
+  const seKey = normalizeSeKey(rawWeapon?.[seKeyName]);
+  if (seKey) {
+    return seKey;
+  }
+
+  return normalizeSeKey(rawWeapon?.[legacyKeyName]);
+}
+
 function normalizeWeaponRecord(rawWeapon, fileName) {
   assertHasRequiredKeys(rawWeapon, fileName);
   assertWeaponShape(rawWeapon, fileName);
@@ -88,6 +104,8 @@ function normalizeWeaponRecord(rawWeapon, fileName) {
     weaponFileName: rawWeapon.weapon_file_name,
     width: rawWeapon.width,
     height: rawWeapon.height,
+    seKeyStartAttack: resolveWeaponSeKey(rawWeapon, "se_key_start_attack", "sound_key_start_attack"),
+    seKeyHitAttack: resolveWeaponSeKey(rawWeapon, "se_key_hit_attack", "sound_key_hit_attack"),
     rarity: rawWeapon.rarity,
     weaponPlus: rawWeapon.weapon_plus,
     baseDamage: rawWeapon.base_damage,

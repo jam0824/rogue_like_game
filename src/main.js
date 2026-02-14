@@ -87,6 +87,8 @@ import {
   updateWeaponsAndCombat,
 } from "./weapon/weaponSystem.js";
 import { createDungeonBgmPlayer } from "./audio/dungeonBgmPlayer.js";
+import { createSoundEffectPlayer } from "./audio/soundEffectPlayer.js";
+import { loadSoundEffectMap } from "./audio/soundDb.js";
 
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
@@ -97,20 +99,27 @@ const HERB_HEAL_AMOUNT = 50;
 const SYSTEM_UI_TOAST_DURATION_MS = 1800;
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
+const SE_KEY_OPEN_CHEST = "se_key_open_chest";
+const SE_KEY_GET_ITEM = "se_key_get_item";
+const SE_KEY_PUT_ITEM = "se_key_put_item";
+const SE_KEY_PLAYER_GET_DAMAGE = "se_key_player_get_damage";
+const SE_KEY_ENEMY_DEATH = "se_key_enemy_death";
 
 const appState = createAppState(INITIAL_SEED);
 const dungeonBgmPlayer = createDungeonBgmPlayer();
+const soundEffectPlayer = createSoundEffectPlayer();
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
 const systemUiRoot = document.querySelector("#system-ui-layer");
 
-function retryDungeonBgmPlayback() {
+function retryAudioPlayback() {
   void dungeonBgmPlayer.retryPending();
+  void soundEffectPlayer.retryPending();
 }
 
-window.addEventListener("pointerdown", retryDungeonBgmPlayback);
-window.addEventListener("keydown", retryDungeonBgmPlayback);
+window.addEventListener("pointerdown", retryAudioPlayback);
+window.addEventListener("keydown", retryAudioPlayback);
 
 function getStorage() {
   try {
@@ -619,6 +628,7 @@ let itemDefinitions = [];
 let itemDefinitionsById = {};
 let itemAssetsById = {};
 let treasureChestAssets = {};
+let soundEffectMap = {};
 let damagePopupSeq = 0;
 let dungeonDefinitions = [];
 let dungeonDefinitionsById = {};
@@ -812,6 +822,17 @@ async function refreshItemResources() {
   treasureChestAssets = chestAssets;
 }
 
+async function refreshSoundResources() {
+  try {
+    soundEffectMap = await loadSoundEffectMap();
+    soundEffectPlayer.setSoundEffectMap(soundEffectMap);
+  } catch (error) {
+    soundEffectMap = {};
+    soundEffectPlayer.setSoundEffectMap(soundEffectMap);
+    console.warn(`[SE] Failed to load sound DB: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function ensurePlayerStateLoaded() {
   if (appState.playerState) {
     return;
@@ -945,6 +966,27 @@ function getQuickSlotItemId(systemUi, slotIndex) {
   const items = Array.isArray(systemUi?.inventory?.items) ? systemUi.inventory.items : [];
   const found = items.find((item) => item.quickSlot === slotIndex);
   return typeof found?.id === "string" ? found.id : null;
+}
+
+function playSeByKey(soundKey, repeat = 1) {
+  void soundEffectPlayer.playByKey(soundKey, repeat);
+}
+
+function playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, consumedItemId) {
+  if (typeof consumedItemId !== "string" || consumedItemId.length <= 0) {
+    return;
+  }
+
+  const beforeCount = getInventoryItemCount(beforeSystemUi, consumedItemId);
+  const afterCount = getInventoryItemCount(afterSystemUi, consumedItemId);
+  if (afterCount >= beforeCount) {
+    return;
+  }
+
+  const consumedCount = Math.max(1, beforeCount - afterCount);
+  const itemDefinition = itemDefinitionsById?.[consumedItemId];
+  const seKeyUseItem = typeof itemDefinition?.seKeyUseItem === "string" ? itemDefinition.seKeyUseItem : "";
+  playSeByKey(seKeyUseItem, consumedCount);
 }
 
 function applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, consumedItemId) {
@@ -1103,6 +1145,7 @@ function syncGroundItemPickup() {
     systemUi = addResult.systemUi;
     systemUiChanged = true;
     if (addResult.success) {
+      playSeByKey(SE_KEY_GET_ITEM, 1);
       const pickupNameKey =
         typeof runtimeItem.nameKey === "string" && runtimeItem.nameKey.length > 0
           ? runtimeItem.nameKey
@@ -1139,6 +1182,7 @@ const systemHud = systemUiRoot
         const quickSlotItemId = getQuickSlotItemId(beforeSystemUi, slotIndex);
         const afterSystemUi = useQuickSlotItem(beforeSystemUi, slotIndex);
         applySystemUiState(afterSystemUi);
+        playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
         applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
       },
       onOpenInventoryWindow: () => {
@@ -1155,6 +1199,7 @@ const systemHud = systemUiRoot
         const selectedItemId = beforeSystemUi.inventory?.selectedItemId;
         const afterSystemUi = useInventoryItem(beforeSystemUi, selectedItemId);
         applySystemUiState(afterSystemUi);
+        playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
         applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
       },
       onDropSelectedItem: () => {
@@ -1174,6 +1219,7 @@ const systemHud = systemUiRoot
           return;
         }
 
+        playSeByKey(SE_KEY_PUT_ITEM, 1);
         const currentGroundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
         appState.groundItems = [...currentGroundItems, dropResult.droppedGroundItem];
       },
@@ -1375,10 +1421,112 @@ createPointerController(canvas, {
       return;
     }
 
+    playSeByKey(SE_KEY_OPEN_CHEST, 1);
     appState.treasureChests = openResult.treasureChests;
     appState.groundItems = openResult.groundItems;
   },
 });
+
+function getWeaponHitTargetCount(weapon) {
+  if (weapon?.hitSet instanceof Set) {
+    return weapon.hitSet.size;
+  }
+
+  if (Array.isArray(weapon?.hitSet)) {
+    return weapon.hitSet.length;
+  }
+
+  return 0;
+}
+
+function createWeaponCombatSnapshot(weapons) {
+  const snapshot = new Map();
+
+  for (const weapon of Array.isArray(weapons) ? weapons : []) {
+    if (!weapon || typeof weapon.id !== "string") {
+      continue;
+    }
+
+    snapshot.set(weapon.id, {
+      attackSeq: Math.max(0, Math.floor(Number(weapon.attackSeq) || 0)),
+      hitCount: Math.max(0, Math.floor(Number(getWeaponHitTargetCount(weapon)) || 0)),
+    });
+  }
+
+  return snapshot;
+}
+
+function playWeaponCombatSe(weapons, beforeSnapshot) {
+  for (const weapon of Array.isArray(weapons) ? weapons : []) {
+    if (!weapon || typeof weapon.id !== "string") {
+      continue;
+    }
+
+    const weaponDefinition = weaponDefinitionsById?.[weapon.weaponDefId];
+    if (!weaponDefinition) {
+      continue;
+    }
+
+    const before = beforeSnapshot.get(weapon.id) ?? { attackSeq: 0, hitCount: 0 };
+    const afterAttackSeq = Math.max(0, Math.floor(Number(weapon.attackSeq) || 0));
+    const afterHitCount = Math.max(0, Math.floor(Number(getWeaponHitTargetCount(weapon)) || 0));
+
+    const startAttackCount = afterAttackSeq > before.attackSeq ? afterAttackSeq - before.attackSeq : 0;
+    let hitAttackCount = 0;
+    if (afterAttackSeq > before.attackSeq) {
+      hitAttackCount = afterHitCount;
+    } else if (afterAttackSeq === before.attackSeq && afterHitCount > before.hitCount) {
+      hitAttackCount = afterHitCount - before.hitCount;
+    }
+
+    if (startAttackCount > 0) {
+      playSeByKey(weaponDefinition.seKeyStartAttack, startAttackCount);
+    }
+
+    if (hitAttackCount > 0) {
+      playSeByKey(weaponDefinition.seKeyHitAttack, hitAttackCount);
+    }
+  }
+}
+
+function createAliveEnemyIdSet(enemies) {
+  const aliveEnemyIds = new Set();
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true || typeof enemy.id !== "string") {
+      continue;
+    }
+    aliveEnemyIds.add(enemy.id);
+  }
+
+  return aliveEnemyIds;
+}
+
+function countNewlyDefeatedEnemies(enemies, beforeAliveEnemyIds) {
+  let defeatedCount = 0;
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead !== true || typeof enemy.id !== "string") {
+      continue;
+    }
+    if (beforeAliveEnemyIds.has(enemy.id)) {
+      defeatedCount += 1;
+    }
+  }
+  return defeatedCount;
+}
+
+function countPlayerDamageEvents(events) {
+  if (!Array.isArray(events) || events.length <= 0) {
+    return 0;
+  }
+
+  return events.reduce((count, event) => {
+    if (event?.kind !== "damage" || event?.targetType !== "player") {
+      return count;
+    }
+    return count + 1;
+  }, 0);
+}
 
 function renderCurrentFrame() {
   if (appState.error) {
@@ -1451,6 +1599,8 @@ function stepSimulation(dt) {
   updatePlayer(appState.player, appState.dungeon, dt);
   syncGroundItemPickup();
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
+  const weaponCombatSnapshot = createWeaponCombatSnapshot(appState.weapons);
+  const aliveEnemyIdsBeforeCombat = createAliveEnemyIdSet(appState.enemies);
   const playerCombatEvents = updateWeaponsAndCombat(
     appState.weapons,
     appState.player,
@@ -1459,9 +1609,18 @@ function stepSimulation(dt) {
     formationDefinitionsById,
     dt
   );
+  playWeaponCombatSe(appState.weapons, weaponCombatSnapshot);
   const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
   });
+  const playerDamageEventCount = countPlayerDamageEvents(enemyCombatEvents);
+  if (playerDamageEventCount > 0) {
+    playSeByKey(SE_KEY_PLAYER_GET_DAMAGE, playerDamageEventCount);
+  }
+  const defeatedEnemyCount = countNewlyDefeatedEnemies(appState.enemies, aliveEnemyIdsBeforeCombat);
+  if (defeatedEnemyCount > 0) {
+    playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
+  }
   const combatEvents = [...playerCombatEvents, ...enemyCombatEvents];
   const spawnedPopups = spawnDamagePopupsFromEvents(combatEvents, damagePopupSeq);
   damagePopupSeq += 1;
@@ -1506,7 +1665,12 @@ async function regenerate(seed) {
   const requestId = (regenerateRequestId += 1);
 
   try {
-    await Promise.all([refreshEnemyResources(), refreshWeaponResources(), refreshItemResources()]);
+    await Promise.all([
+      refreshEnemyResources(),
+      refreshWeaponResources(),
+      refreshItemResources(),
+      refreshSoundResources(),
+    ]);
     if (requestId !== regenerateRequestId) {
       return;
     }
@@ -1702,8 +1866,8 @@ setInterval(() => {
 
 window.addEventListener("beforeunload", () => {
   persistPlayerState();
-  window.removeEventListener("pointerdown", retryDungeonBgmPlayback);
-  window.removeEventListener("keydown", retryDungeonBgmPlayback);
+  window.removeEventListener("pointerdown", retryAudioPlayback);
+  window.removeEventListener("keydown", retryAudioPlayback);
   dungeonBgmPlayer.stop();
 });
 
