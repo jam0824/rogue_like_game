@@ -3,6 +3,8 @@
     "name_key": "name_item_herb_01",
     "description_key": "desc_item_herb_01",
     "icon_file_name": "item_herb_01.png",
+
+    "se_key_use_item": "se_key_small_heal",
   
     "category": "consumable",
     "sub_type": "heal",

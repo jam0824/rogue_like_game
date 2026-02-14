@@ -1,0 +1,14 @@
+{
+    "se_key_open_chest": "sounds/se/ACTION_Open_Chest_01_mono.wav",
+    "se_key_get_item": "sounds/se/決定ボタンを押す24.mp3",
+    "se_key_put_item": "sounds/se/ACTION_Close_Chest_02_mono.wav",
+    "se_key_player_get_damage": "sounds/se/IMPACT_Generic_09_Short_mono.wav",
+    "se_key_enemy_death": "sounds/se/EXPLOSION_Quick_Echo_01_mono.wav",
+    "weapon":{
+        "se_key_hit_sword_01":"sounds/se/剣で斬る1.mp3"
+    },
+    "skill":{
+        "se_key_small_heal": "sounds/se/決定ボタンを押す25.mp3"
+    }
+
+}
