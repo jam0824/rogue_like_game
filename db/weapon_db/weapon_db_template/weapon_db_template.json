@@ -10,6 +10,9 @@
     "sound_key_start_attack": "",
     "sound_key_hit_attack": "se_key_hit_sword_01",
 
+    "effect_id_start_attack": "",
+    "effect_id_hit_attack": "effect_id_sword_slash_01",
+
     "rarity": "rare",
     "weapon_plus": 0,
     "base_damage": 12,

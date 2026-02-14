@@ -1,0 +1,12 @@
+{
+    "id": "effect_id_sword_slash_01",
+    "effect_file_name": "graphic/effect/effect_sword_slash_01.png",
+    "width": 120,
+    "height": 120,
+    "animation_fps": 30,
+    "animation_direction": "horizontal",
+    "scale": 1.0,
+    "blend_mode": "normal",
+    "loop": false
+
+}
