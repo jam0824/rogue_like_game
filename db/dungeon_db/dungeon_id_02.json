@@ -1,0 +1,20 @@
+{
+    "id": "dungeon_id_02",
+    "name_key": "name_dungeon_02",
+    "description_key": "description_dungeon_02",
+    "tip_set_root_path": "graphic/dungeon_tip/dungeon_id_02",
+    "wall_height": 3,
+    "tip_set":{
+        "tile":["tile_01.png","tile_02.png","tile_03.png","tile_04.png"],
+        "A":["left_top_01.png"],
+        "B":["top_01.png","top_02.png","top_03.png","top_04.png"],
+        "C":["right_top.png"],
+        "D":["left_01.png","left_02.png","left_03.png"],
+        "E":["right_01.png","right_02.png","right_03.png"],
+        "F":["left_top_corner.png"],
+        "G":["right_top_corner.png"],
+        "H":["left_bottom_corner.png"],
+        "I":["bottom_01.png","bottom_02.png","bottom_03.png","bottom_04.png"],
+        "J":["right_bottom_corner.png"]
+    }
+}
