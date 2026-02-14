@@ -10,6 +10,38 @@ import {
 } from "../../src/ui/systemUiState.js";
 
 const TILE_SIZE = 32;
+const TEST_ITEMS = Object.freeze({
+  potion: {
+    id: "run_item_potion_small",
+    type: "consumable",
+    count: 3,
+    quickSlot: 0,
+    iconKey: "potion_red",
+    nameKey: "item_name_potion_small",
+    descriptionKey: "item_desc_potion_small",
+    effectKey: "item_effect_potion_small",
+  },
+  antidote: {
+    id: "run_item_antidote",
+    type: "consumable",
+    count: 1,
+    quickSlot: 2,
+    iconKey: "antidote",
+    nameKey: "item_name_antidote",
+    descriptionKey: "item_desc_antidote",
+    effectKey: "item_effect_antidote",
+  },
+  shortSword: {
+    id: "run_item_short_sword",
+    type: "equipment",
+    count: 1,
+    quickSlot: 6,
+    iconKey: "sword",
+    nameKey: "item_name_short_sword",
+    descriptionKey: "item_desc_short_sword",
+    effectKey: "item_effect_short_sword",
+  },
+});
 
 function createWalkableDungeon(width, height, walkable = true) {
   return {
@@ -24,7 +56,30 @@ function createPlayerAtFeetTile(tileX, tileY) {
   };
 }
 
+function cloneTestItem(item) {
+  return {
+    ...item,
+  };
+}
+
+function createStateWithItems(options = {}) {
+  const defaultItems = [TEST_ITEMS.potion, TEST_ITEMS.antidote, TEST_ITEMS.shortSword];
+  const items = Array.isArray(options.items) ? options.items : defaultItems;
+  const state = createInitialSystemUiState();
+  state.inventory.items = items.map((item) => cloneTestItem(item));
+  state.inventory.selectedItemId = options.selectedItemId ?? state.inventory.items[0]?.id ?? null;
+  state.inventory.capacity = Number.isFinite(options.capacity) ? Math.max(1, Math.floor(options.capacity)) : 10;
+  return state;
+}
+
 describe("systemUiState", () => {
+  it("初期状態のインベントリーは空で selectedItemId は null", () => {
+    const state = createInitialSystemUiState();
+
+    expect(state.inventory.items).toEqual([]);
+    expect(state.inventory.selectedItemId).toBeNull();
+  });
+
   it("clearToastMessage は toastMessage を空にする", () => {
     const state = createInitialSystemUiState();
     state.toastMessage = "temporary";
@@ -35,7 +90,7 @@ describe("systemUiState", () => {
   });
 
   it("consumable の USE で個数が減り 0 で削除される", () => {
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
 
     const afterOne = useInventoryItem(state, "run_item_antidote");
     expect(afterOne.inventory.items.some((item) => item.id === "run_item_antidote")).toBe(false);
@@ -47,7 +102,7 @@ describe("systemUiState", () => {
   });
 
   it("equipment の USE は拒否される", () => {
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
     const next = useInventoryItem(state, "run_item_short_sword");
 
     const sword = next.inventory.items.find((item) => item.id === "run_item_short_sword");
@@ -56,7 +111,7 @@ describe("systemUiState", () => {
   });
 
   it("quick slot の USE が正しいアイテムに適用される", () => {
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
     const next = useQuickSlotItem(state, 0);
     const potion = next.inventory.items.find((item) => item.id === "run_item_potion_small");
 
@@ -66,7 +121,7 @@ describe("systemUiState", () => {
   it("dropSelectedInventoryItemToGround は足元以外かつ既存groundItemsと重ならない", () => {
     const dungeon = createWalkableDungeon(8, 8, true);
     const player = createPlayerAtFeetTile(3, 3);
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
 
     const firstDrop = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
     expect(firstDrop.success).toBe(true);
@@ -91,8 +146,9 @@ describe("systemUiState", () => {
   it("dropSelectedInventoryItemToGround は在庫を減らし、0になったアイテムを削除する", () => {
     const dungeon = createWalkableDungeon(8, 8, true);
     const player = createPlayerAtFeetTile(3, 3);
-    const state = createInitialSystemUiState();
-    state.inventory.selectedItemId = "run_item_antidote";
+    const state = createStateWithItems({
+      selectedItemId: "run_item_antidote",
+    });
 
     const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
     expect(next.success).toBe(true);
@@ -104,7 +160,7 @@ describe("systemUiState", () => {
   it("dropSelectedInventoryItemToGround は配置先がない場合は失敗し在庫を維持する", () => {
     const dungeon = createWalkableDungeon(6, 6, false);
     const player = createPlayerAtFeetTile(3, 3);
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
 
     const beforePotionCount = state.inventory.items.find((item) => item.id === "run_item_potion_small")?.count;
     const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
@@ -130,7 +186,7 @@ describe("systemUiState", () => {
   it("dropSelectedInventoryItemToGround は runtimeItem の主要情報を保持する", () => {
     const dungeon = createWalkableDungeon(8, 8, true);
     const player = createPlayerAtFeetTile(3, 3);
-    const state = createInitialSystemUiState();
+    const state = createStateWithItems();
 
     const next = dropSelectedInventoryItemToGround(state, dungeon, player, [], 1000);
     expect(next.success).toBe(true);

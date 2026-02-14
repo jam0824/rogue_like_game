@@ -48,6 +48,7 @@ import {
   buildWeaponDefinitionsFromPlayerState,
   createDefaultPlayerState,
   loadPlayerStateFromStorage,
+  PLAYER_STATE_LEGACY_STORAGE_KEYS,
   PLAYER_STATE_STORAGE_KEY,
   savePlayerStateToStorage,
   syncPlayerStateFromRuntime,
@@ -130,6 +131,25 @@ function getStorage() {
 }
 
 const appStorage = getStorage();
+
+function purgeLegacyPlayerStateStorage(storage) {
+  if (!storage || typeof storage.removeItem !== "function") {
+    return;
+  }
+
+  for (const legacyKey of PLAYER_STATE_LEGACY_STORAGE_KEYS) {
+    if (typeof legacyKey !== "string" || legacyKey.length <= 0 || legacyKey === PLAYER_STATE_STORAGE_KEY) {
+      continue;
+    }
+    try {
+      storage.removeItem(legacyKey);
+    } catch {
+      // noop: storage can throw in restricted/private mode
+    }
+  }
+}
+
+purgeLegacyPlayerStateStorage(appStorage);
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -874,7 +894,10 @@ function resetStorageAndReload() {
     if (typeof appStorage.clear === "function") {
       appStorage.clear();
     } else if (typeof appStorage.removeItem === "function") {
-      appStorage.removeItem(PLAYER_STATE_STORAGE_KEY);
+      const keysToRemove = new Set([PLAYER_STATE_STORAGE_KEY, ...PLAYER_STATE_LEGACY_STORAGE_KEYS]);
+      for (const key of keysToRemove) {
+        appStorage.removeItem(key);
+      }
     }
   } catch (error) {
     debugPanel.setStorageDump(

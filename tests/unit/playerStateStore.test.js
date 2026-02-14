@@ -98,7 +98,7 @@ describe("playerStateStore", () => {
   it("旧形式（Def丸ごと保存）を検出したらデフォルト再初期化する", () => {
     const weaponDefs = createWeaponDefinitionsById();
     const brokenPayload = JSON.stringify({
-      schema_version: "player_state_v1",
+      schema_version: PLAYER_STATE_SCHEMA_VERSION,
       run: {
         floor: 1,
         run_level: 1,

@@ -1,5 +1,6 @@
-export const PLAYER_STATE_SCHEMA_VERSION = "player_state_v1";
-export const PLAYER_STATE_STORAGE_KEY = "rogue_like_game.player_state_v1";
+export const PLAYER_STATE_SCHEMA_VERSION = "player_state_v2";
+export const PLAYER_STATE_STORAGE_KEY = "rogue_like_game.player_state_v2";
+export const PLAYER_STATE_LEGACY_STORAGE_KEYS = ["rogue_like_game.player_state_v1"];
 
 const DEFAULT_STARTER_WEAPON_DEF_ID = "weapon_sword_01";
 const LEGACY_WEAPON_DEF_KEYS = [

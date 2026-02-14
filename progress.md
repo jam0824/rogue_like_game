@@ -761,3 +761,19 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (24 files, 145 tests)
   - `npm run test:checks` -> PASS
 - Note: With the new sound DB path now resolvable, weapon hit SFX (`se_key_hit_sword_01`) is expected to trigger through existing `playWeaponCombatSe` flow.
+- 2026-02-14: Removed debug starter inventory from runtime init by emptying `STARTER_ITEMS` in `src/ui/systemUiState.js`; initial inventory now starts empty (`items=[]`, `selectedItemId=null`) so quick slots also begin empty.
+- 2026-02-14: Upgraded player save schema/storage key to v2 in `src/player/playerStateStore.js`:
+  - `PLAYER_STATE_SCHEMA_VERSION`: `player_state_v2`
+  - `PLAYER_STATE_STORAGE_KEY`: `rogue_like_game.player_state_v2`
+  - Added `PLAYER_STATE_LEGACY_STORAGE_KEYS` with v1 key.
+- 2026-02-14: Added legacy save purge in `src/main.js` on startup and updated reset-storage fallback path to remove both current and legacy player-state keys when `clear()` is unavailable.
+- 2026-02-14: Decoupled `tests/unit/systemUiState.test.js` from production starter items by introducing explicit test inventory fixtures; added assertion that initial system UI inventory is empty.
+- 2026-02-14: Updated `tests/unit/playerStateStore.test.js` legacy-format detection case to use `PLAYER_STATE_SCHEMA_VERSION` so it still validates legacy weapon payload detection after schema v2 bump.
+- 2026-02-14: Validation complete after inventory/save reset changes:
+  - `npm run unit` -> PASS (24 files, 146 tests)
+  - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
+- 2026-02-14: Playwright verification run for system UI inventory flow:
+  - command used: `node /Users/mineo.matsuya/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url http://127.0.0.1:4173/index.html --actions-file tests/actions/system_ui_inventory_flow.json --iterations 1 --pause-ms 250 --screenshot-dir output/web-game-system-ui-empty`
+  - artifact: `output/web-game-system-ui-empty/state-0.json` shows `inventory.items: []`, `selectedItemId: null`, and all `quickSlots[*].item: null`.
+  - screenshot reviewed: `output/web-game-system-ui-empty/shot-0.png`.
+  - no `errors-*.json` artifact generated.
