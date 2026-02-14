@@ -298,6 +298,37 @@ function drawDamagePopups(ctx, damagePopups) {
   ctx.restore();
 }
 
+function drawEffects(ctx, effectDrawables) {
+  if (!Array.isArray(effectDrawables) || effectDrawables.length === 0) {
+    return;
+  }
+
+  for (const drawable of effectDrawables) {
+    const asset = drawable?.asset;
+    const effect = drawable?.effect;
+    if (!asset?.image || !effect) {
+      continue;
+    }
+
+    const frameCount = Math.max(1, Math.floor(Number(asset.frameCount) || 1));
+    const frameWidth = Math.max(1, Number(asset.frameWidth) || 1);
+    const frameHeight = Math.max(1, Number(asset.frameHeight) || 1);
+    const frameIndex = Math.max(0, Math.min(frameCount - 1, Math.floor(Number(effect.frameIndex) || 0)));
+    const scale = Math.max(0.0001, Number(effect.scale) || 1);
+    const drawWidth = frameWidth * scale;
+    const drawHeight = frameHeight * scale;
+    const dx = Math.round((Number(effect.x) || 0) - drawWidth / 2);
+    const dy = Math.round((Number(effect.y) || 0) - drawHeight / 2);
+    const sx = asset.animationDirection === "vertical" ? 0 : frameIndex * frameWidth;
+    const sy = asset.animationDirection === "vertical" ? frameIndex * frameHeight : 0;
+
+    ctx.save();
+    ctx.globalCompositeOperation = effect.blendMode === "add" ? "lighter" : "source-over";
+    ctx.drawImage(asset.image, sx, sy, frameWidth, frameHeight, dx, dy, drawWidth, drawHeight);
+    ctx.restore();
+  }
+}
+
 function drawTreasureChest(ctx, drawable) {
   const asset = drawable.asset;
   const chest = drawable.chest;
@@ -364,6 +395,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
+ * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\")},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
  * @param {Array<{chest:{tileX:number,tileY:number,isOpened:boolean},asset:{image:HTMLImageElement}|null,frameWidth?:number,frameHeight?:number,frameRow?:number}>} treasureChestDrawables
  * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,label?:string,drawSize?:number}>} groundItemDrawables
  * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\"),isCritical?:boolean}>} damagePopups
@@ -378,6 +410,7 @@ export function renderFrame(
   enemyDrawables = [],
   weaponDrawables = [],
   enemyWeaponDrawables = [],
+  effectDrawables = [],
   treasureChestDrawables = [],
   groundItemDrawables = [],
   damagePopups = []
@@ -491,5 +524,6 @@ export function renderFrame(
     item.draw();
   }
 
+  drawEffects(ctx, effectDrawables);
   drawDamagePopups(ctx, damagePopups);
 }

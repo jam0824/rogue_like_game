@@ -15,6 +15,7 @@ describe("appState", () => {
       player: null,
       enemies: [],
       weapons: [],
+      effects: [],
       damagePopups: [],
       treasureChests: [],
       groundItems: [],
@@ -51,6 +52,7 @@ describe("appState", () => {
       player: { id: "player" },
       enemies: [{ id: "enemy-1" }],
       weapons: [{ id: "weapon-1" }],
+      effects: [{ id: "effect-1" }],
       damagePopups: [{ id: "popup-1" }],
       treasureChests: [{ id: "chest-1" }],
       groundItems: [{ id: "ground-1" }],
@@ -82,6 +84,7 @@ describe("appState", () => {
     expect(state.player).toEqual({ id: "player" });
     expect(state.enemies).toEqual([{ id: "enemy-1" }]);
     expect(state.weapons).toEqual([{ id: "weapon-1" }]);
+    expect(state.effects).toEqual([{ id: "effect-1" }]);
     expect(state.damagePopups).toEqual([{ id: "popup-1" }]);
     expect(state.treasureChests).toEqual([{ id: "chest-1" }]);
     expect(state.groundItems).toEqual([{ id: "ground-1" }]);
@@ -113,6 +116,7 @@ describe("appState", () => {
       player: { id: "player" },
       enemies: [{ id: "enemy" }],
       weapons: [{ id: "weapon" }],
+      effects: [{ id: "effect" }],
       damagePopups: [{ id: "popup" }],
       treasureChests: [{ id: "chest-1" }],
       groundItems: [{ id: "ground-1" }],
@@ -146,6 +150,7 @@ describe("appState", () => {
       player: null,
       enemies: [],
       weapons: [],
+      effects: [],
       damagePopups: [],
       treasureChests: [],
       groundItems: [],

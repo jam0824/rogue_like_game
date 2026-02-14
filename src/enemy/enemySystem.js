@@ -1166,6 +1166,8 @@ function applyEnemyWeaponHits(enemy, player, events, options = {}) {
       kind: "damage",
       targetType: "player",
       enemyId: enemy.id,
+      weaponId: weapon.id,
+      weaponDefId: weapon.weaponDefId,
       damage: damageValue,
       isCritical: damageRoll.isCritical === true,
       worldX,

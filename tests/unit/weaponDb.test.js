@@ -11,6 +11,8 @@ function createWeaponRecord(overrides = {}) {
     height: 64,
     se_key_start_attack: "se_key_start_sword_01",
     se_key_hit_attack: "se_key_hit_sword_01",
+    effect_id_start_attack: "effect_id_start_sword_01",
+    effect_id_hit_attack: "effect_id_hit_sword_01",
     rarity: "rare",
     weapon_plus: 0,
     base_damage: 12,
@@ -119,6 +121,8 @@ describe("weaponDb", () => {
     expect(definitions[0].id).toBe("weapon_sword_01");
     expect(definitions[0].seKeyStartAttack).toBe("se_key_start_sword_01");
     expect(definitions[0].seKeyHitAttack).toBe("se_key_hit_sword_01");
+    expect(definitions[0].effectIdStartAttack).toBe("effect_id_start_sword_01");
+    expect(definitions[0].effectIdHitAttack).toBe("effect_id_hit_sword_01");
   });
 
   it("ファイル名とJSON idが不一致なら警告しつつ JSON id を使う", async () => {

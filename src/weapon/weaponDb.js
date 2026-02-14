@@ -77,6 +77,13 @@ function normalizeSeKey(rawValue) {
   return rawValue.trim();
 }
 
+function normalizeEffectId(rawValue) {
+  if (typeof rawValue !== "string") {
+    return "";
+  }
+  return rawValue.trim();
+}
+
 function resolveWeaponSeKey(rawWeapon, seKeyName, legacyKeyName) {
   const seKey = normalizeSeKey(rawWeapon?.[seKeyName]);
   if (seKey) {
@@ -106,6 +113,8 @@ function normalizeWeaponRecord(rawWeapon, fileName) {
     height: rawWeapon.height,
     seKeyStartAttack: resolveWeaponSeKey(rawWeapon, "se_key_start_attack", "sound_key_start_attack"),
     seKeyHitAttack: resolveWeaponSeKey(rawWeapon, "se_key_hit_attack", "sound_key_hit_attack"),
+    effectIdStartAttack: normalizeEffectId(rawWeapon.effect_id_start_attack),
+    effectIdHitAttack: normalizeEffectId(rawWeapon.effect_id_hit_attack),
     rarity: rawWeapon.rarity,
     weaponPlus: rawWeapon.weapon_plus,
     baseDamage: rawWeapon.base_damage,

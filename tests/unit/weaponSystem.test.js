@@ -230,6 +230,8 @@ describe("weaponSystem", () => {
     expect(events[0]).toEqual({
       kind: "damage",
       targetType: "enemy",
+      weaponId: "weapon-0",
+      weaponDefId: "test-weapon",
       enemyId: "enemy-event",
       damage: 12,
       isCritical: false,

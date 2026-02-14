@@ -417,8 +417,20 @@ describe("enemySystem", () => {
 
     expect(enemy.attack.phase).toBe("attack");
     expect(events).toHaveLength(2);
-    expect(events[0]).toMatchObject({ kind: "damage", targetType: "player", damage: 7 });
-    expect(events[1]).toMatchObject({ kind: "damage", targetType: "player", damage: 7 });
+    expect(events[0]).toMatchObject({
+      kind: "damage",
+      targetType: "player",
+      weaponId: expect.any(String),
+      weaponDefId: "weapon_sword_01",
+      damage: 7,
+    });
+    expect(events[1]).toMatchObject({
+      kind: "damage",
+      targetType: "player",
+      weaponId: expect.any(String),
+      weaponDefId: "weapon_sword_01",
+      damage: 7,
+    });
     expect(player.hp).toBe(26);
     expect(player.hitFlashTimerSec).toBeGreaterThan(0);
 
@@ -459,7 +471,13 @@ describe("enemySystem", () => {
     const events = updateEnemyAttacks(enemies, player, dungeon, 0.01, { applyPlayerHpDamage: false });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ kind: "damage", targetType: "player", damage: 9 });
+    expect(events[0]).toMatchObject({
+      kind: "damage",
+      targetType: "player",
+      weaponId: expect.any(String),
+      weaponDefId: "weapon_sword_01",
+      damage: 9,
+    });
     expect(player.hp).toBe(30);
     expect(player.hitFlashTimerSec).toBeGreaterThan(0);
   });

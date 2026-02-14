@@ -78,6 +78,9 @@ import { createSystemHud } from "./ui/systemHud.js";
 import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
+import { loadEffectDefinitions } from "./effect/effectDb.js";
+import { loadEffectAssets } from "./effect/effectAsset.js";
+import { createEffectRuntime, updateEffects } from "./effect/effectSystem.js";
 import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
 import { loadFormationDefinitions } from "./weapon/formationDb.js";
 import { loadWeaponAssets } from "./weapon/weaponAsset.js";
@@ -493,11 +496,25 @@ function buildDamagePopupTextState(popup) {
   };
 }
 
+function buildEffectTextState(effect) {
+  return {
+    id: typeof effect?.id === "string" ? effect.id : "",
+    effectId: typeof effect?.effectId === "string" ? effect.effectId : "",
+    x: round2(effect?.x ?? 0),
+    y: round2(effect?.y ?? 0),
+    frameIndex: Math.max(0, Math.floor(Number(effect?.frameIndex) || 0)),
+    blendMode: effect?.blendMode === "add" ? "add" : "normal",
+    scale: round2(effect?.scale ?? 1),
+    loop: effect?.loop === true,
+  };
+}
+
 function toTextState() {
   const hudState = buildHudTextState();
   const inventoryState = buildInventoryTextState();
   const treasureChests = Array.isArray(appState.treasureChests) ? appState.treasureChests : [];
   const groundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
+  const effects = Array.isArray(appState.effects) ? appState.effects : [];
 
   if (appState.error) {
     return JSON.stringify(
@@ -511,6 +528,7 @@ function toTextState() {
         inventory: inventoryState,
         treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
+        effects: effects.map((effect) => buildEffectTextState(effect)),
       },
       null,
       2
@@ -528,6 +546,7 @@ function toTextState() {
         inventory: inventoryState,
         treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
+        effects: effects.map((effect) => buildEffectTextState(effect)),
       },
       null,
       2
@@ -566,6 +585,7 @@ function toTextState() {
       treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
       groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
+      effects: effects.map((effect) => buildEffectTextState(effect)),
       damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
       startRoom: startRoom
         ? {
@@ -644,12 +664,15 @@ let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
 let weaponAssets = {};
+let effectDefinitionsById = {};
+let effectAssets = {};
 let itemDefinitions = [];
 let itemDefinitionsById = {};
 let itemAssetsById = {};
 let treasureChestAssets = {};
 let soundEffectMap = {};
 let damagePopupSeq = 0;
+let effectSeq = 0;
 let dungeonDefinitions = [];
 let dungeonDefinitionsById = {};
 let selectedDungeonId = DEFAULT_DUNGEON_ID;
@@ -840,6 +863,19 @@ async function refreshItemResources() {
   itemDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
   itemAssetsById = assets;
   treasureChestAssets = chestAssets;
+}
+
+async function refreshEffectResources() {
+  try {
+    const definitions = await loadEffectDefinitions();
+    const assets = await loadEffectAssets(definitions);
+    effectDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+    effectAssets = assets;
+  } catch (error) {
+    effectDefinitionsById = {};
+    effectAssets = {};
+    console.warn(`[Effect] Failed to load effect resources: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function refreshSoundResources() {
@@ -1479,6 +1515,73 @@ function createWeaponCombatSnapshot(weapons) {
   return snapshot;
 }
 
+function createEnemyWeaponCombatSnapshot(enemies) {
+  const snapshot = new Map();
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
+    for (const weapon of getEnemyWeaponRuntimes(enemy)) {
+      if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+
+      snapshot.set(weapon.id, {
+        attackCycle,
+      });
+    }
+  }
+
+  return snapshot;
+}
+
+function getWeaponCenter(weapon) {
+  return {
+    x: (Number(weapon?.x) || 0) + (Number(weapon?.width) || 0) / 2,
+    y: (Number(weapon?.y) || 0) + (Number(weapon?.height) || 0) / 2,
+  };
+}
+
+function buildEffectRuntime(effectId, x, y) {
+  if (typeof effectId !== "string" || effectId.length <= 0) {
+    return null;
+  }
+
+  const effectDefinition = effectDefinitionsById?.[effectId];
+  const effectAsset = effectAssets?.[effectId];
+  if (!effectDefinition || !effectAsset) {
+    return null;
+  }
+
+  const runtimeId = `effect-${effectSeq}`;
+  effectSeq += 1;
+  return createEffectRuntime(effectDefinition, {
+    id: runtimeId,
+    x,
+    y,
+    frameCount: effectAsset.frameCount,
+  });
+}
+
+function spawnEffectsByCount(effectId, x, y, count = 1) {
+  const spawnCount = Math.max(0, Math.floor(Number(count) || 0));
+  if (spawnCount <= 0) {
+    return [];
+  }
+
+  const spawned = [];
+  for (let index = 0; index < spawnCount; index += 1) {
+    const runtime = buildEffectRuntime(effectId, x, y);
+    if (runtime) {
+      spawned.push(runtime);
+    }
+  }
+  return spawned;
+}
+
 function playWeaponCombatSe(weapons, beforeSnapshot) {
   for (const weapon of Array.isArray(weapons) ? weapons : []) {
     if (!weapon || typeof weapon.id !== "string") {
@@ -1510,6 +1613,106 @@ function playWeaponCombatSe(weapons, beforeSnapshot) {
       playSeByKey(weaponDefinition.seKeyHitAttack, hitAttackCount);
     }
   }
+}
+
+function spawnWeaponStartEffects(weapons, beforeSnapshot) {
+  const spawned = [];
+
+  for (const weapon of Array.isArray(weapons) ? weapons : []) {
+    if (!weapon || typeof weapon.id !== "string") {
+      continue;
+    }
+
+    const weaponDefinition = weaponDefinitionsById?.[weapon.weaponDefId];
+    if (!weaponDefinition) {
+      continue;
+    }
+
+    const before = beforeSnapshot.get(weapon.id) ?? { attackSeq: 0 };
+    const afterAttackSeq = Math.max(0, Math.floor(Number(weapon.attackSeq) || 0));
+    const startAttackCount = afterAttackSeq > before.attackSeq ? afterAttackSeq - before.attackSeq : 0;
+    if (startAttackCount <= 0) {
+      continue;
+    }
+
+    const center = getWeaponCenter(weapon);
+    spawned.push(
+      ...spawnEffectsByCount(
+        weaponDefinition.effectIdStartAttack,
+        center.x,
+        center.y,
+        startAttackCount
+      )
+    );
+  }
+
+  return spawned;
+}
+
+function spawnEnemyWeaponStartEffects(enemies, beforeSnapshot) {
+  const spawned = [];
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
+    for (const weapon of getEnemyWeaponRuntimes(enemy)) {
+      if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+
+      const weaponDefinition = weaponDefinitionsById?.[weapon.weaponDefId];
+      if (!weaponDefinition) {
+        continue;
+      }
+
+      const before = beforeSnapshot.get(weapon.id) ?? { attackCycle: 0 };
+      const startAttackCount = attackCycle > before.attackCycle ? attackCycle - before.attackCycle : 0;
+      if (startAttackCount <= 0) {
+        continue;
+      }
+
+      const center = getWeaponCenter(weapon);
+      spawned.push(
+        ...spawnEffectsByCount(
+          weaponDefinition.effectIdStartAttack,
+          center.x,
+          center.y,
+          startAttackCount
+        )
+      );
+    }
+  }
+
+  return spawned;
+}
+
+function spawnWeaponHitEffectsFromEvents(events) {
+  const spawned = [];
+
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.kind !== "damage" || typeof event?.weaponDefId !== "string" || event.weaponDefId.length <= 0) {
+      continue;
+    }
+
+    const weaponDefinition = weaponDefinitionsById?.[event.weaponDefId];
+    if (!weaponDefinition) {
+      continue;
+    }
+
+    const runtime = buildEffectRuntime(
+      weaponDefinition.effectIdHitAttack,
+      Number(event.worldX) || 0,
+      Number(event.worldY) || 0
+    );
+    if (runtime) {
+      spawned.push(runtime);
+    }
+  }
+
+  return spawned;
 }
 
 function createAliveEnemyIdSet(enemies) {
@@ -1584,6 +1787,10 @@ function renderCurrentFrame() {
         rotationRad: weapon.rotationRad ?? 0,
       }))
   );
+  const effectDrawables = (appState.effects ?? []).map((effect) => ({
+    effect,
+    asset: effectAssets[effect.effectId] ?? null,
+  }));
   const treasureChestDrawables = (appState.treasureChests ?? []).map((chest) => ({
     chest,
     asset: treasureChestAssets[chest.tier] ?? null,
@@ -1608,6 +1815,7 @@ function renderCurrentFrame() {
     enemyDrawables,
     weaponDrawables,
     enemyWeaponDrawables,
+    effectDrawables,
     treasureChestDrawables,
     groundItemDrawables,
     appState.damagePopups
@@ -1619,10 +1827,12 @@ function stepSimulation(dt) {
     return;
   }
 
+  appState.effects = updateEffects(appState.effects, dt);
   updatePlayer(appState.player, appState.dungeon, dt);
   syncGroundItemPickup();
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
   const weaponCombatSnapshot = createWeaponCombatSnapshot(appState.weapons);
+  const enemyWeaponCombatSnapshot = createEnemyWeaponCombatSnapshot(appState.enemies);
   const aliveEnemyIdsBeforeCombat = createAliveEnemyIdSet(appState.enemies);
   const playerCombatEvents = updateWeaponsAndCombat(
     appState.weapons,
@@ -1645,6 +1855,14 @@ function stepSimulation(dt) {
     playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
   }
   const combatEvents = [...playerCombatEvents, ...enemyCombatEvents];
+  const spawnedEffects = [
+    ...spawnWeaponStartEffects(appState.weapons, weaponCombatSnapshot),
+    ...spawnEnemyWeaponStartEffects(appState.enemies, enemyWeaponCombatSnapshot),
+    ...spawnWeaponHitEffectsFromEvents(combatEvents),
+  ];
+  if (spawnedEffects.length > 0) {
+    appState.effects = [...appState.effects, ...spawnedEffects];
+  }
   const spawnedPopups = spawnDamagePopupsFromEvents(combatEvents, damagePopupSeq);
   damagePopupSeq += 1;
   appState.damagePopups = updateDamagePopups(
@@ -1692,6 +1910,7 @@ async function regenerate(seed) {
       refreshEnemyResources(),
       refreshWeaponResources(),
       refreshItemResources(),
+      refreshEffectResources(),
       refreshSoundResources(),
     ]);
     if (requestId !== regenerateRequestId) {
@@ -1797,6 +2016,7 @@ async function regenerate(seed) {
     applySavedWeaponRuntime(appState.playerState, weapons);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
     damagePopupSeq = 0;
+    effectSeq = 0;
     syncPlayerStateFromRuntime(appState.playerState, player, weapons, nowUnixSec());
     const systemUi = createInitialSystemUiState();
 
@@ -1808,6 +2028,7 @@ async function regenerate(seed) {
       player,
       enemies,
       weapons,
+      effects: [],
       damagePopups: [],
       treasureChests,
       groundItems,

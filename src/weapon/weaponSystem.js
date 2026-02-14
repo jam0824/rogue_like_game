@@ -273,6 +273,8 @@ function applyWeaponHits(weapon, weaponDefinition, enemies, events, player) {
     events.push({
       kind: "damage",
       targetType: "enemy",
+      weaponId: weapon.id,
+      weaponDefId: weapon.weaponDefId,
       enemyId: enemy.id,
       damage: totalDamage,
       isCritical: damageRoll.isCritical === true,

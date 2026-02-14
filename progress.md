@@ -786,3 +786,37 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (24 files, 146 tests)
   - `npm run test:checks` -> PASS (generation/enemy walk/fly/notice-giveup/enemy-attack/player-attack)
   - Playwright flow run (`tests/actions/system_ui_inventory_flow.json`): output in `output/web-game-system-ui-no-placeholder/` with `state-0.json` confirming empty inventory/quick slots and no `errors-*.json` artifact.
+- 2026-02-14: Implemented weapon effect pipeline per `spec_logic/エフェクト設定.md` (player + enemy weapon support).
+  - Added effect DB/asset/runtime modules:
+    - `src/effect/effectDb.js`: effect DB discovery, strict validation (`animation_direction`, `blend_mode`, `loop`), normalization.
+    - `src/effect/effectAsset.js`: effect image load + frame count resolution by animation direction.
+    - `src/effect/effectSystem.js`: `createEffectRuntime` + `updateEffects` (loop/non-loop frame progression and expiry).
+  - Extended weapon definition normalization in `src/weapon/weaponDb.js`:
+    - added `effectIdStartAttack`, `effectIdHitAttack` from `effect_id_start_attack` / `effect_id_hit_attack`.
+  - Extended combat events:
+    - `src/weapon/weaponSystem.js` damage event now includes `weaponId`, `weaponDefId`.
+    - `src/enemy/enemySystem.js` damage event now includes `weaponId`, `weaponDefId`.
+  - Integrated effect runtime into app/main loop:
+    - `src/state/appState.js` now stores `effects`.
+    - `src/main.js` now loads effect resources (`refreshEffectResources`) during regenerate.
+    - Added start-attack effect spawns from attack-seq/cycle deltas for player and enemy weapons.
+    - Added hit-effect spawns from combat damage events (`event.weaponDefId` + `event.worldX/worldY`).
+    - Added per-frame effect updates via `updateEffects`.
+    - Added `effects` output to `window.render_game_to_text`.
+  - Integrated rendering:
+    - `src/render/canvasRenderer.js` now accepts `effectDrawables` and draws effect sprite-sheet frames with center-based placement, scale, and blend mode (`normal`/`add`) between entity layer and damage popups.
+- 2026-02-14: Added/updated tests for effect feature.
+  - Added `tests/unit/effectDb.test.js`.
+  - Added `tests/unit/effectSystem.test.js`.
+  - Updated `tests/unit/weaponDb.test.js` for effect id normalization.
+  - Updated `tests/unit/weaponSystem.test.js` and `tests/unit/enemySystem.test.js` for weapon metadata in damage events.
+  - Updated `tests/unit/appState.test.js` for `effects` state.
+- 2026-02-14: Validation complete after effect implementation.
+  - `npm run unit` -> PASS (26 files, 153 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright runs executed with skill client:
+    - `output/web-game-effect-feature/shot-0.png` + `state-0.json`
+    - `output/web-game-effect-combat/shot-0.png` + `state-0.json`
+    - `output/web-game-effect-hit/shot-0.png` + `state-0.json`
+    - no `errors-*.json` artifacts in these runs.
+  - Note: sampled final-state snapshots above had `effects: []` at capture time (transient effect was not active on those exact end frames).
