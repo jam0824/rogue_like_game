@@ -42,6 +42,9 @@ function setButtonItem(button, item, { selected = false, emptyLabel = "--", disa
     button.disabled = disableWhenEmpty;
     button.dataset.itemId = "";
     button.setAttribute("aria-label", tJa("ui_label_inventory_empty"));
+    if (icon) {
+      icon.innerHTML = "";
+    }
     setText(icon, emptyLabel);
     setText(qty, "");
     return;
@@ -54,8 +57,34 @@ function setButtonItem(button, item, { selected = false, emptyLabel = "--", disa
   button.disabled = false;
   button.dataset.itemId = item.id;
   button.setAttribute("aria-label", tJa(item.nameKey, item.nameKey));
-  setText(icon, getIconLabelForKey(item.iconKey));
+  if (icon && typeof item.iconImageSrc === "string" && item.iconImageSrc.length > 0) {
+    icon.innerHTML = `<img class="system-item-icon-image" src="${escapeHtml(item.iconImageSrc)}" alt="${escapeHtml(
+      tJa(item.nameKey, item.nameKey)
+    )}" />`;
+  } else {
+    if (icon) {
+      icon.innerHTML = "";
+    }
+    setText(icon, getIconLabelForKey(item.iconKey));
+  }
   setText(qty, Number(item.count) > 1 ? String(Math.floor(Number(item.count))) : "");
+}
+
+function setDetailsIcon(element, item) {
+  if (!element) {
+    return;
+  }
+
+  if (item && typeof item.iconImageSrc === "string" && item.iconImageSrc.length > 0) {
+    const alt = tJa(item.nameKey, item.nameKey);
+    element.innerHTML = `<img class="inventory-details-icon-image" src="${escapeHtml(item.iconImageSrc)}" alt="${escapeHtml(
+      alt
+    )}" />`;
+    return;
+  }
+
+  element.innerHTML = "";
+  setText(element, getIconLabelForKey(item?.iconKey ?? "empty"));
 }
 
 function resolveStatusName(status) {
@@ -238,7 +267,7 @@ export function createSystemHud(root, handlers = {}) {
       }
 
       if (!selectedItem) {
-        setText(detailsIcon, getIconLabelForKey("empty"));
+        setDetailsIcon(detailsIcon, null);
         setText(detailsName, tJa("ui_label_inventory_empty"));
         setText(detailsDescription, tJa("ui_label_inventory_placeholder"));
         setText(detailsEffect, tJa("ui_label_inventory_effect_placeholder"));
@@ -249,7 +278,7 @@ export function createSystemHud(root, handlers = {}) {
           dropButton.disabled = true;
         }
       } else {
-        setText(detailsIcon, getIconLabelForKey(selectedItem.iconKey));
+        setDetailsIcon(detailsIcon, selectedItem);
         setText(detailsName, tJa(selectedItem.nameKey, selectedItem.nameKey));
         setText(detailsDescription, tJa(selectedItem.descriptionKey, selectedItem.descriptionKey));
         setText(detailsEffect, tJa(selectedItem.effectKey, selectedItem.effectKey));

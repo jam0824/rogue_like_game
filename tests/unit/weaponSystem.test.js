@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { rollHitDamage } from "../../src/combat/damageRoll.js";
 import { createPlayerWeapons, updateWeaponsAndCombat } from "../../src/weapon/weaponSystem.js";
 
 function createPlayer(overrides = {}) {
@@ -231,10 +232,40 @@ describe("weaponSystem", () => {
       targetType: "enemy",
       enemyId: "enemy-event",
       damage: 12,
+      isCritical: false,
       worldX: enemy.x + enemy.width / 2,
       worldY: enemy.y + enemy.height / 2,
     });
     expect(enemy.hp).toBe(88);
     expect(enemy.hitFlashTimerSec).toBeCloseTo(0.2, 5);
+  });
+
+  it("player派生ステータスがある場合は seed 固定の Rand/Crit ダメージを使う", () => {
+    const player = createPlayer({
+      damageSeed: "player-derived-roll-seed",
+      damageMult: 1.3,
+      critChance: 0.25,
+      critMult: 1.7,
+    });
+    const weaponDefinition = createWeaponDefinition({ baseDamage: 10, hitNum: 2, attackCooldownSec: 0.2 });
+    const formationDefinition = createFormationDefinition();
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+    const enemy = createEnemy({ id: "enemy-roll", hp: 100, maxHp: 100 });
+
+    const events = updateWeaponsAndCombat(weapons, player, [enemy], weaponDefinitionsById, formationsById, 0.05);
+    const expectedPerHit = rollHitDamage({
+      baseDamage: 10,
+      damageMult: player.damageMult,
+      attackScale: 1,
+      critChance: player.critChance,
+      critMult: player.critMult,
+      seedKey: `${player.damageSeed}::weapon-0::1::enemy-roll`,
+    }).damage;
+
+    expect(events).toHaveLength(1);
+    expect(events[0].damage).toBe(expectedPerHit * 2);
+    expect(enemy.hp).toBe(100 - expectedPerHit * 2);
   });
 });

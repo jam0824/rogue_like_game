@@ -112,6 +112,7 @@ function cloneInventoryItem(item) {
     nameKey: typeof item.nameKey === "string" ? item.nameKey : "ui_label_inventory_empty",
     descriptionKey: typeof item.descriptionKey === "string" ? item.descriptionKey : "ui_label_inventory_placeholder",
     effectKey: typeof item.effectKey === "string" ? item.effectKey : "ui_label_inventory_effect_placeholder",
+    iconImageSrc: typeof item.iconImageSrc === "string" ? item.iconImageSrc : "",
   };
 }
 
@@ -182,6 +183,30 @@ function withToast(nextState, messageKey) {
     ...nextState,
     toastMessage: tJa(messageKey, messageKey),
   };
+}
+
+export function clearToastMessage(systemUi) {
+  const nextState = cloneSystemUiState(systemUi);
+  nextState.toastMessage = "";
+  return nextState;
+}
+
+function normalizeIncomingInventoryItem(item) {
+  if (!item || typeof item !== "object" || typeof item.id !== "string" || item.id.length <= 0) {
+    return null;
+  }
+
+  return cloneInventoryItem({
+    id: item.id,
+    type: typeof item.type === "string" ? item.type : "consumable",
+    count: Math.max(1, toNonNegativeInt(item.count, 1)),
+    quickSlot: Number.isInteger(item.quickSlot) ? item.quickSlot : null,
+    iconKey: item.iconKey,
+    nameKey: item.nameKey,
+    descriptionKey: item.descriptionKey,
+    effectKey: item.effectKey,
+    iconImageSrc: item.iconImageSrc,
+  });
 }
 
 function getPlayerFeetTile(player) {
@@ -359,6 +384,81 @@ export function useQuickSlotItem(systemUi, slotIndex) {
   return useInventoryItem(nextState, item.id);
 }
 
+export function tryAddInventoryItem(systemUi, item, options = {}) {
+  const nextState = cloneSystemUiState(systemUi);
+  const incoming = normalizeIncomingInventoryItem(item);
+  if (!incoming) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_not_found"),
+      success: false,
+      addedCount: 0,
+    };
+  }
+
+  const maxStack = Math.max(1, toNonNegativeInt(options.maxStack, Number.MAX_SAFE_INTEGER));
+  let remaining = Math.max(1, toNonNegativeInt(incoming.count, 1));
+  let addedCount = 0;
+
+  while (remaining > 0) {
+    const stackableItem = nextState.inventory.items.find(
+      (inventoryItem) =>
+        inventoryItem.id === incoming.id &&
+        inventoryItem.type === incoming.type &&
+        inventoryItem.count < maxStack
+    );
+
+    if (stackableItem) {
+      const addable = Math.min(remaining, maxStack - stackableItem.count);
+      stackableItem.count += addable;
+      remaining -= addable;
+      addedCount += addable;
+      continue;
+    }
+
+    if (nextState.inventory.items.length >= nextState.inventory.capacity) {
+      break;
+    }
+
+    const stackSize = Math.min(remaining, maxStack);
+    nextState.inventory.items.push(
+      cloneInventoryItem({
+        ...incoming,
+        count: stackSize,
+        quickSlot: null,
+      })
+    );
+    remaining -= stackSize;
+    addedCount += stackSize;
+  }
+
+  nextState.inventory.selectedItemId = pickNextSelectedItemId(
+    nextState.inventory.items,
+    nextState.inventory.selectedItemId
+  );
+
+  if (remaining > 0) {
+    const fullMessageKey =
+      typeof options.fullMessageKey === "string" && options.fullMessageKey.length > 0
+        ? options.fullMessageKey
+        : "ui_hint_inventory_full";
+    return {
+      systemUi: withToast(nextState, fullMessageKey),
+      success: false,
+      addedCount,
+    };
+  }
+
+  const successMessageKey =
+    typeof options.successMessageKey === "string" && options.successMessageKey.length > 0
+      ? options.successMessageKey
+      : "";
+  return {
+    systemUi: successMessageKey ? withToast(nextState, successMessageKey) : nextState,
+    success: true,
+    addedCount,
+  };
+}
+
 export function findDropTileNearPlayer(
   dungeon,
   player,
@@ -377,6 +477,10 @@ export function findDropTileNearPlayer(
   for (let radius = 0; radius <= searchRadius; radius += 1) {
     const candidates = iterateRingCandidates(feetTile.tileX, feetTile.tileY, radius);
     for (const candidate of candidates) {
+      if (candidate.tileX === feetTile.tileX && candidate.tileY === feetTile.tileY) {
+        continue;
+      }
+
       const key = `${candidate.tileX}:${candidate.tileY}`;
       if (occupiedTiles.has(key)) {
         continue;
@@ -442,4 +546,78 @@ export function dropSelectedInventoryItem(systemUi, dungeon, player, nowMs = Dat
   );
 
   return withToast(nextState, "ui_hint_item_dropped");
+}
+
+export function dropSelectedInventoryItemToGround(
+  systemUi,
+  dungeon,
+  player,
+  groundItems = [],
+  nowMs = Date.now()
+) {
+  const nextState = cloneSystemUiState(systemUi);
+  const selectedItemId = nextState.inventory.selectedItemId;
+  const index = findItemIndexById(nextState.inventory.items, selectedItemId);
+
+  if (index < 0) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_none_selected"),
+      success: false,
+      droppedGroundItem: null,
+    };
+  }
+
+  const dropPosition = findDropTileNearPlayer(
+    dungeon,
+    player,
+    Array.isArray(groundItems) ? groundItems : [],
+    DROP_SEARCH_MAX_RADIUS
+  );
+  if (!dropPosition) {
+    return {
+      systemUi: withToast(nextState, "ui_hint_item_drop_failed"),
+      success: false,
+      droppedGroundItem: null,
+    };
+  }
+
+  const item = nextState.inventory.items[index];
+  const runtimeItem = cloneInventoryItem({
+    ...item,
+    count: 1,
+    quickSlot: null,
+  });
+  item.count = Math.max(0, toNonNegativeInt(item.count, 0) - 1);
+
+  if (item.count <= 0) {
+    nextState.inventory.items.splice(index, 1);
+  }
+
+  nextState.inventory.selectedItemId = pickNextSelectedItemId(
+    nextState.inventory.items,
+    nextState.inventory.selectedItemId
+  );
+
+  const dropId = `ground_drop_${toNonNegativeInt(nowMs, Date.now())}_${toNonNegativeInt(
+    Array.isArray(groundItems) ? groundItems.length : 0,
+    0
+  )}`;
+  const droppedGroundItem = {
+    id: dropId,
+    sourceType: "inventory_drop",
+    sourceChestId: null,
+    itemId: runtimeItem.id,
+    count: 1,
+    tileX: dropPosition.tileX,
+    tileY: dropPosition.tileY,
+    xPx: dropPosition.xPx,
+    yPx: dropPosition.yPx,
+    runtimeItem,
+  };
+
+  return {
+    systemUi: withToast(nextState, "ui_hint_item_dropped"),
+    success: true,
+    droppedGroundItem,
+  };
 }

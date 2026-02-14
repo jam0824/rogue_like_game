@@ -16,6 +16,8 @@ describe("appState", () => {
       enemies: [],
       weapons: [],
       damagePopups: [],
+      treasureChests: [],
+      groundItems: [],
       systemUi: {
         inventory: {
           isWindowOpen: false,
@@ -50,6 +52,8 @@ describe("appState", () => {
       enemies: [{ id: "enemy-1" }],
       weapons: [{ id: "weapon-1" }],
       damagePopups: [{ id: "popup-1" }],
+      treasureChests: [{ id: "chest-1" }],
+      groundItems: [{ id: "ground-1" }],
       systemUi: {
         inventory: {
           isWindowOpen: true,
@@ -79,6 +83,8 @@ describe("appState", () => {
     expect(state.enemies).toEqual([{ id: "enemy-1" }]);
     expect(state.weapons).toEqual([{ id: "weapon-1" }]);
     expect(state.damagePopups).toEqual([{ id: "popup-1" }]);
+    expect(state.treasureChests).toEqual([{ id: "chest-1" }]);
+    expect(state.groundItems).toEqual([{ id: "ground-1" }]);
     expect(state.systemUi).toEqual({
       inventory: {
         isWindowOpen: true,
@@ -108,6 +114,8 @@ describe("appState", () => {
       enemies: [{ id: "enemy" }],
       weapons: [{ id: "weapon" }],
       damagePopups: [{ id: "popup" }],
+      treasureChests: [{ id: "chest-1" }],
+      groundItems: [{ id: "ground-1" }],
       systemUi: {
         inventory: {
           isWindowOpen: true,
@@ -139,6 +147,8 @@ describe("appState", () => {
       enemies: [],
       weapons: [],
       damagePopups: [],
+      treasureChests: [],
+      groundItems: [],
       systemUi: {
         inventory: {
           isWindowOpen: false,

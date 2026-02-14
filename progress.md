@@ -395,3 +395,243 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run unit` -> PASS (11 files, 69 tests)
   - `npm run test:checks` -> PASS
   - Playwright skill-client run (`tests/actions/enemy_notice_giveup.json`) -> artifacts at `output/web-game-enemy-attack-start-fix`; no `errors-*.json` artifacts.
+- 2026-02-13: Implemented common treasure chest -> herb pickup -> inventory use HP recovery flow.
+- 2026-02-13: Added item data/asset loading pipeline:
+  - `src/item/itemDb.js` for ItemDef discovery + normalization from `db/item_db/*.json`.
+  - `src/item/itemAsset.js` for `graphic/item/*` loading.
+  - `src/item/treasureSystem.js` for common chest placement, near-click open rule, drop spawn, and chest asset loading.
+- 2026-02-13: Extended runtime app state with `treasureChests` / `groundItems` and included both in `render_game_to_text`.
+- 2026-02-13: Integrated chest and ground-item rendering in `src/render/canvasRenderer.js` with shared feetY z-sort.
+- 2026-02-13: Added click-interaction support in `src/input/pointerController.js` via optional `onPointerClick(worldX, worldY)`; click emits only when drag distance stays below threshold.
+- 2026-02-13: Main loop integration in `src/main.js`:
+  - regenerate now loads item resources and spawns exactly one common chest outside start/stairs.
+  - enemy spawn now avoids chest tile via blocked-tile set.
+  - pointer click attempts chest open only when clicked tile matches chest and player is adjacent (Manhattan <= 1).
+  - opened chest drops herb (`item_herb_01`) into `groundItems`.
+  - player contact with `groundItems` tries add-to-bag with max stack and bag-full handling.
+  - using herb (`item_herb_01`) now heals player HP by fixed +50 when item count actually decreases.
+- 2026-02-13: Inventory/UI updates:
+  - `src/ui/systemUiState.js` now supports `iconImageSrc` and provides `tryAddInventoryItem(...)`.
+  - `src/ui/systemHud.js` details icon can render `<img>` when `iconImageSrc` exists, else falls back to text icon.
+  - `src/ui/uiTextJa.js` added herb texts and inventory-full/pickup messages; icon label map includes `herb`.
+  - `styles/main.css` added `.inventory-details-icon-image`.
+- 2026-02-13: Extended tests:
+  - updated `tests/unit/pointerController.test.js` for click-vs-drag behavior.
+  - updated `tests/unit/appState.test.js` for `treasureChests` / `groundItems`.
+  - updated `tests/unit/systemUiState.test.js` for `tryAddInventoryItem` (stacking/full/src retention).
+  - updated `tests/unit/systemHud.test.js` for detail image rendering path.
+  - added `tests/unit/treasureSystem.test.js` for chest placement/open/drop/blocked-tiles.
+- 2026-02-13: Validation complete:
+  - `npm run unit` -> PASS (14 files, 87 tests)
+  - `npm run test:checks` -> PASS (all check scripts)
+  - `npm test` -> PASS
+  - Playwright smoke (`$WEB_GAME_CLIENT` + `tests/actions/idle.json`) produced updated `output/web-game/state-0.json` including `treasureChests`/`groundItems` and no console error artifact file.
+
+- TODO: Add an automated Playwright action payload dedicated to chest opening + herb pickup + herb use so the full loop is validated in one deterministic browser run.
+- 2026-02-13: Updated dungeon spec §8 pickup feedback implementation:
+  - Added floating text popup support for non-damage messages in `src/combat/combatFeedbackSystem.js` (`createFloatingTextPopup`).
+  - Pickup success now spawns a white text popup with black outline above player using item `name_key` text resolution (`src/main.js`).
+  - Popup fades out with rise motion (lifetime/rise speed configurable per popup).
+- 2026-02-13: Added inventory icon graphic rendering for items with `iconImageSrc`:
+  - `src/ui/systemHud.js` now renders item image in slot icon area when available (fallback remains text icon).
+  - Added `.system-item-icon-image` style in `styles/main.css`.
+- 2026-02-13: Extended tests:
+  - `tests/unit/combatFeedbackSystem.test.js` now covers text popup creation/update.
+- 2026-02-13: Validation complete after popup/icon changes:
+  - `npm run unit` -> PASS (14 files, 88 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Follow-up fix for herb UI/feedback requests.
+  - `styles/main.css`: enlarged inventory detail herb image (`.inventory-details-icon-image` size up + `scale(1.2)`) and enabled `overflow: hidden` on detail icon frame.
+  - `src/main.js`: added herb-use heal popup (`+<healed>` text, green fill + black outline) when `item_herb_01` is actually consumed; popup amount uses real clamped heal delta.
+- 2026-02-13: Revalidation after follow-up fix:
+  - `npm run unit` -> PASS (14 files, 88 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright skill-client run (`tests/actions/system_ui_inventory_flow.json`) -> artifacts at `output/web-game-herb-popup-fix` (shot/state captured, no `errors-*.json`).
+- 2026-02-13: Fixed chest spawn overlap with tall walls (`B/F/G`) by changing chest placement to walkable-tile based selection.
+  - `src/item/treasureSystem.js`:
+    - `createCommonTreasureChest` now iterates seed-shuffled candidate rooms and selects the first room that has at least one valid walkable tile.
+    - Added room walkable search helper using `dungeon.walkableGrid ?? dungeon.floorGrid`.
+    - Tile selection policy is "nearest to room center" by Manhattan distance, tie-broken deterministically by `tileY asc` then `tileX asc`.
+    - If no walkable tile exists in any candidate room, returns `null`.
+- 2026-02-13: Expanded unit coverage in `tests/unit/treasureSystem.test.js`.
+  - Added cases for:
+    - center tile blocked -> nearest walkable fallback tile selection,
+    - selected tile is always walkable,
+    - no walkable tile in candidate room -> returns `null`.
+- 2026-02-13: Validation complete after chest placement fix:
+  - `npm run unit` -> PASS (14 files, 91 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Tightened chest open distance handling to prevent long-press/open exploit.
+  - `src/item/treasureSystem.js`:
+    - added optional `options.playerFeetTileOverride` support in `tryOpenChestByClick(...)`.
+    - distance check now resolves feet tile from override first, else falls back to runtime player feet tile.
+    - kept strict rule `Manhattan <= interactRangeTiles` (no extra tolerance).
+  - `src/main.js`:
+    - added pointer-session snapshot `pointerDownFeetTileSnapshot`.
+    - snapshot captured on first `onPointerTarget(active=true)` and cleared on `active=false`.
+    - chest open call now passes `playerFeetTileOverride` so click-start feet tile is authoritative.
+- 2026-02-13: Enlarged inventory detail image to near full inner frame without trimming.
+  - `styles/main.css`:
+    - `.inventory-details-icon-image` updated to `112x112`, `object-fit: contain`, removed transform scaling.
+- 2026-02-13: Expanded unit coverage in `tests/unit/treasureSystem.test.js`.
+  - added override-distance tests:
+    - distance 2 override does not open,
+    - distance 1 override opens.
+- 2026-02-13: Validation complete after click-range + icon-fill updates.
+  - `npm run unit` -> PASS (14 files, 93 tests)
+  - `npm run test:checks` -> PASS
+  - Custom Playwright verification (headless script) confirmed no open on press-start distance >= 2 after long hold:
+    - output: `{ seed: "click-range-check-0", initialDistance: 51, openedAfterPressHoldRelease: false }`
+  - Playwright skill-client run captured smoke artifacts at `output/web-game-click-range-and-icon-fill`.
+- 2026-02-13: Re-tuned chest interaction spec (non-walkable chest tile + strict near-click open + nearby walkable drop).
+  - `src/item/treasureSystem.js`:
+    - Added `applyChestBlockingToWalkableGrid(walkableGrid, treasureChests)` (pure clone) to mark chest tiles non-walkable.
+    - `tryOpenChestByClick(...)` kept strict conditions: clicked tile must equal chest tile, and player feet Manhattan distance must be `<= 1` (with `playerFeetTileOverride` support retained).
+    - Added nearby drop resolver (`findNearestWalkableDropTileAroundChest`) using Manhattan ring expansion from chest tile; requires `walkable=true` and no existing ground-item occupancy.
+    - If no walkable drop tile exists map-wide, open is rejected (`opened=false`) to avoid item loss.
+  - `src/main.js`:
+    - In `regenerate`, applied chest blocking to `dungeon.walkableGrid` immediately after chest spawn.
+    - Continued passing chest blocked tiles to enemy spawn and passing `dungeon` into chest-open options for drop placement.
+    - Kept pointer-down feet snapshot override flow for deterministic range checks.
+  - `tests/unit/treasureSystem.test.js`:
+    - Added/updated coverage for non-chest click rejection, distance override behavior, nearby walkable drop placement, radius expansion fallback, all-nonwalkable open rejection, and chest walkable-grid blocking helper purity.
+- 2026-02-13: Validation complete after chest interaction re-tuning:
+  - `npm run unit` -> PASS (14 files, 97 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Adjusted inventory DROP placement to avoid player overlap.
+  - `src/ui/systemUiState.js`: `findDropTileNearPlayer(...)` now skips the player's feet tile candidate, while keeping nearby walkable + occupied-tile avoidance behavior.
+  - `dropSelectedInventoryItem(...)` continues using the same near-player walkable search, so dropped items are placed near the player but not on the player's tile.
+- 2026-02-13: Updated tests for DROP overlap rule.
+  - `tests/unit/systemUiState.test.js`: added assertion that first DROP tile is not the player's feet tile; updated helper test title/inputs to validate player-tile avoidance explicitly.
+- 2026-02-13: Validation complete for DROP placement adjustment:
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 8 tests)
+  - `npm run unit` -> PASS (14 files, 97 tests)
+  - `npm run test:checks` -> PASS
+- 2026-02-13: Unified inventory DROP to world `groundItems` to fix invisible dropped-item issue.
+  - Root cause: inventory `DROP` updated `inventory.droppedItems` only, while world render/pickup used `appState.groundItems`.
+  - `src/ui/systemUiState.js`:
+    - Added `dropSelectedInventoryItemToGround(systemUi, dungeon, player, groundItems, nowMs)`.
+    - New API decrements selected inventory item by 1 and returns `{ systemUi, success, droppedGroundItem }`.
+    - Returned `droppedGroundItem` now includes `sourceType: "inventory_drop"` and `runtimeItem` payload for DB-independent re-pickup.
+  - `src/main.js`:
+    - Switched inventory DROP handler to `dropSelectedInventoryItemToGround(...)`.
+    - On success, appends returned item into `appState.groundItems` (no longer relying on `inventory.droppedItems` for world behavior).
+    - Extended ground pickup flow to prefer `groundItem.runtimeItem` when present; falls back to item DB path for chest drops.
+    - Added `sourceType` / `iconKey` to `render_game_to_text` `groundItems` output.
+    - Ground drawable generation now adds label fallback (`getIconLabelForKey(...)`) for non-asset dropped items.
+  - `src/render/canvasRenderer.js`:
+    - `drawGroundItem` now supports text-tile fallback when no image asset exists (small tile + outlined 2-letter label).
+    - Ground item queue accepts drawables with either image or label.
+  - `src/item/treasureSystem.js`:
+    - Chest drop ground items now explicitly mark `sourceType: "chest_drop"` for consistent text-state/debug visibility.
+- 2026-02-13: Updated unit tests for DROP-to-ground flow.
+  - `tests/unit/systemUiState.test.js`:
+    - Added coverage for `dropSelectedInventoryItemToGround` success return shape and dropped item payload.
+    - Validates non-overlap with player feet tile and existing `groundItems` occupancy.
+    - Validates inventory decrement / remove-on-zero behavior and drop-failure inventory preservation.
+    - Validates `runtimeItem` key fields (`iconKey/nameKey/descriptionKey/effectKey/iconImageSrc`).
+- 2026-02-13: Validation complete after DROP unification.
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 10 tests)
+  - `npm run unit` -> PASS (14 files, 99 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright verification artifacts:
+    - `output/web-game-drop-grounditems-manual/shot-after-drop.png` confirms visible fallback tile label (`HP`) for image-less dropped potion.
+    - `output/web-game-drop-grounditems-manual/verification.json` confirms round-trip:
+      - `beforeCount=3 -> afterDropCount=2 -> afterPickupCount=3`
+      - `beforeGroundCount=0 -> afterDropGroundCount=1 -> afterPickupGroundCount=0`.
+- 2026-02-13: Added auto-dismiss for HUD toast messages (e.g. "アイテムを捨てました。") so they do not remain indefinitely.
+  - `src/ui/systemUiState.js`: added `clearToastMessage(systemUi)` helper.
+  - `src/main.js`: added toast auto-clear scheduler in `applySystemUiState` with timeout `SYSTEM_UI_TOAST_DURATION_MS = 1800`.
+    - Any new non-empty toast starts/restarts timer.
+    - Timer clears toast only if message is unchanged at fire time (prevents clearing a newer toast).
+- 2026-02-13: Added unit coverage for toast clear helper.
+  - `tests/unit/systemUiState.test.js`: `clearToastMessage` returns cleared copy and does not mutate source.
+- 2026-02-13: Validation complete for toast auto-dismiss:
+  - `npm run unit -- tests/unit/systemUiState.test.js` -> PASS (1 file, 11 tests)
+  - `npm run unit` -> PASS (14 files, 100 tests)
+  - `npm run test:checks` -> PASS
+  - Playwright runtime check confirmed toast transition:
+    - `toastAfterDrop: "アイテムを捨てました。"`
+    - `toastAfterWait (2.2s): ""`
+- 2026-02-13: Spec sync update after DROP/ground-item/toast implementations.
+  - `spec/ダンジョン仕様_v1.md`:
+    - Added `7.8 宝箱インタラクト（v1実装確定）` (placement on walkable, non-walkable chest tile, strict click+distance open rule, pointer-down feet reference, nearby-walkable drop with radius expansion and fail-safe).
+    - Added `8.1 床アイテム管理（v1実装確定）` (`groundItems` unified management, `sourceType` usage, runtime-item pickup path, no-image label fallback).
+  - `spec/システムUI仕様_v1.md`:
+    - Added `HUDトースト（v1実装確定）` with auto-dismiss timing (~1.8s) and timer reset behavior on newer toast.
+    - Clarified DROP behavior (1 item per action, near-player walkable placement, no overlap with feet/occupied tile, world visibility and re-pickup, image-or-label rendering rule).
+  - `spec/アイテム・装備・スキル仕様_v1.md`:
+    - Updated `更新日` to 2026-02-13.
+    - Added item UI notes for floor re-pickup and image/label fallback.
+    - Removed outdated TODO about heal amount values (already fixed in section 8 use_params table).
+- 2026-02-13: Added derived status module `src/status/derivedStats.js`.
+  - Player: StatTotal(base+run+equip), MaxHP, MoveSpeed, DamageMult, Crit, Ailment/Duration/CC multipliers.
+  - Enemy: Base + Floor/Rank/tag scaling for HP/ATK/MV and ailment-related multipliers.
+- 2026-02-13: Added deterministic damage roll module `src/combat/damageRoll.js` with triangular RandMult and crit roll keyed by seed.
+- 2026-02-13: Integrated derived-status flow into runtime (`main.js`, `playerSystem.js`, `enemySystem.js`, `weaponSystem.js`).
+  - `dungeon.floor` now resolves from `playerState.run.floor` (fallback=1).
+  - Player runtime now receives recalculated derived values at regenerate: `statTotals`, `maxHp`, `moveSpeedPxPerSec`, `damageMult`, `critChance`, `critMult`, ailment multipliers, and `damageSeed`.
+  - Saved HP restore now keeps `hp = min(savedHp, recalculatedMaxHp)`; missing saved HP defaults to full HP.
+  - Enemy runtime now derives `maxHp/move/damage scale/crit/ailment` via `deriveEnemyCombatStats` with Floor/Rank/tag multipliers.
+  - Enemy attack profiles now carry per-weapon `baseDamage`; enemy attack runtime includes `attackCycle` and weapon `baseDamage`.
+  - Weapon/enemy damage paths now support deterministic seeded RandMult+Crit through `rollHitDamage`.
+- 2026-02-13: Added tests for new status/damage logic.
+  - New: `tests/unit/derivedStats.test.js`
+  - New: `tests/unit/damageRoll.test.js`
+  - Updated: `tests/unit/weaponSystem.test.js`, `tests/unit/enemySystem.test.js`
+- 2026-02-13: Updated check scripts for deterministic roll-compatible assertions.
+  - Updated: `scripts/check_player_attack.mjs`, `scripts/check_enemy_attack.mjs`
+- 2026-02-13: Validation complete after derived-status alignment:
+  - `npm run unit` -> PASS (16 files, 106 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+- 2026-02-13: Playwright smoke run executed via skill client after derived-status changes.
+  - command used with local server + `tests/actions/idle.json`.
+  - latest artifacts written to `output/web-game/shot-0.png` and `output/web-game/state-0.json`.
+  - no `errors-*.json` console artifact generated.
+- 2026-02-13: Added critical-hit popup emphasis (2x font size) and critical flag propagation.
+  - `src/weapon/weaponSystem.js`: damage events now include `isCritical` from `rollHitDamage`.
+  - `src/enemy/enemySystem.js`: player damage events now include `isCritical`.
+  - `src/combat/combatFeedbackSystem.js`: popup spawn/update preserves `isCritical`.
+  - `src/main.js`: `render_game_to_text` popup payload includes `isCritical`.
+  - `src/render/canvasRenderer.js`: `drawDamagePopups` now renders critical damage at 2x font size (`14px -> 28px`) and thicker outline.
+  - `tests/unit/combatFeedbackSystem.test.js` + `tests/unit/weaponSystem.test.js` updated for `isCritical` expectations.
+- 2026-02-13: Validation complete after critical popup update:
+  - `npm run unit` -> PASS (16 files, 106 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+- 2026-02-13: Added debug player status detail window (toggle in debug panel).
+  - `index.html`: added `#toggle-player-stats` button and `#debug-player-stats-window` (`#debug-player-stats` list).
+  - `styles/main.css`: added detail window styles (framed panel, title, max-height/scroll).
+  - `src/ui/debugPanel.js`: added `onTogglePlayerStats` handler wiring plus new APIs:
+    - `setPlayerStatsWindowOpen(open)`
+    - `setPlayerStats(rows)`
+- 2026-02-13: Added player status view-model module for deterministic UI rows/digest.
+  - New `src/ui/debugPlayerStatsViewModel.js`:
+    - `buildPlayerStatusRows(playerState, player, baseMoveSpeedPxPerSec)`
+    - `buildPlayerStatusDigest(rows)`
+  - Rows include `[基本]/[ラン]/[装備]/[合計]` six stats and derived values:
+    - `HP(現在/最大)`, `移動速度(px/s)`, `与ダメ倍率`, `クリ率`, `クリ倍率`,
+      `状態異常被適用倍率`, `持続時間倍率`, `CC時間倍率`
+  - Missing data fallback row: `状態: プレイヤーデータ未初期化`.
+- 2026-02-13: Integrated player status detail window into runtime loop (`src/main.js`).
+  - Added open-state + digest cache (`isPlayerStatsWindowOpen`, `lastPlayerStatsDigest`).
+  - Added sync/toggle functions and connected debug handler `onTogglePlayerStats`.
+  - Realtime refresh added alongside existing `syncStatsPanel()` in `stepSimulation`.
+  - Regenerate success/error paths now reset detail digest and resync detail window output.
+- 2026-02-13: Added/updated unit tests for debug player status window.
+  - Updated `tests/unit/debugPanel.test.js`:
+    - click handler call for `onTogglePlayerStats`
+    - open/close text + `aria-pressed` + `hidden` assertion
+    - `setPlayerStats` row render assertion
+  - New `tests/unit/debugPlayerStatsViewModel.test.js`:
+    - fallback row behavior
+    - base/run/equip/total + derived format checks
+    - digest stability/change checks
+- 2026-02-13: Validation complete after debug player status window update:
+  - `npm run unit` -> PASS (17 files, 112 tests)
+  - `npm run test:checks` -> PASS
+  - `npm test` -> PASS
+  - Playwright skill-client smoke run executed with `tests/actions/idle.json`:
+    - latest artifacts updated: `output/web-game/shot-0.png`, `output/web-game/state-0.json`
+    - no `errors-*.json` console artifact generated.
