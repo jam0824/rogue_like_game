@@ -78,9 +78,11 @@ import { createSystemHud } from "./ui/systemHud.js";
 import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
+import { updateSkillChainCombat } from "./combat/skillChainSystem.js";
 import { loadEffectDefinitions } from "./effect/effectDb.js";
 import { loadEffectAssets } from "./effect/effectAsset.js";
 import { createEffectRuntime, updateEffects } from "./effect/effectSystem.js";
+import { loadSkillDefinitions } from "./skill/skillDb.js";
 import { loadWeaponDefinitions } from "./weapon/weaponDb.js";
 import { loadFormationDefinitions } from "./weapon/formationDb.js";
 import { loadWeaponAssets } from "./weapon/weaponAsset.js";
@@ -448,6 +450,19 @@ function buildEnemyWeaponTextState(weapon) {
   };
 }
 
+function buildEnemyAilmentsTextState(enemy) {
+  const poison = enemy?.ailments?.poison;
+
+  return {
+    poison: {
+      stacks: Math.max(0, Math.floor(Number(poison?.stacks) || 0)),
+      decayTimerSec: round2(poison?.decayTimerSec ?? 0),
+      dotTimerSec: round2(poison?.dotTimerSec ?? 0),
+      dotPerStack: round2(poison?.dotPerStack ?? 0),
+    },
+  };
+}
+
 function buildEnemyTextState(enemy) {
   return {
     id: enemy.id,
@@ -475,6 +490,7 @@ function buildEnemyTextState(enemy) {
     attackDamage: round2(enemy.attackDamage ?? 0),
     moveSpeed: round2(enemy.moveSpeed ?? 0),
     hitFlashAlpha: round2(getEnemyHitFlashAlpha(enemy)),
+    ailments: buildEnemyAilmentsTextState(enemy),
     attackPhase: enemy.attack?.phase ?? "none",
     telegraphAlpha: round2(getEnemyTelegraphAlpha(enemy)),
     weapons: getEnemyWeaponRuntimes(enemy).map((weapon) => buildEnemyWeaponTextState(weapon)),
@@ -660,6 +676,7 @@ let enemyAssets = {};
 let enemyAiProfilesById = {};
 let enemyWeaponLoadoutsById = {};
 let enemyAttackProfilesByDbId = {};
+let skillDefinitionsById = {};
 let weaponDefinitions = [];
 let weaponDefinitionsById = {};
 let formationDefinitionsById = {};
@@ -843,6 +860,16 @@ async function refreshEnemyResources() {
   enemyAssets = assets;
   enemyAiProfilesById = Object.fromEntries(aiProfiles.map((profile) => [profile.id, profile]));
   enemyWeaponLoadoutsById = Object.fromEntries(loadouts.map((loadout) => [loadout.id, loadout]));
+}
+
+async function refreshSkillResources() {
+  try {
+    const definitions = await loadSkillDefinitions();
+    skillDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+  } catch (error) {
+    skillDefinitionsById = {};
+    console.warn(`[Skill] Failed to load skill DB: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function refreshWeaponResources() {
@@ -1615,6 +1642,36 @@ function playWeaponCombatSe(weapons, beforeSnapshot) {
   }
 }
 
+function buildWeaponStartEvents(weapons, beforeSnapshot) {
+  const events = [];
+
+  for (const weapon of Array.isArray(weapons) ? weapons : []) {
+    if (!weapon || typeof weapon.id !== "string") {
+      continue;
+    }
+
+    const before = beforeSnapshot.get(weapon.id) ?? { attackSeq: 0 };
+    const beforeAttackSeq = Math.max(0, Math.floor(Number(before.attackSeq) || 0));
+    const afterAttackSeq = Math.max(0, Math.floor(Number(weapon.attackSeq) || 0));
+    if (afterAttackSeq <= beforeAttackSeq) {
+      continue;
+    }
+
+    const center = getWeaponCenter(weapon);
+    for (let attackSeq = beforeAttackSeq + 1; attackSeq <= afterAttackSeq; attackSeq += 1) {
+      events.push({
+        weaponId: weapon.id,
+        weaponDefId: weapon.weaponDefId,
+        attackSeq,
+        worldX: center.x,
+        worldY: center.y,
+      });
+    }
+  }
+
+  return events;
+}
+
 function spawnWeaponStartEffects(weapons, beforeSnapshot) {
   const spawned = [];
 
@@ -1693,6 +1750,10 @@ function spawnWeaponHitEffectsFromEvents(events) {
   const spawned = [];
 
   for (const event of Array.isArray(events) ? events : []) {
+    if (event?.suppressWeaponHitEffect === true) {
+      continue;
+    }
+
     if (event?.kind !== "damage" || typeof event?.weaponDefId !== "string" || event.weaponDefId.length <= 0) {
       continue;
     }
@@ -1842,6 +1903,20 @@ function stepSimulation(dt) {
     formationDefinitionsById,
     dt
   );
+  const weaponStartEvents = buildWeaponStartEvents(appState.weapons, weaponCombatSnapshot);
+  const skillChainResult = updateSkillChainCombat({
+    dt,
+    dungeon: appState.dungeon,
+    player: appState.player,
+    enemies: appState.enemies,
+    effects: appState.effects,
+    weapons: appState.weapons,
+    weaponStartEvents,
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    buildEffectRuntime,
+  });
+  appState.effects = skillChainResult.effects;
   playWeaponCombatSe(appState.weapons, weaponCombatSnapshot);
   const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
@@ -1854,7 +1929,7 @@ function stepSimulation(dt) {
   if (defeatedEnemyCount > 0) {
     playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
   }
-  const combatEvents = [...playerCombatEvents, ...enemyCombatEvents];
+  const combatEvents = [...playerCombatEvents, ...skillChainResult.events, ...enemyCombatEvents];
   const spawnedEffects = [
     ...spawnWeaponStartEffects(appState.weapons, weaponCombatSnapshot),
     ...spawnEnemyWeaponStartEffects(appState.enemies, enemyWeaponCombatSnapshot),
@@ -1908,6 +1983,7 @@ async function regenerate(seed) {
   try {
     await Promise.all([
       refreshEnemyResources(),
+      refreshSkillResources(),
       refreshWeaponResources(),
       refreshItemResources(),
       refreshEffectResources(),
@@ -2013,6 +2089,15 @@ async function regenerate(seed) {
     }
 
     const weapons = createPlayerWeapons(weaponDefinitionsForRun, formationDefinitionsById, player);
+    for (let index = 0; index < weapons.length; index += 1) {
+      const sourceDefinition = weaponDefinitionsForRun[index];
+      weapons[index].skillInstances = Array.isArray(sourceDefinition?.skills)
+        ? sourceDefinition.skills.map((skill) => ({
+            id: skill.id,
+            plus: Number.isFinite(skill.plus) ? skill.plus : 0,
+          }))
+        : [];
+    }
     applySavedWeaponRuntime(appState.playerState, weapons);
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
     damagePopupSeq = 0;
