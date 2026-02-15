@@ -1,3 +1,4 @@
+import { applyHitFlashColorsFromDamageEvents, POISON_HIT_FLASH_COLOR } from "../src/combat/hitFlashSystem.js";
 import { updateSkillChainCombat } from "../src/combat/skillChainSystem.js";
 
 const DT = 1 / 60;
@@ -173,6 +174,7 @@ function main() {
   const buildEffectRuntime = createBuildEffectRuntime();
   let effects = [];
   const allEvents = [];
+  let observedPoisonGreenFlash = false;
 
   const first = updateSkillChainCombat({
     dt: DT,
@@ -188,6 +190,7 @@ function main() {
   });
   effects = first.effects;
   allEvents.push(...first.events);
+  applyHitFlashColorsFromDamageEvents({ events: first.events, player, enemies });
   const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
   assert(projectileEffect, "projectile effect runtime was not spawned");
   assert(
@@ -211,6 +214,20 @@ function main() {
 
     effects = result.effects;
     allEvents.push(...result.events);
+    applyHitFlashColorsFromDamageEvents({ events: result.events, player, enemies });
+
+    const poisonEvents = result.events.filter(
+      (event) => event?.kind === "damage" && event?.targetType === "enemy" && event?.ailmentId === "poison"
+    );
+    if (poisonEvents.length > 0) {
+      for (const event of poisonEvents) {
+        const enemy = enemies.find((item) => item?.id === event.enemyId);
+        if (enemy?.hitFlashColor === POISON_HIT_FLASH_COLOR) {
+          observedPoisonGreenFlash = true;
+          break;
+        }
+      }
+    }
   }
 
   const hasProjectileDamage = allEvents.some(
@@ -226,6 +243,7 @@ function main() {
   assert(hasProjectileDamage, "projectile damage event was not emitted");
   assert(hasExplosionDamage, "explosion damage event was not emitted");
   assert(hasPoisonDot, "poison dot event was not emitted");
+  assert(observedPoisonGreenFlash, "poison dot did not switch hit flash color to green");
 
   console.log("[check_skill_chain] PASS");
 }

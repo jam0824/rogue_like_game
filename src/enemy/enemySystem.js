@@ -17,6 +17,7 @@ const TALL_ENEMY_COLLISION_SIZE = 32;
 const ENEMY_ATTACK_BASE = 8;
 const ENEMY_ATTACK_PER_POW = 1.8;
 const ENEMY_HIT_FLASH_DURATION_SEC = 0.12;
+const ENEMY_HIT_FLASH_COLOR_DEFAULT = "#ffffff";
 const ENEMY_ATTACK_TELEGRAPH_BLINK_HZ = 6;
 const VECTOR_EPSILON = 0.0001;
 const BIAS_LERP_BASE = 6;
@@ -732,6 +733,7 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     isDead: false,
     hitFlashTimerSec: 0,
     hitFlashDurationSec: ENEMY_HIT_FLASH_DURATION_SEC,
+    hitFlashColor: ENEMY_HIT_FLASH_COLOR_DEFAULT,
     attackDamage,
     damageMult: derived.damageMult,
     attackScale: derived.attackScale,

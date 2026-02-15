@@ -13,6 +13,7 @@ const MAX_SUBSTEP_PIXELS = 4;
 const MOVE_EPSILON = 0.001;
 const PLAYER_MAX_HP_DEFAULT = 100;
 const PLAYER_HIT_FLASH_DURATION_SEC = 0.12;
+const PLAYER_HIT_FLASH_COLOR_DEFAULT = "#ffffff";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -254,6 +255,7 @@ export function createPlayerState(dungeon) {
     damageSeed: "player-damage-default",
     hitFlashTimerSec: 0,
     hitFlashDurationSec: PLAYER_HIT_FLASH_DURATION_SEC,
+    hitFlashColor: PLAYER_HIT_FLASH_COLOR_DEFAULT,
   };
 }
 

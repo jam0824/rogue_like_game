@@ -120,6 +120,7 @@ describe("enemySystem", () => {
     expect(enemy.moveSpeed).toBeCloseTo(ENEMY_WALK_SPEED_PX_PER_SEC * 1.1, 5);
     expect(enemy.baseSpeedPxPerSec).toBeCloseTo(enemy.moveSpeed, 5);
     expect(enemy.chaseSpeedPxPerSec).toBeCloseTo(enemy.moveSpeed * 1.3, 5);
+    expect(enemy.hitFlashColor).toBe("#ffffff");
   });
 
   it("戦闘当たり判定は敵画像全体の AABB を返す", () => {

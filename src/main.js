@@ -78,6 +78,10 @@ import { createSystemHud } from "./ui/systemHud.js";
 import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
+import {
+  applyHitFlashColorsFromDamageEvents,
+  normalizeHitFlashColor,
+} from "./combat/hitFlashSystem.js";
 import { updateSkillChainCombat } from "./combat/skillChainSystem.js";
 import { loadEffectDefinitions } from "./effect/effectDb.js";
 import { loadEffectAssets } from "./effect/effectAsset.js";
@@ -423,6 +427,7 @@ function buildPlayerTextState(player, weapons) {
     hp: round2(player.hp ?? 0),
     maxHp: round2(player.maxHp ?? 0),
     hitFlashAlpha: round2(getPlayerHitFlashAlpha(player)),
+    hitFlashColor: normalizeHitFlashColor(player?.hitFlashColor),
     feetHitbox: getPlayerFeetHitbox(player),
     facing: player.facing,
     isMoving: player.isMoving,
@@ -490,6 +495,7 @@ function buildEnemyTextState(enemy) {
     attackDamage: round2(enemy.attackDamage ?? 0),
     moveSpeed: round2(enemy.moveSpeed ?? 0),
     hitFlashAlpha: round2(getEnemyHitFlashAlpha(enemy)),
+    hitFlashColor: normalizeHitFlashColor(enemy?.hitFlashColor),
     ailments: buildEnemyAilmentsTextState(enemy),
     attackPhase: enemy.attack?.phase ?? "none",
     telegraphAlpha: round2(getEnemyTelegraphAlpha(enemy)),
@@ -1832,6 +1838,7 @@ function renderCurrentFrame() {
     asset: enemyAssets[enemy.dbId] ?? null,
     frame: getEnemyFrame(enemy),
     flashAlpha: getEnemyHitFlashAlpha(enemy),
+    flashColor: normalizeHitFlashColor(enemy?.hitFlashColor),
     telegraphAlpha: getEnemyTelegraphAlpha(enemy),
   }));
   const weaponDrawables = appState.weapons.map((weapon) => ({
@@ -1875,6 +1882,7 @@ function renderCurrentFrame() {
     getPlayerFrame(appState.player),
     appState.player,
     getPlayerHitFlashAlpha(appState.player),
+    normalizeHitFlashColor(appState.player?.hitFlashColor),
     enemyDrawables,
     weaponDrawables,
     enemyWeaponDrawables,
@@ -1932,6 +1940,11 @@ function stepSimulation(dt) {
     playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
   }
   const combatEvents = [...playerCombatEvents, ...skillChainResult.events, ...enemyCombatEvents];
+  applyHitFlashColorsFromDamageEvents({
+    events: combatEvents,
+    player: appState.player,
+    enemies: appState.enemies,
+  });
   const spawnedEffects = [
     ...spawnWeaponStartEffects(appState.weapons, weaponCombatSnapshot),
     ...spawnEnemyWeaponStartEffects(appState.enemies, enemyWeaponCombatSnapshot),

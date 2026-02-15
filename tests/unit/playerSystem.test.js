@@ -69,6 +69,7 @@ describe("playerSystem", () => {
       expect(player.hp).toBe(100);
       expect(player.maxHp).toBe(100);
       expect(player.hitFlashTimerSec).toBe(0);
+      expect(player.hitFlashColor).toBe("#ffffff");
     });
 
     it("開始部屋中心が不可なら開始部屋内の代替歩行可能タイルにスポーンする", () => {

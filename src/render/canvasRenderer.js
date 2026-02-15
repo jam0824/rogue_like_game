@@ -96,6 +96,10 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeFlashColor(color) {
+  return typeof color === "string" && color.trim().length > 0 ? color.trim().toLowerCase() : "#ffffff";
+}
+
 function drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad) {
   ctx.save();
   if (Math.abs(rotationRad) > 0.000001) {
@@ -228,6 +232,7 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
   const rotationRad = Number.isFinite(options.rotationRad) ? options.rotationRad : 0;
   const telegraphAlpha = clamp(Number(options.telegraphAlpha) || 0, 0, 1);
   const flashAlpha = clamp(Number(options.flashAlpha) || 0, 0, 1);
+  const flashColor = normalizeFlashColor(options.flashColor);
   const drawWidth = asset.frameWidth;
   const drawHeight = asset.frameHeight;
 
@@ -238,6 +243,11 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
   }
 
   if (flashAlpha <= 0) {
+    return;
+  }
+
+  if (flashColor !== "#ffffff") {
+    drawTintedFrame(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad, flashColor, flashAlpha);
     return;
   }
 
@@ -393,7 +403,8 @@ function drawGroundItem(ctx, drawable) {
  * @param {{row:number,col:number}|null} playerFrame
  * @param {{x:number,y:number}|null} player
  * @param {number} playerFlashAlpha
- * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,telegraphAlpha?:number}>} enemyDrawables
+ * @param {string} playerFlashColor
+ * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,flashColor?:string,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
  * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\"),rotationRad?:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
@@ -408,6 +419,7 @@ export function renderFrame(
   playerFrame,
   player,
   playerFlashAlpha = 0,
+  playerFlashColor = "#ffffff",
   enemyDrawables = [],
   weaponDrawables = [],
   enemyWeaponDrawables = [],
@@ -441,6 +453,7 @@ export function renderFrame(
       draw() {
         drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy, {
           flashAlpha: drawable.flashAlpha ?? 0,
+          flashColor: drawable.flashColor ?? "#ffffff",
           telegraphAlpha: drawable.telegraphAlpha ?? 0,
         });
       },
@@ -515,6 +528,7 @@ export function renderFrame(
       draw() {
         drawSprite(ctx, playerAsset, playerFrame, player, {
           flashAlpha: playerFlashAlpha,
+          flashColor: playerFlashColor,
         });
       },
     });
