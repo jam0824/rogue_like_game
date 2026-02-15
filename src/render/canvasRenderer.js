@@ -321,10 +321,11 @@ function drawEffects(ctx, effectDrawables) {
     const dy = Math.round((Number(effect.y) || 0) - drawHeight / 2);
     const sx = asset.animationDirection === "vertical" ? 0 : frameIndex * frameWidth;
     const sy = asset.animationDirection === "vertical" ? frameIndex * frameHeight : 0;
+    const rotationRad = Number.isFinite(effect.rotationRad) ? effect.rotationRad : 0;
 
     ctx.save();
     ctx.globalCompositeOperation = effect.blendMode === "add" ? "lighter" : "source-over";
-    ctx.drawImage(asset.image, sx, sy, frameWidth, frameHeight, dx, dy, drawWidth, drawHeight);
+    drawFrameWithTransform(ctx, asset, sx, sy, frameWidth, frameHeight, dx, dy, rotationRad);
     ctx.restore();
   }
 }
@@ -395,7 +396,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
- * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\")},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
+ * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\"),rotationRad?:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
  * @param {Array<{chest:{tileX:number,tileY:number,isOpened:boolean},asset:{image:HTMLImageElement}|null,frameWidth?:number,frameHeight?:number,frameRow?:number}>} treasureChestDrawables
  * @param {Array<{groundItem:{xPx:number,yPx:number},asset:{image:HTMLImageElement}|null,label?:string,drawSize?:number}>} groundItemDrawables
  * @param {Array<{value:number,x:number,y:number,alpha:number,targetType?:(\"enemy\"|\"player\"),isCritical?:boolean}>} damagePopups

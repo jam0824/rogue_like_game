@@ -531,16 +531,27 @@ function findEffectIndexById(effects, effectRuntimeId) {
   return -1;
 }
 
-function syncEffectPosition(effects, effectRuntimeId, x, y) {
+function calcRotationRadFromDirection(dirX, dirY) {
+  return Math.atan2(toFiniteNumber(dirY, 0), toFiniteNumber(dirX, 0));
+}
+
+function syncEffectPosition(effects, effectRuntimeId, x, y, rotationRad = null) {
   const index = findEffectIndexById(effects, effectRuntimeId);
   if (index < 0) {
     return;
   }
 
+  const effect = effects[index];
   effects[index] = {
-    ...effects[index],
+    ...effect,
     x,
     y,
+    rotationRad:
+      Number.isFinite(rotationRad)
+        ? rotationRad
+        : Number.isFinite(effect?.rotationRad)
+          ? effect.rotationRad
+          : 0,
   };
 }
 
@@ -693,8 +704,10 @@ function spawnProjectile({
 
   let projectileEffectRuntime = null;
   if (typeof projectileConfig.spriteEffectId === "string" && projectileConfig.spriteEffectId.length > 0) {
+    const projectileRotationRad = calcRotationRadFromDirection(direction.x, direction.y);
     projectileEffectRuntime = buildEffectRuntime?.(projectileConfig.spriteEffectId, spawnX, spawnY) ?? null;
     if (projectileEffectRuntime) {
+      projectileEffectRuntime.rotationRad = projectileRotationRad;
       effects.push(projectileEffectRuntime);
     }
   }
@@ -892,7 +905,8 @@ function updateProjectiles({
     projectile.y += toFiniteNumber(projectile.dirY, 0) * speed * stepDt;
 
     if (projectile.effectRuntimeId) {
-      syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y);
+      const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
+      syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
     }
 
     let shouldDespawn = projectile.remainingLifeSec <= 0;

@@ -188,6 +188,12 @@ function main() {
   });
   effects = first.effects;
   allEvents.push(...first.events);
+  const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
+  assert(projectileEffect, "projectile effect runtime was not spawned");
+  assert(
+    Number.isFinite(projectileEffect.rotationRad) && Math.abs(projectileEffect.rotationRad) > 0.0001,
+    "projectile effect rotation was not set from direction"
+  );
 
   for (let frame = 0; frame < 240; frame += 1) {
     const result = updateSkillChainCombat({

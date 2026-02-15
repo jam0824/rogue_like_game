@@ -142,6 +142,7 @@ function createBuildEffectRuntime() {
       animationFps: 1,
       width: config.width,
       height: config.height,
+      rotationRad: 0,
       animationDirection: "horizontal",
       scale: 1,
       blendMode: "normal",
@@ -242,6 +243,11 @@ describe("skillChainSystem", () => {
     });
     effects = first.effects;
     allEvents.push(...first.events);
+
+    const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
+    expect(projectileEffect).toBeTruthy();
+    const expectedRotationRad = Math.atan2((108 + 16) - 116, (160 + 16) - 116);
+    expect(projectileEffect.rotationRad).toBeCloseTo(expectedRotationRad, 5);
 
     for (let frame = 0; frame < 240; frame += 1) {
       const result = updateSkillChainCombat({

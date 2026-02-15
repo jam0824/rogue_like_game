@@ -513,6 +513,7 @@ function buildDamagePopupTextState(popup) {
 }
 
 function buildEffectTextState(effect) {
+  const rotationRad = Number(effect?.rotationRad) || 0;
   return {
     id: typeof effect?.id === "string" ? effect.id : "",
     effectId: typeof effect?.effectId === "string" ? effect.effectId : "",
@@ -521,6 +522,7 @@ function buildEffectTextState(effect) {
     frameIndex: Math.max(0, Math.floor(Number(effect?.frameIndex) || 0)),
     blendMode: effect?.blendMode === "add" ? "add" : "normal",
     scale: round2(effect?.scale ?? 1),
+    rotationDeg: round2(rotationRad * 180 / Math.PI),
     loop: effect?.loop === true,
   };
 }

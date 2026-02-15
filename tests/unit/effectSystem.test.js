@@ -35,6 +35,7 @@ describe("effectSystem", () => {
       animationFps: 30,
       width: 120,
       height: 120,
+      rotationRad: 0,
       animationDirection: "horizontal",
       scale: 1,
       blendMode: "normal",
@@ -70,5 +71,6 @@ describe("effectSystem", () => {
     expect(updated).toHaveLength(1);
     expect(updated[0].frameIndex).toBe(0);
     expect(updated[0].ageSec).toBeCloseTo(0.35, 5);
+    expect(updated[0].rotationRad).toBe(0);
   });
 });
