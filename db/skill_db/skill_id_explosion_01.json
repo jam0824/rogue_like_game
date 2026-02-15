@@ -1,0 +1,26 @@
+{
+    "id": "skill_id_explosion_01",
+    "name_key": "name_skill_explosion_01",
+    "description_key": "desc_skill_explosion_01",
+    "skill_type": "attack",
+    "rarity": "rare",
+    "max_plus": 99,
+    "unique_per_weapon": false,
+    "tags": ["skill_type:attack", "attack:aoe", "element:fire"],
+    "ui": { "icon_file_name": "skill_explosion_01.png", "sort_order": 140 },
+    "params": {
+      "attack_kind": "aoe",
+      "base_damage": 12,
+      "damage_element": "fire",
+      "start_spawn_timing": "hit",
+      "chain_trigger": "on_hit",
+      "aoe": {
+        "sprite_effect_id": "effect_id_explosion_01",
+        "hit_interval_sec": 0.0
+      }
+    },
+    "se_key_fire": "",
+    "se_key_hit": "",
+    "effect_id_fire": "",
+    "effect_id_hit": ""
+  }

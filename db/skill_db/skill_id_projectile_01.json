@@ -1,0 +1,29 @@
+{
+    "id": "skill_id_projectile_01",
+    "name_key": "name_skill_projectile_01",
+    "description_key": "desc_skill_projectile_01",
+    "skill_type": "attack",
+    "rarity": "common",
+    "max_plus": 99,
+    "unique_per_weapon": false,
+    "tags": ["skill_type:attack", "attack:projectile", "element:physical"],
+    "ui": { "icon_file_name": "skill_projectile_01.png", "sort_order": 120 },
+    "params": {
+      "attack_kind": "projectile",
+      "base_damage": 10,
+      "damage_element": "physical",
+      "start_spawn_timing": "start",
+      "chain_trigger": "on_hit",
+      "projectile": {
+        "speed_tile_per_sec": 10.0,
+        "life_sec": 1.2,
+        "move_direction": "to_target",
+        "sprite_effect_id": "effect_id_proj_basic_01",
+        "disappear_hit_wall":false
+      }
+    },
+    "se_key_fire": "",
+    "se_key_hit": "",
+    "effect_id_fire": "",
+    "effect_id_hit": ""
+  }

@@ -1,0 +1,15 @@
+{
+    "id": "skill_id_poison_01",
+    "name_key": "name_skill_poison_01",
+    "description_key": "desc_skill_poison_01",
+    "skill_type": "modifier",
+    "rarity": "common",
+    "max_plus": 99,
+    "unique_per_weapon": false,
+    "tags": ["skill_type:modifier", "element:poison", "ailment:poison"],
+    "ui": { "icon_file_name": "skill_poison_01.png", "sort_order": 200 },
+    "params": {
+      "add_tags": ["element:poison", "ailment:poison"],
+      "apply_ailments": [{ "ailment_id": "poison", "apply_base": 0.60 }]
+    }
+  }
