@@ -7,7 +7,7 @@
     "max_plus": 99,
     "unique_per_weapon": false,
     "tags": ["skill_type:modifier", "element:poison", "ailment:poison"],
-    "ui": { "icon_file_name": "skill_poison_01.png", "sort_order": 200 },
+    "ui": { "icon_file_name": "ui/icon/icon_skill/icon_poison.png", "sort_order": 200 },
     "params": {
       "add_tags": ["element:poison", "ailment:poison"],
       "apply_ailments": [{ "ailment_id": "poison", "apply_base": 0.60 }]

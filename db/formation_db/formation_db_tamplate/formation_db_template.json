@@ -25,7 +25,7 @@
     },
   
     "ui": {
-      "icon_file_name": "formation_circle01.png",
+      "icon_file_name": "ui/icon/icon_skill/icon_orbit_circle_01.png",
       "sort_order": 10
     }
   }

@@ -6,6 +6,7 @@
     "weapon_file_name": "weapon_sword_01.png",
     "width": 32,
     "height": 64,
+    "icon_file_name": "ui/icon/icon_weapon/icon_sword_01.png",
 
     "se_key_start_attack": "",
     "se_key_hit_attack": "se_key_hit_sword_01",
