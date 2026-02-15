@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventory + Weapon + Skill (Modal) UI Mock v2</title>
+  <style>
+    :root{
+      --ui-bg:#2b1b10;
+      --ui-panel:#3b2415;
+      --ui-panel2:#2f1d12;
+      --frame:#c79252;
+      --frame2:#9a6734;
+      --title:#d6a06a;
+      --title2:#b67a44;
+      --txt:#f2e7d6;
+      --muted:#cdb89b;
+      --danger:#c85f49;
+      --shadow: rgba(0,0,0,.45);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      color:var(--txt);
+      background: radial-gradient(1200px 800px at 50% 10%, #3a2314 0%, #23140c 55%, #140b06 100%);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .window{
+      width:min(1100px, 96vw);
+      border:3px solid var(--frame);
+      background: linear-gradient(180deg, rgba(59,36,21,.98), rgba(47,29,18,.98));
+      box-shadow: 0 18px 60px var(--shadow);
+      border-radius: 14px;
+      overflow:hidden;
+    }
+    .titlebar{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 12px;
+      background: linear-gradient(180deg, rgba(199,146,82,.28), rgba(0,0,0,0));
+      border-bottom:1px solid rgba(199,146,82,.35);
+    }
+    .title{font-weight:1000;color:var(--title);letter-spacing:.6px}
+    .tabs{
+      display:flex;gap:8px;margin-left:10px;
+    }
+    .tab{
+      border:2px solid rgba(199,146,82,.35);
+      background: rgba(0,0,0,.14);
+      color:var(--muted);
+      padding:6px 10px;
+      border-radius: 12px;
+      font-weight:900;
+      cursor:pointer;
+      user-select:none;
+    }
+    .tab.is-active{ color:var(--txt); border-color: rgba(214,160,106,.9); background: rgba(214,160,106,.08); }
+    .pill{
+      margin-left:auto;
+      font-size:12px;color:var(--muted);font-weight:800;
+      border:1px solid rgba(199,146,82,.35);
+      padding:4px 8px;border-radius:999px;background: rgba(0,0,0,.18);
+    }
+
+    .content{ padding:12px; }
+    .panel{
+      background: rgba(0,0,0,.16);
+      border:1px solid rgba(199,146,82,.35);
+      border-radius: 14px;
+      padding:12px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.18);
+    }
+    .panelTitle{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:10px;
+      font-weight:1000;color:var(--title2);
+      padding-bottom:8px;border-bottom:1px solid rgba(199,146,82,.25);
+      margin-bottom:10px;
+    }
+    .mini{font-size:12px;color:var(--muted);font-weight:800}
+
+    /* Item grid mock */
+    .itemLayout{
+      display:grid;
+      grid-template-columns: 540px 1fr;
+      gap:12px;
+    }
+    .itemGrid{
+      display:grid;grid-template-columns: repeat(6, 1fr);
+      gap:8px;
+    }
+    .iSlot{
+      height:62px;border-radius:12px;
+      border:2px solid rgba(199,146,82,.25);
+      background: rgba(0,0,0,.14);
+    }
+    .detailBox{
+      border:1px solid rgba(199,146,82,.25);
+      border-radius: 12px;
+      background: rgba(0,0,0,.12);
+      padding:10px;
+      min-height: 240px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.6;
+    }
+
+    /* Weapon tab (same as single mock, but inside) */
+    .weaponLayout{
+      display:grid;
+      grid-template-columns: 420px 1fr;
+      gap:12px;
+    }
+    .grid2{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+    .slot{
+      position:relative;height:86px;border-radius:14px;
+      border:2px solid rgba(199,146,82,.35);
+      background: rgba(0,0,0,.18);
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,.18);
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition: transform .08s ease, border-color .08s ease, background .08s ease;
+      user-select:none;
+    }
+    .slot:hover{ transform: translateY(-1px); border-color: rgba(199,146,82,.6); }
+    .slot.is-selected{ border-color: rgba(214,160,106,.95); background: rgba(214,160,106,.08); }
+    .slot .no{ position:absolute; left:8px; top:6px; font-size:12px; color: rgba(242,231,214,.75); font-weight:900; }
+
+    .icon{ width:40px;height:40px; display:grid;place-items:center; filter: drop-shadow(0 2px 0 rgba(0,0,0,.35)); }
+    .rarity{ position:absolute; right:8px; top:8px; width:10px;height:10px;border-radius:50%; box-shadow: 0 0 0 2px rgba(0,0,0,.25); }
+    .rarity.common{ background:#c7b39a; } .rarity.rare{ background:#6ea6ff; } .rarity.legendary{ background:#ffb14e; }
+
+    .bag{ margin-top:12px; padding-top:12px; border-top:1px dashed rgba(199,146,82,.25); }
+    .grid3{ display:grid; grid-template-columns: repeat(6, 1fr); gap:8px; }
+    .bslot{
+      height:60px;border-radius:12px;
+      border:2px solid rgba(199,146,82,.25);
+      background: rgba(0,0,0,.14);
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;position:relative;
+      transition: transform .08s ease, border-color .08s ease;
+    }
+    .bslot:hover{ transform: translateY(-1px); border-color: rgba(199,146,82,.5); }
+    .bslot.is-selected{ border-color: rgba(214,160,106,.95); background: rgba(214,160,106,.08); }
+
+    .rightTop{ display:flex; gap:12px; align-items:center; padding-bottom:10px; border-bottom:1px solid rgba(199,146,82,.25); margin-bottom:10px; }
+    .bigIcon{ width:62px;height:62px;border-radius:16px; border:2px solid rgba(199,146,82,.35); background: rgba(0,0,0,.18); display:grid;place-items:center; flex:0 0 auto; }
+    .wname{font-weight:1000;color:var(--title);letter-spacing:.4px}
+    .flavor{font-size:12px;color:var(--muted);margin-top:4px}
+    .stats{
+      margin:0;padding:0;list-style:none;
+      display:grid;grid-template-columns: 1fr 1fr;gap:8px;
+    }
+    .stat{
+      border:1px solid rgba(199,146,82,.25);
+      background: rgba(0,0,0,.12);
+      border-radius: 12px;
+      padding:8px 10px;
+      display:flex;justify-content:space-between;
+      font-size:12px;color:var(--muted);
+    }
+    .stat b{ color:var(--txt); }
+
+    .footer{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 12px;
+      border-top:1px solid rgba(199,146,82,.35);
+      background: rgba(0,0,0,.12);
+    }
+    .btn{
+      appearance:none;border:none;border-radius:12px;
+      padding:10px 14px;
+      font-weight:900;cursor:pointer;
+      background: linear-gradient(180deg, rgba(214,160,106,.25), rgba(0,0,0,.05));
+      border:2px solid rgba(199,146,82,.45);
+      color:var(--txt);
+      box-shadow: 0 6px 18px rgba(0,0,0,.25);
+    }
+    .btn:disabled{ opacity:.45; cursor:not-allowed; }
+    .btn.secondary{ background: rgba(0,0,0,.12); }
+    .btn.danger{
+      border-color: rgba(200,95,73,.65);
+      background: linear-gradient(180deg, rgba(200,95,73,.25), rgba(0,0,0,.05));
+    }
+    .kbd{ font-size:11px;border:1px solid rgba(199,146,82,.35);padding:1px 6px;border-radius:8px;background: rgba(0,0,0,.18);color:var(--muted);font-weight:900; }
+
+    /* Modal (same) */
+    .overlay{
+      position:fixed; inset:0; background: rgba(0,0,0,.6);
+      display:none; align-items:center; justify-content:center; padding:16px; z-index:999;
+    }
+    .overlay.is-open{ display:flex; }
+    .modal{
+      width:min(840px, 96vw);
+      max-height:min(86vh, 860px);
+      overflow:hidden;
+      border-radius: 16px;
+      border:3px solid var(--frame);
+      background: linear-gradient(180deg, rgba(59,36,21,.98), rgba(47,29,18,.98));
+      box-shadow: 0 18px 70px rgba(0,0,0,.65);
+      display:flex; flex-direction:column;
+    }
+    .modalHeader{
+      display:flex;align-items:center;gap:12px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(199,146,82,.35);
+      background: linear-gradient(180deg, rgba(199,146,82,.28), rgba(0,0,0,0));
+    }
+    .modalHeader .mhTitle{ font-weight:1000;color:var(--title);letter-spacing:.4px; }
+    .modalHeader .mhSub{ margin-left:auto; font-size:12px;color:var(--muted);font-weight:800; }
+    .modalBody{ padding:12px; overflow:auto; }
+    .section{
+      margin-bottom:14px;
+      border:1px solid rgba(199,146,82,.25);
+      background: rgba(0,0,0,.12);
+      border-radius: 14px;
+      padding:10px;
+    }
+    .sectionTop{ display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px; }
+    .sectionTop .stTitle{ font-weight:1000;color:var(--title2); }
+    .heldInfo{ font-size:12px;color:var(--muted);font-weight:900; }
+    .skillGrid{ display:flex; flex-wrap:wrap; gap:10px; }
+    .chipSlot{
+      width:52px;height:52px;border-radius:12px;
+      border:2px solid rgba(199,146,82,.28);
+      background: rgba(0,0,0,.14);
+      display:grid;place-items:center;
+      position:relative;cursor:pointer;user-select:none;
+      transition: transform .08s ease, border-color .08s ease, background .08s ease;
+    }
+    .chipSlot:hover{ transform: translateY(-1px); border-color: rgba(199,146,82,.55); }
+    .chipSlot.is-heldTarget{ border-color: rgba(214,160,106,.9); background: rgba(214,160,106,.08); }
+    .chipSlot.is-attackTarget{ border-color: rgba(107,192,122,.8); box-shadow: inset 0 0 0 2px rgba(107,192,122,.12); }
+
+    .chipIcon{ width:28px;height:28px; display:grid; place-items:center; opacity:.95; }
+    .badge{
+      position:absolute; right:4px; top:4px;
+      font-size:11px;font-weight:1000;color:var(--txt);
+      background: rgba(0,0,0,.35);
+      border:1px solid rgba(199,146,82,.25);
+      border-radius: 8px;padding:1px 5px;line-height:1.2;
+    }
+    .chipSlot.empty .chipIcon{ opacity:.25; }
+    .chipSlot .hintDot{
+      position:absolute; left:4px; bottom:4px;
+      width:8px;height:8px;border-radius:50%; opacity:.9;
+      box-shadow: 0 0 0 2px rgba(0,0,0,.25);
+    }
+    .dot-attack{ background:#6bc07a; } .dot-mod{ background:#6ea6ff; } .dot-passive{ background:#c7b39a; } .dot-orbit{ background:#ffb14e; }
+
+    .orbitRow .chipSlot{ border-style:dashed; }
+    .orbitRow .chipSlot::before{
+      content:""; position:absolute; inset:8px;
+      border-radius:999px; border:2px solid rgba(255,177,78,.35);
+      opacity:.9; pointer-events:none;
+    }
+
+    .modalFooter{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 12px;
+      border-top:1px solid rgba(199,146,82,.35);
+      background: rgba(0,0,0,.12);
+    }
+    .toast{ margin-left:auto; font-size:12px;color:var(--muted);font-weight:800; }
+    .hidden{ display:none !important; }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <div class="titlebar">
+      <div class="title">INVENTORY</div>
+      <div class="tabs">
+        <div class="tab is-active" data-tab="item">ITEM</div>
+        <div class="tab" data-tab="weapon">WEAPON</div>
+        <div class="tab" data-tab="chip">CHIP</div>
+      </div>
+      <div class="pill">装備武器クリックでスキル編集（モーダル）</div>
+    </div>
+
+    <div class="content">
+      <!-- ITEM -->
+      <div class="panel" id="tab-item">
+        <div class="panelTitle">
+          <div>Items</div>
+          <div class="mini">（モック）</div>
+        </div>
+        <div class="itemLayout">
+          <div>
+            <div class="itemGrid">
+              <!-- 36 slots -->
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+              <div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div><div class="iSlot"></div>
+            </div>
+          </div>
+          <div class="detailBox">
+            右側の詳細はモックです。<br/>
+            WEAPONタブで装備/入替、装備武器クリックでスキル編集モーダルが開きます。
+          </div>
+        </div>
+      </div>
+
+      <!-- WEAPON -->
+      <div class="panel hidden" id="tab-weapon">
+        <div class="panelTitle">
+          <div>Weapons</div>
+          <div class="mini">入替：装備枠→バッグ枠→EQUIP</div>
+        </div>
+
+        <div class="weaponLayout">
+          <section>
+            <div class="panelTitle">
+              <div>Equipped <span class="mini">（8）</span></div>
+              <div class="mini" id="equipPill">—</div>
+            </div>
+            <div class="grid2" id="equipSlots" role="grid"></div>
+
+            <div class="bag">
+              <div class="panelTitle">
+                <div>Weapon Bag</div>
+                <div class="mini" id="bagPill">—</div>
+              </div>
+              <div class="grid3" id="bagSlots" role="grid"></div>
+            </div>
+          </section>
+
+          <aside>
+            <div class="rightTop">
+              <div class="bigIcon" id="bigIcon"></div>
+              <div>
+                <div class="wname" id="wname">—</div>
+                <div class="flavor" id="flavor">装備枠を選択してください</div>
+              </div>
+            </div>
+
+            <ul class="stats" id="weaponStats"></ul>
+
+            <div style="margin-top:12px;color:var(--muted);font-size:12px;line-height:1.6">
+              <b style="color:var(--txt)">スキル編集:</b> 装備中の武器スロットをクリック（バッグ選択中は入替優先）<br/>
+              <span class="kbd">Esc</span> で“持ち”解除（モーダル内）
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- CHIP (placeholder) -->
+      <div class="panel hidden" id="tab-chip">
+        <div class="panelTitle">
+          <div>Chips</div>
+          <div class="mini">（モック）</div>
+        </div>
+        <div class="detailBox">
+          チップ一覧タブは今回は枠だけです。<br/>
+          実装ではここでチップを管理し、WEAPONのモーダルへドラッグ投入…などに拡張できます。
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button class="btn secondary" id="autoBtn">AUTO</button>
+      <button class="btn secondary" id="undoBtn" disabled>UNDO</button>
+      <div style="flex:1"></div>
+      <button class="btn" id="equipBtn" disabled>EQUIP</button>
+      <button class="btn danger" id="dropBtn" disabled>DROP</button>
+    </div>
+  </div>
+
+  <!-- Skill Modal -->
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHeader">
+        <div class="bigIcon" id="mIcon" style="width:46px;height:46px;border-radius:14px"></div>
+        <div>
+          <div class="mhTitle" id="mTitle">Skill Edit</div>
+          <div class="mini" id="mSub">—</div>
+        </div>
+        <div class="mhSub"><span id="heldInfo" class="heldInfo">Holding: —</span></div>
+        <button class="btn secondary" id="closeModalBtn" style="margin-left:8px;padding:8px 10px">DONE</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="section">
+          <div class="sectionTop">
+            <div class="stTitle">Skill Chain <span class="mini">（正方形アイコンのみ / 左→右が並び）</span></div>
+            <div class="mini">クリック入替 / D&amp;D / <span class="kbd">Esc</span> キャンセル</div>
+          </div>
+          <div class="skillGrid" id="chainRow"></div>
+          <div class="mini" style="margin-top:10px">※ Modifierに乗せると、右側のAttackがハイライトされます。</div>
+        </div>
+
+        <div class="section orbitRow">
+          <div class="sectionTop">
+            <div class="stTitle">Orbit <span class="mini">（軌道スキルのみ）</span></div>
+            <div class="mini">Orbit以外は置けません</div>
+          </div>
+          <div class="skillGrid" id="orbitRow"></div>
+        </div>
+      </div>
+
+      <div class="modalFooter">
+        <button class="btn secondary" id="mAutoBtn">AUTO</button>
+        <button class="btn secondary" id="mUndoBtn" disabled>UNDO</button>
+        <div class="toast" id="toast">—</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  function svg(pathD){
+    return `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="${pathD}"></path>
+    </svg>`;
+  }
+  const ICONS = {
+    sword: svg("M14 4l6 6-9 9H5v-6l9-9z"),
+    bow: svg("M4 12c4-6 12-6 16 0-4 6-12 6-16 0z"),
+    staff: svg("M7 21l10-18 2 1-10 18z"),
+    dagger: svg("M12 2l4 4-8 8-4-4 8-8z"),
+    slash: svg("M3 21L21 3"),
+    fire: svg("M12 2c3 4 3 7 0 10-3-3-3-6 0-10zM7 22c0-3 2-5 5-5s5 2 5 5"),
+    arrow: svg("M5 19l14-14M14 5h5v5"),
+    poison: svg("M8 3h8M10 3v5l-4 6a5 5 0 0 0 4 8h4a5 5 0 0 0 4-8l-4-6V3"),
+    pierce: svg("M12 2v20M4 8h16"),
+    orbit: svg("M12 12m-8 0a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 4v2"),
+    dup: svg("M8 8h10v10H8zM6 6h10v10"),
+    guard: svg("M12 2l8 4v6c0 5-4 9-8 10C8 21 4 17 4 12V6l8-4z"),
+    empty: svg("M7 7h10M7 12h10M7 17h10")
+  };
+  function iconSVG(key){ return ICONS[key] || ICONS.empty; }
+
+  const chipDb = {
+    atk_slash:  { id:'atk_slash',  name:'Slash',    type:'attack',  plus: 1, icon:'slash' },
+    atk_fire:   { id:'atk_fire',   name:'Fire',     type:'attack',  plus: 2, icon:'fire'  },
+    atk_arrow:  { id:'atk_arrow',  name:'Arrow',    type:'attack',  plus: 0, icon:'arrow' },
+    mod_poison: { id:'mod_poison', name:'Poison',   type:'modifier',plus: 1, icon:'poison'},
+    mod_pierce: { id:'mod_pierce', name:'Pierce',   type:'modifier',plus: 2, icon:'pierce'},
+    pas_dup:    { id:'pas_dup',    name:'Duplicate',type:'passive', plus: 1, icon:'dup'   },
+    pas_guard:  { id:'pas_guard',  name:'Guard',    type:'passive', plus: 1, icon:'guard' },
+    orb_orbit:  { id:'orb_orbit',  name:'Orbit',    type:'orbit',   plus: 0, icon:'orbit' },
+  };
+
+  const weaponDb = {
+    w_sword01: { id:'w_sword01', name:'Short Sword +1', flavor:'“A balanced blade. Simple, reliable.”', icon:'sword', rarity:'common', baseDamage:12, cooldown:0.80, pierce:1, chipSlots:5, chain:['atk_slash','mod_poison','atk_fire','pas_guard',null], orbit:[null,null] },
+    w_bow01:   { id:'w_bow01',   name:'Hunter Bow',     flavor:'“Quiet shots, steady hands.”',          icon:'bow',   rarity:'rare',   baseDamage:10, cooldown:0.70, pierce:2, chipSlots:6, chain:['atk_arrow','mod_pierce','atk_arrow',null,null,null], orbit:['orb_orbit',null] },
+    w_staff01: { id:'w_staff01', name:'Amber Staff',    flavor:'“A warm glow pulses within.”',          icon:'staff', rarity:'legendary', baseDamage:7, cooldown:0.55, pierce:1, chipSlots:12, chain:['atk_fire','mod_poison','atk_fire','pas_dup',null,null,null,null,null,null,null,null], orbit:['orb_orbit',null] },
+    w_dagger01:{ id:'w_dagger01',name:'Dagger',         flavor:'“Fast and close.”',                     icon:'dagger',rarity:'common', baseDamage:8, cooldown:0.45, pierce:1, chipSlots:4, chain:['atk_slash',null,null,null], orbit:[null,null] },
+  };
+
+  let equipped = ['w_sword01','w_bow01',null,null,'w_staff01',null,null,null];
+  let bagSlots = ['w_dagger01', null, null, null, null, null, null, null, null, null, null, null];
+
+  let selectedEquipIndex = 0;
+  let selectedBagIndex = null;
+
+  let modalOpen = false;
+  let modalWeaponId = null;
+  let held = null;
+  let undoStack = [];
+  const UNDO_MAX = 20;
+
+  // Elements
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  const tabItem = document.getElementById('tab-item');
+  const tabWeapon = document.getElementById('tab-weapon');
+  const tabChip = document.getElementById('tab-chip');
+
+  const equipSlotsEl = document.getElementById('equipSlots');
+  const bagSlotsEl = document.getElementById('bagSlots');
+  const equipPill = document.getElementById('equipPill');
+  const bagPill = document.getElementById('bagPill');
+  const bigIcon = document.getElementById('bigIcon');
+  const wname = document.getElementById('wname');
+  const flavor = document.getElementById('flavor');
+  const weaponStats = document.getElementById('weaponStats');
+
+  const equipBtn = document.getElementById('equipBtn');
+  const dropBtn = document.getElementById('dropBtn');
+
+  const overlay = document.getElementById('overlay');
+  const closeModalBtn = document.getElementById('closeModalBtn');
+  const chainRow = document.getElementById('chainRow');
+  const orbitRow = document.getElementById('orbitRow');
+  const heldInfo = document.getElementById('heldInfo');
+  const mTitle = document.getElementById('mTitle');
+  const mSub = document.getElementById('mSub');
+  const mIcon = document.getElementById('mIcon');
+  const toast = document.getElementById('toast');
+  const mAutoBtn = document.getElementById('mAutoBtn');
+  const mUndoBtn = document.getElementById('mUndoBtn');
+
+  const autoBtn = document.getElementById('autoBtn');
+  const undoBtn = document.getElementById('undoBtn');
+
+  // Tabs
+  function setActiveTab(name){
+    tabs.forEach(t => t.classList.toggle('is-active', t.dataset.tab === name));
+    tabItem.classList.toggle('hidden', name !== 'item');
+    tabWeapon.classList.toggle('hidden', name !== 'weapon');
+    tabChip.classList.toggle('hidden', name !== 'chip');
+  }
+  tabs.forEach(t => t.addEventListener('click', () => setActiveTab(t.dataset.tab)));
+
+  // Helpers
+  function dotClass(type){
+    if(type==='attack') return 'dot-attack';
+    if(type==='modifier') return 'dot-mod';
+    if(type==='orbit') return 'dot-orbit';
+    return 'dot-passive';
+  }
+  function cloneWeapon(w){ return {...w, chain:[...w.chain], orbit:[...w.orbit]}; }
+  function render(){
+    renderEquipSlots();
+    renderBag();
+    renderDetails();
+    syncButtons();
+  }
+
+  function renderEquipSlots(){
+    equipSlotsEl.innerHTML = '';
+    equipPill.textContent = `${equipped.filter(Boolean).length}/8`;
+    for(let i=0;i<8;i++){
+      const wid = equipped[i];
+      const btn = document.createElement('div');
+      btn.className = 'slot' + (i===selectedEquipIndex ? ' is-selected' : '');
+      const no = document.createElement('div'); no.className='no'; no.textContent=(i+1); btn.appendChild(no);
+      if(wid){
+        const w = weaponDb[wid];
+        const ic = document.createElement('div'); ic.className='icon'; ic.innerHTML=iconSVG(w.icon); btn.appendChild(ic);
+        const r = document.createElement('div'); r.className=`rarity ${w.rarity}`; btn.appendChild(r);
+      }
+      btn.addEventListener('click', () => {
+        const bagHas = (selectedBagIndex!==null) && !!bagSlots[selectedBagIndex];
+        selectedEquipIndex = i;
+        render();
+        if(wid && !bagHas) openModalForWeapon(wid);
+      });
+      equipSlotsEl.appendChild(btn);
+    }
+  }
+
+  function renderBag(){
+    bagSlotsEl.innerHTML='';
+    bagPill.textContent = `${bagSlots.filter(Boolean).length}/${bagSlots.length}`;
+    for(let i=0;i<bagSlots.length;i++){
+      const wid = bagSlots[i];
+      const btn = document.createElement('div');
+      btn.className = 'bslot' + (i===selectedBagIndex ? ' is-selected' : '');
+      if(wid){
+        const w = weaponDb[wid];
+        const ic = document.createElement('div'); ic.className='icon'; ic.style.width='28px'; ic.style.height='28px'; ic.innerHTML=iconSVG(w.icon); btn.appendChild(ic);
+        const r = document.createElement('div'); r.className=`rarity ${w.rarity}`; btn.appendChild(r);
+      }
+      btn.addEventListener('click', () => { selectedBagIndex = (selectedBagIndex===i ? null : i); render(); });
+      bagSlotsEl.appendChild(btn);
+    }
+  }
+
+  function renderDetails(){
+    const wid = equipped[selectedEquipIndex];
+    if(!wid){
+      bigIcon.innerHTML='';
+      wname.textContent='—';
+      flavor.textContent='装備枠に武器がありません（バッグから入替できます）';
+      weaponStats.innerHTML='';
+      return;
+    }
+    const w = weaponDb[wid];
+    bigIcon.innerHTML = iconSVG(w.icon);
+    wname.textContent = w.name;
+    flavor.textContent = w.flavor;
+    const items = [['Base DMG', w.baseDamage], ['Cooldown', `${w.cooldown.toFixed(2)}s`], ['Pierce', w.pierce], ['Chip Slots', w.chipSlots]];
+    weaponStats.innerHTML = items.map(([k,v]) => `<li class="stat"><span>${k}</span><b>${v}</b></li>`).join('');
+  }
+
+  function syncButtons(){
+    equipBtn.disabled = (selectedBagIndex===null);
+    dropBtn.disabled = !equipped[selectedEquipIndex];
+    undoBtn.disabled = true;
+  }
+
+  equipBtn.addEventListener('click', () => {
+    if(selectedBagIndex===null) return;
+    const i = selectedEquipIndex;
+    const j = selectedBagIndex;
+    const tmp = equipped[i];
+    equipped[i] = bagSlots[j];
+    bagSlots[j] = tmp;
+    render();
+  });
+  dropBtn.addEventListener('click', () => {
+    const i=selectedEquipIndex;
+    if(!equipped[i]) return;
+    equipped[i]=null;
+    if(modalOpen) closeModal();
+    render();
+  });
+  autoBtn.addEventListener('click', () => {
+    const wid = equipped[selectedEquipIndex];
+    if(wid) openModalForWeapon(wid);
+  });
+
+  // Modal
+  function setHeld(v){
+    held = v;
+    heldInfo.textContent = held ? `Holding: ${chipDb[held.chipId]?.name ?? held.chipId}` : 'Holding: —';
+  }
+  function snapshot(){
+    if(!modalWeaponId) return;
+    undoStack.push({wid: modalWeaponId, weapon: cloneWeapon(weaponDb[modalWeaponId])});
+    if(undoStack.length>UNDO_MAX) undoStack.shift();
+    mUndoBtn.disabled = undoStack.length===0;
+  }
+  function openModalForWeapon(wid){
+    modalOpen=true; modalWeaponId=wid; held=null; undoStack=[]; mUndoBtn.disabled=true;
+    overlay.classList.add('is-open'); overlay.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden';
+    const w = weaponDb[wid];
+    mIcon.innerHTML = iconSVG(w.icon);
+    mTitle.textContent = 'Skill Edit';
+    mSub.textContent = `${w.name} / chain:${w.chipSlots} / orbit:${w.orbit.length}`;
+    toast.textContent = 'モーダル内で並び替えできます';
+    renderModal();
+  }
+  function closeModal(){
+    modalOpen=false; modalWeaponId=null; held=null;
+    overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden','true'); document.body.style.overflow='';
+  }
+  closeModalBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+
+  window.addEventListener('keydown', (e)=>{
+    if(!modalOpen) return;
+    if(e.key==='Escape'){
+      if(held){ setHeld(null); toast.textContent='Holding解除'; renderModal(); }
+      else closeModal();
+    }
+  });
+
+  function getChipAt(row, idx){
+    const w = weaponDb[modalWeaponId];
+    return (row==='orbit') ? w.orbit[idx] : w.chain[idx];
+  }
+  function setChipAt(row, idx, chipId){
+    const w = weaponDb[modalWeaponId];
+    if(row==='orbit') w.orbit[idx]=chipId;
+    else w.chain[idx]=chipId;
+  }
+  function canPlace(chipId, dstRow){
+    if(!chipId) return true;
+    const t = chipDb[chipId]?.type;
+    if(dstRow==='orbit') return t==='orbit';
+    if(dstRow==='chain') return t!=='orbit';
+    return true;
+  }
+  function moveChip(srcRow, srcIdx, dstRow, dstIdx){
+    const srcChip = getChipAt(srcRow, srcIdx);
+    const dstChip = getChipAt(dstRow, dstIdx);
+    if(srcRow===dstRow && srcIdx===dstIdx) return;
+    if(!canPlace(srcChip, dstRow)){ toast.textContent='Orbitスキルは Orbit枠へ'; return; }
+    if(!canPlace(dstChip, srcRow)){ toast.textContent='Orbitスキルは Orbit枠へ'; return; }
+    snapshot();
+    setChipAt(srcRow, srcIdx, dstChip||null);
+    setChipAt(dstRow, dstIdx, srcChip||null);
+    setHeld(null);
+    toast.textContent='SWAP';
+    renderModal(); renderDetails();
+  }
+
+  function buildChipSlot(row, idx, chipId){
+    const slot=document.createElement('div');
+    slot.className='chipSlot' + (chipId ? '' : ' empty');
+    slot.dataset.row=row; slot.dataset.idx=idx;
+    slot.setAttribute('draggable', chipId ? 'true' : 'false');
+
+    const icon=document.createElement('div');
+    icon.className='chipIcon';
+    icon.innerHTML = chipId ? iconSVG(chipDb[chipId].icon) : iconSVG('empty');
+    slot.appendChild(icon);
+
+    const dot=document.createElement('div');
+    dot.className='hintDot ' + (chipId ? dotClass(chipDb[chipId].type) : 'dot-passive');
+    slot.appendChild(dot);
+
+    if(chipId && chipDb[chipId].plus){
+      const b=document.createElement('div'); b.className='badge'; b.textContent=`+${chipDb[chipId].plus}`; slot.appendChild(b);
+    }
+    slot.title = chipId ? `${chipDb[chipId].name} (${chipDb[chipId].type})` : 'Empty';
+
+    slot.addEventListener('click', (e)=>{ e.stopPropagation(); onSlotClick(row, idx); });
+
+    slot.addEventListener('dragstart', (e)=>{
+      if(!chipId) return;
+      e.dataTransfer.setData('text/plain', JSON.stringify({row, idx}));
+      e.dataTransfer.effectAllowed='move';
+      setHeld({row, idx, chipId});
+      renderModal();
+    });
+    slot.addEventListener('dragover', (e)=>{ e.preventDefault(); slot.classList.add('is-heldTarget'); e.dataTransfer.dropEffect='move'; });
+    slot.addEventListener('dragleave', ()=>slot.classList.remove('is-heldTarget'));
+    slot.addEventListener('drop', (e)=>{
+      e.preventDefault(); slot.classList.remove('is-heldTarget');
+      const payload=e.dataTransfer.getData('text/plain'); if(!payload) return;
+      const src=JSON.parse(payload);
+      moveChip(src.row, src.idx, row, idx);
+    });
+    return slot;
+  }
+
+  function onSlotClick(row, idx){
+    const chipId=getChipAt(row, idx);
+    if(!held){
+      if(!chipId){ toast.textContent='空スロット'; return; }
+      setHeld({row, idx, chipId});
+      toast.textContent=`${chipDb[chipId].name} を持ちました`;
+      renderModal();
+      return;
+    }
+    moveChip(held.row, held.idx, row, idx);
+  }
+
+  function renderModal(){
+    if(!modalWeaponId) return;
+    const w = weaponDb[modalWeaponId];
+    chainRow.innerHTML=''; orbitRow.innerHTML='';
+    for(let i=0;i<w.chipSlots;i++) chainRow.appendChild(buildChipSlot('chain', i, w.chain[i]));
+    for(let i=0;i<w.orbit.length;i++) orbitRow.appendChild(buildChipSlot('orbit', i, w.orbit[i]));
+    applyModifierHoverEffects();
+  }
+
+  function applyModifierHoverEffects(){
+    const slots = chainRow.querySelectorAll('.chipSlot');
+    slots.forEach(s => { s.onmouseenter=null; s.onmouseleave=null; });
+    slots.forEach((slot)=>{
+      const idx=Number(slot.dataset.idx);
+      const chipId=getChipAt('chain', idx);
+      if(!chipId) return;
+      if(chipDb[chipId].type!=='modifier') return;
+      slot.addEventListener('mouseenter', ()=>{
+        for(let j=idx+1;j<weaponDb[modalWeaponId].chipSlots;j++){
+          const cid=weaponDb[modalWeaponId].chain[j];
+          if(cid && chipDb[cid].type==='attack'){
+            const el=chainRow.querySelector(`.chipSlot[data-idx="${j}"]`);
+            if(el) el.classList.add('is-attackTarget');
+          }
+        }
+        toast.textContent='Modifier → 右側Attackに適用';
+      });
+      slot.addEventListener('mouseleave', ()=>{
+        chainRow.querySelectorAll('.chipSlot').forEach(el=>el.classList.remove('is-attackTarget'));
+        toast.textContent='—';
+      });
+    });
+  }
+
+  mAutoBtn.addEventListener('click', ()=>{
+    if(!modalWeaponId) return;
+    snapshot();
+    const w = weaponDb[modalWeaponId];
+    const compact = w.chain.filter(x=>x!==null);
+    while(compact.length < w.chipSlots) compact.push(null);
+    w.chain = compact.slice(0, w.chipSlots);
+    toast.textContent='AUTO: 左詰め';
+    renderModal(); renderDetails();
+  });
+  mUndoBtn.addEventListener('click', ()=>{
+    if(undoStack.length===0) return;
+    const last=undoStack.pop();
+    weaponDb[last.wid]=last.weapon;
+    mUndoBtn.disabled = undoStack.length===0;
+    toast.textContent='UNDO';
+    renderModal(); renderDetails();
+  });
+
+  // init
+  setActiveTab('item');
+  render();
+})();
+</script>
+</body>
+</html>
