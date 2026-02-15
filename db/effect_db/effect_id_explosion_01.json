@@ -1,0 +1,12 @@
+{
+    "id": "effect_id_explosion_01",
+    "effect_file_name": "graphic/effect/expfx1_epic_exp_B_small_orange.png",
+    "width": 80,
+    "height": 80,
+    "animation_fps": 30,
+    "animation_direction": "horizontal",
+    "scale": 1.0,
+    "blend_mode": "normal",
+    "loop": false
+
+}
