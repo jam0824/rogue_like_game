@@ -236,8 +236,6 @@ function findRoomById(dungeon, roomId) {
 }
 
 function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = false) {
-  const startRoom = findRoomById(dungeon, dungeon.startRoomId);
-  const stairsRoom = findRoomById(dungeon, dungeon.stairsRoomId);
   const hpValue =
     player && Number.isFinite(player.hp) && Number.isFinite(player.maxHp)
       ? `${Math.max(0, Math.round(player.hp))} / ${Math.max(0, Math.round(player.maxHp))}`
@@ -250,19 +248,6 @@ function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = f
     { label: "wall_height", value: dungeon.wallHeightTiles ?? "-" },
     { label: "HP", value: hpValue },
     { label: "被ダメ設定", value: damageMode },
-    { label: "部屋数", value: dungeon.stats.roomCount },
-    { label: "主線部屋数", value: dungeon.stats.mainPathCount },
-    { label: "枝道本数", value: dungeon.stats.branchCount },
-    { label: "小ループ", value: dungeon.stats.hasLoop ? "あり" : "なし" },
-    {
-      label: "開始座標",
-      value: startRoom ? `(${startRoom.centerX}, ${startRoom.centerY})` : "-",
-    },
-    {
-      label: "階段座標",
-      value: stairsRoom ? `(${stairsRoom.centerX}, ${stairsRoom.centerY})` : "-",
-    },
-    { label: "生成試行", value: dungeon.stats.attempts },
   ];
 }
 
@@ -1934,11 +1919,16 @@ function toggleDamagePreview() {
   syncPlayerStatsWindow();
 }
 
-function togglePlayerStatsWindow() {
-  isPlayerStatsWindowOpen = !isPlayerStatsWindowOpen;
+function openPlayerStatsWindow() {
+  isPlayerStatsWindowOpen = true;
   syncPlayerStatsWindowVisibility();
   lastPlayerStatsDigest = "";
   syncPlayerStatsWindow();
+}
+
+function closeDetailWindow() {
+  isPlayerStatsWindowOpen = false;
+  syncPlayerStatsWindowVisibility();
 }
 
 const debugPanel = createDebugPanel(debugPanelRoot, {
@@ -1962,6 +1952,8 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
     togglePause();
   },
   onShowStorage: () => {
+    isPlayerStatsWindowOpen = false;
+    debugPanel.setPlayerStatsWindowOpen(false);
     debugPanel.setStorageDump(buildLocalStorageDump(appStorage));
   },
   onResetStorage: () => {
@@ -1970,8 +1962,11 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   onToggleDamagePreview: () => {
     toggleDamagePreview();
   },
-  onTogglePlayerStats: () => {
-    togglePlayerStatsWindow();
+  onShowPlayerStats: () => {
+    openPlayerStatsWindow();
+  },
+  onCloseDetailWindow: () => {
+    closeDetailWindow();
   },
 });
 debugPanel.setDungeonOptions(
@@ -1995,10 +1990,6 @@ function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
     dungeon.seed,
     dungeon.dungeonId ?? "",
     dungeon.wallHeightTiles ?? 0,
-    dungeon.stats?.roomCount ?? 0,
-    dungeon.stats?.mainPathCount ?? 0,
-    dungeon.stats?.branchCount ?? 0,
-    dungeon.stats?.hasLoop ? 1 : 0,
     Math.round(Number(player?.hp) || 0),
     Math.round(Number(player?.maxHp) || 0),
     debugPlayerDamagePreviewOnly ? 1 : 0,

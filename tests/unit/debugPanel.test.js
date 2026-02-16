@@ -47,13 +47,12 @@ function createDebugRoot() {
     textContent: "被ダメ有効",
     attributes: { "aria-pressed": "false" },
   });
-  const togglePlayerStatsButton = createEventTarget({
-    textContent: "ステータス表示",
-    attributes: { "aria-pressed": "false" },
-  });
+  const togglePlayerStatsButton = createEventTarget({ textContent: "ステータス表示" });
   const statsList = createEventTarget({ innerHTML: "" });
-  const playerStatsWindow = createEventTarget({ hidden: true });
-  const playerStatsList = createEventTarget({ innerHTML: "" });
+  const detailWindow = createEventTarget({ hidden: true });
+  const detailTitle = createEventTarget({ textContent: "Debug Detail" });
+  const detailCloseButton = createEventTarget({ textContent: "×" });
+  const playerStatsList = createEventTarget({ innerHTML: "", hidden: true });
   const storageView = createEventTarget({ textContent: "", hidden: true });
   const errorMessage = createEventTarget({ textContent: "", hidden: true });
 
@@ -68,7 +67,9 @@ function createDebugRoot() {
     "#damage-preview-toggle": damagePreviewToggleButton,
     "#toggle-player-stats": togglePlayerStatsButton,
     "#debug-stats": statsList,
-    "#debug-player-stats-window": playerStatsWindow,
+    "#debug-detail-window": detailWindow,
+    "#debug-detail-title": detailTitle,
+    "#debug-detail-close": detailCloseButton,
     "#debug-player-stats": playerStatsList,
     "#debug-storage": storageView,
     "#debug-error": errorMessage,
@@ -86,7 +87,9 @@ function createDebugRoot() {
     resetStorageButton,
     damagePreviewToggleButton,
     togglePlayerStatsButton,
-    playerStatsWindow,
+    detailWindow,
+    detailTitle,
+    detailCloseButton,
     playerStatsList,
     storageView,
   };
@@ -109,37 +112,35 @@ function withMockDocument(run) {
   }
 }
 
+function createHandlers(overrides = {}) {
+  return {
+    onApplySeed: vi.fn(),
+    onRegenerate: vi.fn(),
+    onTogglePause: vi.fn(),
+    onShowStorage: vi.fn(),
+    onResetStorage: vi.fn(),
+    onToggleDamagePreview: vi.fn(),
+    onShowPlayerStats: vi.fn(),
+    onCloseDetailWindow: vi.fn(),
+    onDungeonIdChange: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe("debugPanel", () => {
   it("一時停止ボタンクリックで onTogglePause が呼ばれる", () => {
     const { root, pauseToggleButton } = createDebugRoot();
-    const onTogglePause = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause,
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
-
+    createDebugPanel(root, handlers);
     pauseToggleButton.trigger("click");
-    expect(onTogglePause).toHaveBeenCalledTimes(1);
+
+    expect(handlers.onTogglePause).toHaveBeenCalledTimes(1);
   });
 
   it("setPaused でボタン文言と aria-pressed が切り替わる", () => {
     const { root, pauseToggleButton } = createDebugRoot();
-
-    const panel = createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
+    const panel = createDebugPanel(root, createHandlers());
 
     panel.setPaused(true);
     expect(pauseToggleButton.textContent).toBe("再開");
@@ -152,92 +153,53 @@ describe("debugPanel", () => {
 
   it("Storage表示ボタンクリックで onShowStorage が呼ばれる", () => {
     const { root, showStorageButton } = createDebugRoot();
-    const onShowStorage = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage,
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
-
+    createDebugPanel(root, handlers);
     showStorageButton.trigger("click");
-    expect(onShowStorage).toHaveBeenCalledTimes(1);
+
+    expect(handlers.onShowStorage).toHaveBeenCalledTimes(1);
   });
 
-  it("setStorageDump で表示/非表示が切り替わる", () => {
-    const { root, storageView } = createDebugRoot();
-
-    const panel = createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
+  it("setStorageDump で共通詳細ウィンドウが表示/非表示される", () => {
+    const { root, detailWindow, detailTitle, storageView, playerStatsList } = createDebugRoot();
+    const panel = createDebugPanel(root, createHandlers());
 
     panel.setStorageDump("keys: 1\n\n[test]\nvalue");
+    expect(detailWindow.hidden).toBe(false);
+    expect(detailTitle.textContent).toBe("Storage");
     expect(storageView.hidden).toBe(false);
     expect(storageView.textContent).toContain("keys: 1");
+    expect(playerStatsList.hidden).toBe(true);
 
     panel.setStorageDump("");
-    expect(storageView.hidden).toBe(true);
+    expect(detailWindow.hidden).toBe(true);
     expect(storageView.textContent).toBe("");
   });
 
   it("Storageリセットボタンクリックで onResetStorage が呼ばれる", () => {
     const { root, resetStorageButton } = createDebugRoot();
-    const onResetStorage = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage,
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
-
+    createDebugPanel(root, handlers);
     resetStorageButton.trigger("click");
-    expect(onResetStorage).toHaveBeenCalledTimes(1);
+
+    expect(handlers.onResetStorage).toHaveBeenCalledTimes(1);
   });
 
   it("被ダメ設定ボタンクリックで onToggleDamagePreview が呼ばれる", () => {
     const { root, damagePreviewToggleButton } = createDebugRoot();
-    const onToggleDamagePreview = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview,
-      onTogglePlayerStats: vi.fn(),
-    });
-
+    createDebugPanel(root, handlers);
     damagePreviewToggleButton.trigger("click");
-    expect(onToggleDamagePreview).toHaveBeenCalledTimes(1);
+
+    expect(handlers.onToggleDamagePreview).toHaveBeenCalledTimes(1);
   });
 
   it("setDamagePreviewOnly でボタン文言と aria-pressed が切り替わる", () => {
     const { root, damagePreviewToggleButton } = createDebugRoot();
-
-    const panel = createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
+    const panel = createDebugPanel(root, createHandlers());
 
     panel.setDamagePreviewOnly(true);
     expect(damagePreviewToggleButton.textContent).toBe("被ダメ無効(演出のみ)");
@@ -248,61 +210,44 @@ describe("debugPanel", () => {
     expect(damagePreviewToggleButton.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("プレイヤーステータス表示ボタンで onTogglePlayerStats が呼ばれる", () => {
+  it("プレイヤーステータス表示ボタンで onShowPlayerStats が呼ばれる", () => {
     const { root, togglePlayerStatsButton } = createDebugRoot();
-    const onTogglePlayerStats = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats,
-    });
-
+    createDebugPanel(root, handlers);
     togglePlayerStatsButton.trigger("click");
-    expect(onTogglePlayerStats).toHaveBeenCalledTimes(1);
+
+    expect(handlers.onShowPlayerStats).toHaveBeenCalledTimes(1);
   });
 
-  it("setPlayerStatsWindowOpen でボタン文言と表示状態が切り替わる", () => {
-    const { root, togglePlayerStatsButton, playerStatsWindow } = createDebugRoot();
+  it("×ボタンで onCloseDetailWindow が呼ばれる", () => {
+    const { root, detailCloseButton } = createDebugRoot();
+    const handlers = createHandlers();
 
-    const panel = createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-    });
+    createDebugPanel(root, handlers);
+    detailCloseButton.trigger("click");
+
+    expect(handlers.onCloseDetailWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("setPlayerStatsWindowOpen で共通詳細ウィンドウの player stats 表示が切り替わる", () => {
+    const { root, detailWindow, detailTitle, playerStatsList, storageView } = createDebugRoot();
+    const panel = createDebugPanel(root, createHandlers());
 
     panel.setPlayerStatsWindowOpen(true);
-    expect(togglePlayerStatsButton.textContent).toBe("ステータス非表示");
-    expect(togglePlayerStatsButton.getAttribute("aria-pressed")).toBe("true");
-    expect(playerStatsWindow.hidden).toBe(false);
+    expect(detailWindow.hidden).toBe(false);
+    expect(detailTitle.textContent).toBe("Player Stats");
+    expect(playerStatsList.hidden).toBe(false);
+    expect(storageView.hidden).toBe(true);
 
     panel.setPlayerStatsWindowOpen(false);
-    expect(togglePlayerStatsButton.textContent).toBe("ステータス表示");
-    expect(togglePlayerStatsButton.getAttribute("aria-pressed")).toBe("false");
-    expect(playerStatsWindow.hidden).toBe(true);
+    expect(detailWindow.hidden).toBe(true);
   });
 
   it("setPlayerStats で詳細行が描画される", () => {
     withMockDocument(() => {
       const { root, playerStatsList } = createDebugRoot();
-
-      const panel = createDebugPanel(root, {
-        onApplySeed: vi.fn(),
-        onRegenerate: vi.fn(),
-        onTogglePause: vi.fn(),
-        onShowStorage: vi.fn(),
-        onResetStorage: vi.fn(),
-        onToggleDamagePreview: vi.fn(),
-        onTogglePlayerStats: vi.fn(),
-      });
+      const panel = createDebugPanel(root, createHandlers());
 
       panel.setPlayerStats([
         { label: "[基本] VIT", value: "2" },
@@ -316,40 +261,34 @@ describe("debugPanel", () => {
     });
   });
 
+  it("storage 表示から player stats 表示へ切り替わる", () => {
+    const { root, detailWindow, detailTitle, playerStatsList, storageView } = createDebugRoot();
+    const panel = createDebugPanel(root, createHandlers());
+
+    panel.setStorageDump("keys: 1");
+    panel.setPlayerStatsWindowOpen(true);
+
+    expect(detailWindow.hidden).toBe(false);
+    expect(detailTitle.textContent).toBe("Player Stats");
+    expect(playerStatsList.hidden).toBe(false);
+    expect(storageView.hidden).toBe(true);
+  });
+
   it("dungeon id 変更で onDungeonIdChange が呼ばれる", () => {
     const { root, dungeonIdSelect } = createDebugRoot();
-    const onDungeonIdChange = vi.fn();
+    const handlers = createHandlers();
 
-    createDebugPanel(root, {
-      onApplySeed: vi.fn(),
-      onRegenerate: vi.fn(),
-      onTogglePause: vi.fn(),
-      onShowStorage: vi.fn(),
-      onResetStorage: vi.fn(),
-      onToggleDamagePreview: vi.fn(),
-      onTogglePlayerStats: vi.fn(),
-      onDungeonIdChange,
-    });
-
+    createDebugPanel(root, handlers);
     dungeonIdSelect.value = "dungeon_id_01";
     dungeonIdSelect.trigger("change");
-    expect(onDungeonIdChange).toHaveBeenCalledWith("dungeon_id_01");
+
+    expect(handlers.onDungeonIdChange).toHaveBeenCalledWith("dungeon_id_01");
   });
 
   it("setDungeonOptions と setDungeonId が選択状態を更新する", () => {
     withMockDocument(() => {
       const { root, dungeonIdSelect } = createDebugRoot();
-
-      const panel = createDebugPanel(root, {
-        onApplySeed: vi.fn(),
-        onRegenerate: vi.fn(),
-        onTogglePause: vi.fn(),
-        onShowStorage: vi.fn(),
-        onResetStorage: vi.fn(),
-        onToggleDamagePreview: vi.fn(),
-        onTogglePlayerStats: vi.fn(),
-        onDungeonIdChange: vi.fn(),
-      });
+      const panel = createDebugPanel(root, createHandlers());
 
       panel.setDungeonOptions(
         [

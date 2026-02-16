@@ -139,22 +139,6 @@ body {
   background: rgba(23, 34, 57, 0.72);
 }
 
-.debug-player-stats-window {
-  margin: 10px 0 0;
-  padding: 8px;
-  max-height: 240px;
-  overflow: auto;
-  border-radius: 6px;
-  border: 1px solid rgba(111, 130, 170, 0.35);
-  background: rgba(19, 30, 52, 0.72);
-}
-
-.debug-player-stats-title {
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: #bed4f8;
-}
-
 .debug-error {
   margin: 10px 0 0;
   padding: 8px;
@@ -178,6 +162,66 @@ body {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.debug-detail-window {
+  position: absolute;
+  top: 16px;
+  right: 352px;
+  z-index: 11;
+  width: min(420px, calc(100vw - 392px));
+  max-height: min(75vh, 640px);
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-detail-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.debug-detail-title {
+  margin: 0;
+  font-size: 14px;
+  color: #d7e6ff;
+}
+
+#debug-detail-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #6f7f9d;
+  border-radius: 8px;
+  background: #1f3257;
+  color: #f4f8ff;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#debug-detail-close:hover {
+  background: #2b4473;
+}
+
+.debug-detail-window .debug-stats {
+  margin: 0;
+  overflow: auto;
+  max-height: min(60vh, 560px);
+}
+
+.debug-detail-window .debug-storage {
+  margin: 0;
+  overflow: auto;
+  max-height: min(60vh, 560px);
 }
 
 #system-ui-layer {
@@ -1012,6 +1056,15 @@ body {
     width: auto;
     max-height: 45vh;
     overflow: auto;
+  }
+
+  #debug-detail-window {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-height: 40vh;
   }
 
   #system-hud-top-left {

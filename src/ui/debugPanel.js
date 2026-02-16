@@ -13,6 +13,21 @@ function renderStatsList(listElement, rows) {
   }
 }
 
+function queryElement(root, selector) {
+  if (root && typeof root.querySelector === "function") {
+    const local = root.querySelector(selector);
+    if (local) {
+      return local;
+    }
+  }
+
+  if (typeof document !== "undefined" && typeof document.querySelector === "function") {
+    return document.querySelector(selector);
+  }
+
+  return null;
+}
+
 export function createDebugPanel(root, handlers) {
   const seedInput = root.querySelector("#seed-input");
   const dungeonIdSelect = root.querySelector("#dungeon-id-select");
@@ -24,10 +39,40 @@ export function createDebugPanel(root, handlers) {
   const damagePreviewToggleButton = root.querySelector("#damage-preview-toggle");
   const togglePlayerStatsButton = root.querySelector("#toggle-player-stats");
   const statsList = root.querySelector("#debug-stats");
-  const playerStatsWindow = root.querySelector("#debug-player-stats-window");
-  const playerStatsList = root.querySelector("#debug-player-stats");
-  const storageView = root.querySelector("#debug-storage");
+  const detailWindow = queryElement(root, "#debug-detail-window");
+  const detailTitle = queryElement(root, "#debug-detail-title");
+  const detailCloseButton = queryElement(root, "#debug-detail-close");
+  const playerStatsList = queryElement(root, "#debug-player-stats");
+  const storageView = queryElement(root, "#debug-storage");
   const errorMessage = root.querySelector("#debug-error");
+  let detailMode = "none";
+
+  function setDetailMode(mode) {
+    const nextMode = mode === "storage" || mode === "playerStats" ? mode : "none";
+    detailMode = nextMode;
+
+    if (detailWindow) {
+      detailWindow.hidden = nextMode === "none";
+    }
+
+    if (detailTitle) {
+      if (nextMode === "storage") {
+        detailTitle.textContent = "Storage";
+      } else if (nextMode === "playerStats") {
+        detailTitle.textContent = "Player Stats";
+      } else {
+        detailTitle.textContent = "Debug Detail";
+      }
+    }
+
+    if (playerStatsList) {
+      playerStatsList.hidden = nextMode !== "playerStats";
+    }
+
+    if (storageView) {
+      storageView.hidden = nextMode !== "storage";
+    }
+  }
 
   applySeedButton.addEventListener("click", () => {
     handlers.onApplySeed(seedInput.value);
@@ -74,8 +119,16 @@ export function createDebugPanel(root, handlers) {
 
   if (togglePlayerStatsButton) {
     togglePlayerStatsButton.addEventListener("click", () => {
-      if (typeof handlers.onTogglePlayerStats === "function") {
-        handlers.onTogglePlayerStats();
+      if (typeof handlers.onShowPlayerStats === "function") {
+        handlers.onShowPlayerStats();
+      }
+    });
+  }
+
+  if (detailCloseButton) {
+    detailCloseButton.addEventListener("click", () => {
+      if (typeof handlers.onCloseDetailWindow === "function") {
+        handlers.onCloseDetailWindow();
       }
     });
   }
@@ -139,13 +192,7 @@ export function createDebugPanel(root, handlers) {
     },
     setPlayerStatsWindowOpen(open) {
       const isOpen = open === true;
-      if (togglePlayerStatsButton) {
-        togglePlayerStatsButton.textContent = isOpen ? "ステータス非表示" : "ステータス表示";
-        togglePlayerStatsButton.setAttribute("aria-pressed", isOpen ? "true" : "false");
-      }
-      if (playerStatsWindow) {
-        playerStatsWindow.hidden = !isOpen;
-      }
+      setDetailMode(isOpen ? "playerStats" : "none");
     },
     setPlayerStats(rows) {
       renderStatsList(playerStatsList, rows);
@@ -156,11 +203,13 @@ export function createDebugPanel(root, handlers) {
       }
       if (!text) {
         storageView.textContent = "";
-        storageView.hidden = true;
+        if (detailMode === "storage") {
+          setDetailMode("none");
+        }
         return;
       }
       storageView.textContent = text;
-      storageView.hidden = false;
+      setDetailMode("storage");
     },
     setError(message) {
       if (!message) {
