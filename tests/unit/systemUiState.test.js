@@ -132,6 +132,9 @@ describe("systemUiState", () => {
       index: 1,
     });
 
+    const invalidHeld = setHeldSkillSource(editorOpen, { row: "orbit", index: 0 });
+    expect(invalidHeld.inventory.weaponUi.skillEditor.heldSource).toBeNull();
+
     const editorClosed = closeWeaponSkillEditor(held);
     expect(editorClosed.inventory.weaponUi.skillEditor).toEqual({
       isOpen: false,

@@ -352,6 +352,47 @@ function normalizeWeaponSlotForUi(slot, fallback = 0) {
   return normalized;
 }
 
+function resolveFormationIdFromSlotView(slotView) {
+  const candidates = [
+    slotView?.weaponInstance?.formation_id,
+    slotView?.runtimeWeapon?.formationId,
+    slotView?.weaponDefinition?.formationId,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  return Object.keys(formationDefinitionsById ?? {})[0] ?? "";
+}
+
+function buildFormationSlotView(slotView) {
+  if (!slotView?.weaponInstance) {
+    return null;
+  }
+
+  const formationId = resolveFormationIdFromSlotView(slotView);
+  if (typeof formationId !== "string" || formationId.length <= 0) {
+    return null;
+  }
+
+  const definition = formationDefinitionsById?.[formationId] ?? null;
+  const nameKey = typeof definition?.nameKey === "string" ? definition.nameKey : "";
+  const descriptionKey = typeof definition?.descriptionKey === "string" ? definition.descriptionKey : "";
+  const name = tJa(nameKey, formationId);
+  const description = descriptionKey ? tJa(descriptionKey, descriptionKey) : "";
+  return {
+    formationId,
+    nameKey,
+    name,
+    descriptionKey,
+    description,
+    iconImageSrc: resolveGraphicAssetSrc(definition?.ui?.iconFileName ?? ""),
+  };
+}
+
 function resolveWeaponDetailFromSlot(slotView) {
   if (!slotView?.weaponInstance) {
     return null;
@@ -371,6 +412,8 @@ function resolveWeaponDetailFromSlot(slotView) {
         : "-";
 
   const skills = Array.isArray(weaponInstance.skills) ? weaponInstance.skills : [];
+  const formationSlot = buildFormationSlotView(slotView);
+  const formationName = formationSlot ? tJa(formationSlot.nameKey, formationSlot.name ?? formationSlot.formationId) : "-";
   const skillNames = skills.map((skill) => {
     const skillDefinition = skillDefinitionsById?.[skill?.id];
     const skillNameKey =
@@ -406,6 +449,10 @@ function resolveWeaponDetailFromSlot(slotView) {
         label: tJa("ui_label_weapon_stat_chip_slots", "Chip Slots"),
         value: Math.max(0, Math.floor(Number(weaponDefinition?.chipSlotCount) || skills.length)),
       },
+      {
+        label: tJa("ui_label_weapon_stat_formation", "Formation"),
+        value: formationName,
+      },
     ],
     skillNames: skillNames.length > 0 ? skillNames : [tJa("ui_label_weapon_skill_list_empty", "No Skills")],
   };
@@ -432,11 +479,8 @@ function buildWeaponUiViewModel(systemUiState) {
   );
   const skillLayout = buildSkillEditorLayout(skillEditorSlotView?.weaponInstance?.skills, chipSlotCount, skillDefinitionsById);
   const heldSource = skillEditorState.heldSource ?? null;
-  const heldSkill = heldSource
-    ? heldSource.row === "orbit"
-      ? skillLayout.orbitSlots[heldSource.index] ?? null
-      : skillLayout.chainSlots[heldSource.index] ?? null
-    : null;
+  const heldSkill =
+    heldSource && heldSource.row === "chain" ? skillLayout.chainSlots[heldSource.index] ?? null : null;
   const heldName = heldSkill ? tJa(skillDefinitionsById?.[heldSkill.id]?.nameKey, heldSkill.id) : "-";
 
   const chainSlots = skillLayout.chainSlots.map((skill, index) => {
@@ -451,17 +495,7 @@ function buildWeaponUiViewModel(systemUiState) {
     };
   });
 
-  const orbitSlots = skillLayout.orbitSlots.map((skill, index) => {
-    const skillDefinition = skillDefinitionsById?.[skill?.id] ?? null;
-    return {
-      index,
-      skillId: skill?.id ?? "",
-      name: skill ? tJa(skillDefinition?.nameKey, skill.id) : "",
-      plus: Math.max(0, Math.floor(Number(skill?.plus) || 0)),
-      skillType: skillDefinition?.skillType ?? "",
-      iconImageSrc: resolveGraphicAssetSrc(skillDefinition?.ui?.iconFileName ?? ""),
-    };
-  });
+  const formationSlot = buildFormationSlotView(skillEditorSlotView);
 
   return {
     selectedSlot,
@@ -488,7 +522,7 @@ function buildWeaponUiViewModel(systemUiState) {
       heldSource,
       heldLabel: `${tJa("ui_label_skill_editor_holding_prefix", "Holding")}: ${heldName}`,
       chainSlots,
-      orbitSlots,
+      formationSlot,
     },
   };
 }
@@ -611,10 +645,10 @@ function buildInventoryTextState() {
         heldSource:
           skillEditor.heldSource &&
           typeof skillEditor.heldSource === "object" &&
-          (skillEditor.heldSource.row === "chain" || skillEditor.heldSource.row === "orbit") &&
+          skillEditor.heldSource.row === "chain" &&
           Number.isFinite(skillEditor.heldSource.index)
             ? {
-                row: skillEditor.heldSource.row,
+                row: "chain",
                 index: Math.max(0, Math.floor(Number(skillEditor.heldSource.index))),
               }
             : null,
@@ -1432,8 +1466,8 @@ function updateWeaponSkillsAtSlot(slot, nextSkills) {
 
 function getSkillAtEditorSlot(layout, row, index) {
   const safeIndex = Math.max(0, Math.floor(Number(index) || 0));
-  if (row === "orbit") {
-    return layout.orbitSlots[safeIndex] ?? null;
+  if (row !== "chain") {
+    return null;
   }
   return layout.chainSlots[safeIndex] ?? null;
 }

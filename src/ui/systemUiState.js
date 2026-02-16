@@ -80,7 +80,7 @@ function normalizeHeldSource(source) {
   if (!source || typeof source !== "object") {
     return null;
   }
-  const row = source.row === "orbit" ? "orbit" : source.row === "chain" ? "chain" : "";
+  const row = source.row === "chain" ? "chain" : "";
   if (!row) {
     return null;
   }

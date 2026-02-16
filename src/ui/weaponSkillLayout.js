@@ -1,6 +1,4 @@
 const CHAIN_ROW = "chain";
-const ORBIT_ROW = "orbit";
-const ORBIT_SLOT_COUNT = 1;
 
 function toNonNegativeInt(value, fallback = 0) {
   if (!Number.isFinite(value)) {
@@ -38,41 +36,12 @@ function cloneSlots(slots) {
 function cloneLayout(layout) {
   return {
     chainSlots: cloneSlots(layout?.chainSlots),
-    orbitSlots: cloneSlots(layout?.orbitSlots),
   };
-}
-
-function getSkillType(skillDefinitionsById, skillId) {
-  if (typeof skillId !== "string" || skillId.length <= 0) {
-    return "";
-  }
-  return skillDefinitionsById?.[skillId]?.skillType ?? "";
-}
-
-function isOrbitSkill(instance, skillDefinitionsById) {
-  return getSkillType(skillDefinitionsById, instance?.id) === ORBIT_ROW;
-}
-
-function canPlaceInRow(instance, row, skillDefinitionsById) {
-  if (!instance) {
-    return true;
-  }
-  const isOrbit = isOrbitSkill(instance, skillDefinitionsById);
-  if (row === ORBIT_ROW) {
-    return isOrbit;
-  }
-  if (row === CHAIN_ROW) {
-    return !isOrbit;
-  }
-  return false;
 }
 
 function getRowSlots(layout, row) {
   if (row === CHAIN_ROW) {
     return layout.chainSlots;
-  }
-  if (row === ORBIT_ROW) {
-    return layout.orbitSlots;
   }
   return null;
 }
@@ -81,7 +50,7 @@ function normalizeSource(source, layout) {
   if (!source || typeof source !== "object") {
     return null;
   }
-  const row = source.row === ORBIT_ROW ? ORBIT_ROW : source.row === CHAIN_ROW ? CHAIN_ROW : "";
+  const row = source.row === CHAIN_ROW ? CHAIN_ROW : "";
   if (!row) {
     return null;
   }
@@ -98,25 +67,14 @@ function normalizeSource(source, layout) {
 
 export function buildSkillEditorLayout(skills, chipSlotCount, skillDefinitionsById = {}) {
   const chainCount = Math.max(0, toNonNegativeInt(chipSlotCount, 0));
+  void skillDefinitionsById;
   const layout = {
     chainSlots: Array.from({ length: chainCount }, () => null),
-    orbitSlots: Array.from({ length: ORBIT_SLOT_COUNT }, () => null),
   };
 
-  let chainWriteIndex = 0;
   const instances = normalizeSkillInstances(skills);
-  for (const instance of instances) {
-    if (isOrbitSkill(instance, skillDefinitionsById) && layout.orbitSlots[0] === null) {
-      layout.orbitSlots[0] = cloneSkillInstance(instance);
-      continue;
-    }
-
-    if (chainWriteIndex >= layout.chainSlots.length) {
-      continue;
-    }
-
-    layout.chainSlots[chainWriteIndex] = cloneSkillInstance(instance);
-    chainWriteIndex += 1;
+  for (let index = 0; index < layout.chainSlots.length; index += 1) {
+    layout.chainSlots[index] = cloneSkillInstance(instances[index]);
   }
 
   return layout;
@@ -147,22 +105,7 @@ export function swapSkillSlots(layout, source, target, skillDefinitionsById = {}
   const dstSlots = getRowSlots(nextLayout, dst.row);
   const srcInstance = cloneSkillInstance(srcSlots[src.index]);
   const dstInstance = cloneSkillInstance(dstSlots[dst.index]);
-
-  if (!canPlaceInRow(srcInstance, dst.row, skillDefinitionsById)) {
-    return {
-      layout: nextLayout,
-      changed: false,
-      reason: "orbit_constraint",
-    };
-  }
-
-  if (!canPlaceInRow(dstInstance, src.row, skillDefinitionsById)) {
-    return {
-      layout: nextLayout,
-      changed: false,
-      reason: "orbit_constraint",
-    };
-  }
+  void skillDefinitionsById;
 
   srcSlots[src.index] = dstInstance;
   dstSlots[dst.index] = srcInstance;
@@ -175,7 +118,7 @@ export function swapSkillSlots(layout, source, target, skillDefinitionsById = {}
 
 export function flattenSkillEditorLayout(layout) {
   const nextLayout = cloneLayout(layout);
-  return [...nextLayout.chainSlots, ...nextLayout.orbitSlots]
+  return nextLayout.chainSlots
     .map((instance) => cloneSkillInstance(instance))
     .filter((instance) => instance !== null);
 }

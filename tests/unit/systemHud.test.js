@@ -122,7 +122,8 @@ function createHudRoot() {
   const weaponSkillWeaponName = createElement();
   const weaponSkillHeld = createElement();
   const weaponSkillChainRow = createElement();
-  const weaponSkillOrbitRow = createElement();
+  const weaponSkillFormationLabel = createElement();
+  const weaponSkillFormationSlot = createElement();
   const toast = createElement();
 
   const quickSlots = Array.from({ length: 8 }, () => createSlotButton());
@@ -178,7 +179,8 @@ function createHudRoot() {
     "#weapon-skill-weapon-name": weaponSkillWeaponName,
     "#weapon-skill-held": weaponSkillHeld,
     "#weapon-skill-chain-row": weaponSkillChainRow,
-    "#weapon-skill-orbit-row": weaponSkillOrbitRow,
+    "#weapon-skill-formation-label": weaponSkillFormationLabel,
+    "#weapon-skill-formation-slot": weaponSkillFormationSlot,
     "#system-ui-toast": toast,
   };
 
@@ -227,6 +229,8 @@ function createHudRoot() {
     weaponSlots,
     weaponEquipButton,
     weaponSkillChainRow,
+    weaponSkillFormationLabel,
+    weaponSkillFormationSlot,
     toast,
     quickSlots,
     inventorySlots,
@@ -329,7 +333,7 @@ describe("systemHud", () => {
         canEquipSwap: false,
         slots: [{ slot: 0, hasWeapon: true, weaponDefId: "weapon_sword_01", iconImageSrc: "/graphic/ui/icon/icon_weapon/icon_sword_01.png" }],
         details: null,
-        skillEditor: { isOpen: false, heldSource: null, chainSlots: [], orbitSlots: [] },
+        skillEditor: { isOpen: false, heldSource: null, chainSlots: [], formationSlot: null },
       },
       chip: { entries: [], selectedChipKey: null, details: null },
       toastMessage: "",
@@ -358,6 +362,44 @@ describe("systemHud", () => {
 
     expect(onSkillSlotClick).toHaveBeenCalledTimes(1);
     expect(onSkillSlotClick).toHaveBeenCalledWith({ row: "chain", index: 2 });
+  });
+
+  it("スキルエディタが開いている場合、Formation 枠を描画する", () => {
+    const refs = createHudRoot();
+    const hud = createSystemHud(refs.root, {});
+
+    hud.setInventory({
+      capacity: 10,
+      items: [],
+      selectedItemId: null,
+      quickSlots: [],
+      isWindowOpen: true,
+      activeTab: "weapon",
+      weapon: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        canEquipSwap: false,
+        slots: [{ slot: 0, hasWeapon: true, weaponDefId: "weapon_sword_01", iconImageSrc: "/graphic/ui/icon/icon_weapon/icon_sword_01.png" }],
+        details: null,
+        skillEditor: {
+          isOpen: true,
+          heldSource: null,
+          chainSlots: [],
+          formationSlot: {
+            formationId: "formation_id_circle01",
+            nameKey: "formation_name_circle",
+            descriptionKey: "formation_desc_circle",
+            iconImageSrc: "/graphic/ui/icon/icon_skill/icon_orbit_circle_01.png",
+          },
+        },
+      },
+      chip: { entries: [], selectedChipKey: null, details: null },
+      toastMessage: "",
+    });
+
+    expect(refs.weaponSkillFormationLabel.textContent).toBe("Formation");
+    expect(refs.weaponSkillFormationSlot.innerHTML).toContain("weapon-formation-slot");
+    expect(refs.weaponSkillFormationSlot.innerHTML).toContain("サークル");
   });
 
   it("選択アイテムに応じて詳細とボタン活性を更新する", () => {

@@ -195,7 +195,7 @@ function buildSkillSlotPayload(element) {
   }
   const row = readDatasetValue(element, "uiSkillRow", "data-ui-skill-row");
   const index = toNonNegativeInt(Number(readDatasetValue(element, "uiSkillIndex", "data-ui-skill-index")), -1);
-  if ((row !== "chain" && row !== "orbit") || index < 0) {
+  if (row !== "chain" || index < 0) {
     return null;
   }
   return {
@@ -230,6 +230,32 @@ function buildSkillSlotMarkup(slot, row, heldSource) {
       }</span>
       ${hasSkill && plus > 0 ? `<span class="weapon-skill-slot-plus">+${plus}</span>` : ""}
     </button>`;
+}
+
+function buildFormationSlotMarkup(slot) {
+  const hasFormation = typeof slot?.formationId === "string" && slot.formationId.length > 0;
+  const formationName = hasFormation
+    ? tJa(slot?.nameKey, slot?.name ?? slot?.nameKey ?? slot?.formationId)
+    : tJa("ui_label_skill_editor_formation_none", "未設定");
+  const formationDescription = hasFormation
+    ? tJa(slot?.descriptionKey, slot?.description ?? slot?.descriptionKey ?? "")
+    : tJa("ui_label_inventory_placeholder");
+  const iconImageSrc = hasFormation && typeof slot?.iconImageSrc === "string" ? slot.iconImageSrc : "";
+  return `<div class="weapon-formation-slot${hasFormation ? "" : " is-empty"}" title="${escapeHtml(formationName)}">
+    ${
+      hasFormation
+        ? `<span class="weapon-formation-slot-icon">${
+            iconImageSrc
+              ? `<img class="inventory-asset-icon-image" src="${escapeHtml(iconImageSrc)}" alt="${escapeHtml(formationName)}" />`
+              : ""
+          }</span>`
+        : ""
+    }
+    <span class="weapon-formation-slot-body">
+      <span class="weapon-formation-slot-name">${escapeHtml(formationName)}</span>
+      <span class="weapon-formation-slot-description">${escapeHtml(formationDescription)}</span>
+    </span>
+  </div>`;
 }
 
 export function createSystemHud(root, handlers = {}) {
@@ -276,7 +302,8 @@ export function createSystemHud(root, handlers = {}) {
   const weaponSkillWeaponName = root.querySelector("#weapon-skill-weapon-name");
   const weaponSkillHeld = root.querySelector("#weapon-skill-held");
   const weaponSkillChainRow = root.querySelector("#weapon-skill-chain-row");
-  const weaponSkillOrbitRow = root.querySelector("#weapon-skill-orbit-row");
+  const weaponSkillFormationLabel = root.querySelector("#weapon-skill-formation-label");
+  const weaponSkillFormationSlot = root.querySelector("#weapon-skill-formation-slot");
 
   const toast = root.querySelector("#system-ui-toast");
 
@@ -379,7 +406,7 @@ export function createSystemHud(root, handlers = {}) {
     });
   }
 
-  for (const rowElement of [weaponSkillChainRow, weaponSkillOrbitRow]) {
+  for (const rowElement of [weaponSkillChainRow]) {
     if (!rowElement) {
       continue;
     }
@@ -726,6 +753,7 @@ export function createSystemHud(root, handlers = {}) {
         isOpen: editorOpen,
         heldSource: skillEditor?.heldSource ?? null,
       };
+      setText(weaponSkillFormationLabel, tJa("ui_label_skill_editor_formation", "Formation"));
       setHidden(weaponSkillOverlay, !editorOpen);
       if (editorOpen) {
         const weaponName = tJa(skillEditor.weaponNameKey, skillEditor.weaponName ?? skillEditor.weaponNameKey ?? "");
@@ -734,23 +762,20 @@ export function createSystemHud(root, handlers = {}) {
         setText(weaponSkillHeld, skillEditor.heldLabel ?? tJa("ui_label_skill_editor_holding"));
 
         const chainSlots = Array.isArray(skillEditor.chainSlots) ? skillEditor.chainSlots : [];
-        const orbitSlots = Array.isArray(skillEditor.orbitSlots) ? skillEditor.orbitSlots : [];
         if (weaponSkillChainRow) {
           weaponSkillChainRow.innerHTML = chainSlots
             .map((slot) => buildSkillSlotMarkup(slot, "chain", skillEditor.heldSource))
             .join("");
         }
-        if (weaponSkillOrbitRow) {
-          weaponSkillOrbitRow.innerHTML = orbitSlots
-            .map((slot) => buildSkillSlotMarkup(slot, "orbit", skillEditor.heldSource))
-            .join("");
+        if (weaponSkillFormationSlot) {
+          weaponSkillFormationSlot.innerHTML = buildFormationSlotMarkup(skillEditor.formationSlot);
         }
       } else {
         if (weaponSkillChainRow) {
           weaponSkillChainRow.innerHTML = "";
         }
-        if (weaponSkillOrbitRow) {
-          weaponSkillOrbitRow.innerHTML = "";
+        if (weaponSkillFormationSlot) {
+          weaponSkillFormationSlot.innerHTML = "";
         }
       }
 
