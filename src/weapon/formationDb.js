@@ -11,6 +11,7 @@ const REQUIRED_KEYS = [
   "bias_strength_mul",
   "bias_response_mul",
   "params",
+  "ui",
 ];
 
 function assertHasRequiredKeys(rawFormation, fileName) {
@@ -55,6 +56,18 @@ function assertFormationShape(rawFormation, fileName) {
   if (!rawFormation.params || typeof rawFormation.params !== "object") {
     throw new Error(`Formation DB ${fileName} has invalid params`);
   }
+
+  if (!rawFormation.ui || typeof rawFormation.ui !== "object") {
+    throw new Error(`Formation DB ${fileName} has invalid ui`);
+  }
+
+  if (typeof rawFormation.ui.icon_file_name !== "string" || rawFormation.ui.icon_file_name.trim().length === 0) {
+    throw new Error(`Formation DB ${fileName} has invalid ui.icon_file_name: ${rawFormation.ui.icon_file_name}`);
+  }
+
+  if (!Number.isFinite(rawFormation.ui.sort_order)) {
+    throw new Error(`Formation DB ${fileName} has invalid ui.sort_order: ${rawFormation.ui.sort_order}`);
+  }
 }
 
 function normalizeClamp(rawClamp = {}) {
@@ -86,7 +99,10 @@ function normalizeFormationRecord(rawFormation, fileName) {
     biasResponseMul: rawFormation.bias_response_mul,
     clamp: normalizeClamp(rawFormation.clamp),
     params: rawFormation.params,
-    ui: rawFormation.ui ?? null,
+    ui: {
+      iconFileName: rawFormation.ui.icon_file_name.trim(),
+      sortOrder: Math.floor(Number(rawFormation.ui.sort_order) || 0),
+    },
   };
 }
 

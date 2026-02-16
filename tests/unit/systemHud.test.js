@@ -389,7 +389,7 @@ describe("systemHud", () => {
             formationId: "formation_id_circle01",
             nameKey: "formation_name_circle",
             descriptionKey: "formation_desc_circle",
-            iconImageSrc: "/graphic/ui/icon/icon_skill/icon_orbit_circle_01.png",
+            iconImageSrc: "/graphic/ui/icon/icon_formation/icon_formation_circle_01.png",
           },
         },
       },

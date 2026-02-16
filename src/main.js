@@ -389,7 +389,7 @@ function buildFormationSlotView(slotView) {
     name,
     descriptionKey,
     description,
-    iconImageSrc: resolveGraphicAssetSrc(definition?.ui?.iconFileName ?? ""),
+    iconImageSrc: resolveGraphicAssetSrc(definition?.ui?.iconFileName ?? definition?.ui?.icon_file_name ?? ""),
   };
 }
 
