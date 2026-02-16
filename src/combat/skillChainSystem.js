@@ -1034,6 +1034,13 @@ function updatePoisonDots(enemies, dt, events) {
   }
 }
 
+function ensureChainSpawnCounterInitialized(runtime, attackSeq) {
+  const key = String(Math.max(0, toNonNegativeInt(attackSeq, 0)));
+  if (!Number.isFinite(runtime?.chainSpawnCountByAttackSeq?.[key])) {
+    runtime.chainSpawnCountByAttackSeq[key] = 0;
+  }
+}
+
 export function updateSkillChainCombat({
   dt,
   dungeon,
@@ -1042,6 +1049,7 @@ export function updateSkillChainCombat({
   effects,
   weapons,
   weaponStartEvents,
+  weaponHitEvents,
   weaponDefinitionsById,
   skillDefinitionsById,
   buildEffectRuntime,
@@ -1092,7 +1100,7 @@ export function updateSkillChainCombat({
 
     const runtime = ensureWeaponSkillRuntime(weaponRuntime);
     const attackSeq = Math.max(0, toNonNegativeInt(startEvent.attackSeq, 0));
-    runtime.chainSpawnCountByAttackSeq[String(attackSeq)] = 0;
+    ensureChainSpawnCounterInitialized(runtime, attackSeq);
 
     queue.push({
       type: "attack_spawn",
@@ -1102,6 +1110,47 @@ export function updateSkillChainCombat({
       skillPlan,
       spawnX: toFiniteNumber(startEvent.worldX, getWeaponCenter(weaponRuntime).x),
       spawnY: toFiniteNumber(startEvent.worldY, getWeaponCenter(weaponRuntime).y),
+    });
+  }
+
+  const hitEntrySpawnKeys = new Set();
+  for (const hitEvent of Array.isArray(weaponHitEvents) ? weaponHitEvents : []) {
+    const weaponId = typeof hitEvent?.weaponId === "string" ? hitEvent.weaponId : "";
+    const enemyId = typeof hitEvent?.enemyId === "string" ? hitEvent.enemyId : "";
+    if (weaponId.length <= 0 || enemyId.length <= 0) {
+      continue;
+    }
+
+    const weaponRuntime = weaponRuntimeById.get(weaponId);
+    const skillPlan = weaponSkillPlanById.get(weaponId);
+    if (!weaponRuntime || !skillPlan || !Array.isArray(skillPlan.attackSteps) || skillPlan.attackSteps.length <= 0) {
+      continue;
+    }
+
+    const entryAttack = skillPlan.attackSteps[0];
+    if (!entryAttack || entryAttack.startSpawnTiming !== "hit") {
+      continue;
+    }
+
+    const fallbackAttackSeq = Math.max(0, toNonNegativeInt(weaponRuntime.attackSeq, 0));
+    const attackSeq = Math.max(0, toNonNegativeInt(hitEvent.attackSeq, fallbackAttackSeq));
+    const spawnKey = `${weaponId}:${attackSeq}:${enemyId}`;
+    if (hitEntrySpawnKeys.has(spawnKey)) {
+      continue;
+    }
+    hitEntrySpawnKeys.add(spawnKey);
+
+    const runtime = ensureWeaponSkillRuntime(weaponRuntime);
+    ensureChainSpawnCounterInitialized(runtime, attackSeq);
+
+    queue.push({
+      type: "attack_spawn",
+      attackSeq,
+      attackStepIndex: 0,
+      weaponRuntime,
+      skillPlan,
+      spawnX: toFiniteNumber(hitEvent.worldX, getWeaponCenter(weaponRuntime).x),
+      spawnY: toFiniteNumber(hitEvent.worldY, getWeaponCenter(weaponRuntime).y),
     });
   }
 

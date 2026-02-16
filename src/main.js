@@ -2225,6 +2225,44 @@ function buildWeaponStartEvents(weapons, beforeSnapshot) {
   return events;
 }
 
+function buildWeaponHitEvents(events, weapons) {
+  const weaponAttackSeqById = new Map();
+  for (const weapon of Array.isArray(weapons) ? weapons : []) {
+    if (!weapon || typeof weapon.id !== "string") {
+      continue;
+    }
+    weaponAttackSeqById.set(weapon.id, Math.max(0, Math.floor(Number(weapon.attackSeq) || 0)));
+  }
+
+  const hitEvents = [];
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.kind !== "damage" || event?.targetType !== "enemy") {
+      continue;
+    }
+
+    const weaponId = typeof event.weaponId === "string" ? event.weaponId : "";
+    const enemyId = typeof event.enemyId === "string" ? event.enemyId : "";
+    if (weaponId.length <= 0 || enemyId.length <= 0) {
+      continue;
+    }
+
+    const runtimeAttackSeq = weaponAttackSeqById.get(weaponId);
+    const resolvedAttackSeq = Number.isFinite(runtimeAttackSeq)
+      ? Math.max(0, Math.floor(Number(runtimeAttackSeq) || 0))
+      : Math.max(0, Math.floor(Number(event.attackSeq) || 0));
+
+    hitEvents.push({
+      weaponId,
+      attackSeq: resolvedAttackSeq,
+      enemyId,
+      worldX: Number(event.worldX) || 0,
+      worldY: Number(event.worldY) || 0,
+    });
+  }
+
+  return hitEvents;
+}
+
 function spawnWeaponStartEffects(weapons, beforeSnapshot) {
   const spawned = [];
 
@@ -2459,6 +2497,7 @@ function stepSimulation(dt) {
     dt
   );
   const weaponStartEvents = buildWeaponStartEvents(appState.weapons, weaponCombatSnapshot);
+  const weaponHitEvents = buildWeaponHitEvents(playerCombatEvents, appState.weapons);
   const skillChainResult = updateSkillChainCombat({
     dt,
     dungeon: appState.dungeon,
@@ -2467,6 +2506,7 @@ function stepSimulation(dt) {
     effects: appState.effects,
     weapons: appState.weapons,
     weaponStartEvents,
+    weaponHitEvents,
     weaponDefinitionsById,
     skillDefinitionsById,
     buildEffectRuntime,

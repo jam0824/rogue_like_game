@@ -280,6 +280,166 @@ describe("skillChainSystem", () => {
     expect(dotEvents.length).toBeGreaterThan(0);
   });
 
+  it("start_spawn_timing=hit の先頭Attackは weaponHitEvents で開始し、weaponStartEvents では開始しない", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    const weaponDefinition = createWeaponDefinition([
+      { id: "skill_id_explosion_01", plus: 0 },
+      { id: "skill_id_poison_01", plus: 0 },
+      { id: "skill_id_projectile_01", plus: 0 },
+    ]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+
+    const createWeaponRuntime = () => ({
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    });
+
+    const startOnlyWeapon = createWeaponRuntime();
+    const startOnlyEnemies = [createEnemy("enemy-a", 160, 108, 220)];
+    const startOnly = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: startOnlyEnemies,
+      effects: [],
+      weapons: [startOnlyWeapon],
+      weaponStartEvents: [{ weaponId: "weapon-0", weaponDefId: "weapon_sword_01", attackSeq: 1, worldX: 116, worldY: 116 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+    });
+    const startOnlyExplosionEvents = startOnly.events.filter(
+      (event) => event.sourceType === "skill" && event.skillId === "skill_id_explosion_01"
+    );
+    expect(startOnlyExplosionEvents).toHaveLength(0);
+
+    const hitStartedWeapon = createWeaponRuntime();
+    const hitStartedEnemies = [createEnemy("enemy-a", 160, 108, 220)];
+    const hitStarted = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: hitStartedEnemies,
+      effects: [],
+      weapons: [hitStartedWeapon],
+      weaponStartEvents: [],
+      weaponHitEvents: [{
+        weaponId: "weapon-0",
+        attackSeq: 1,
+        enemyId: "enemy-a",
+        worldX: 176,
+        worldY: 124,
+      }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+    });
+    const hitStartedExplosionEvents = hitStarted.events.filter(
+      (event) => event.sourceType === "skill" && event.skillId === "skill_id_explosion_01"
+    );
+    expect(hitStartedExplosionEvents.length).toBeGreaterThan(0);
+  });
+
+  it("start_spawn_timing=hit は同一 weaponId+attackSeq+enemyId を1回だけ開始する", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_explosion_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const weaponRuntime = {
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    };
+    const enemies = [createEnemy("enemy-a", 160, 108, 220)];
+
+    const result = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies,
+      effects: [],
+      weapons: [weaponRuntime],
+      weaponStartEvents: [],
+      weaponHitEvents: [
+        { weaponId: "weapon-0", attackSeq: 1, enemyId: "enemy-a", worldX: 176, worldY: 124 },
+        { weaponId: "weapon-0", attackSeq: 1, enemyId: "enemy-a", worldX: 176, worldY: 124 },
+      ],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+    });
+
+    const explosionEvents = result.events.filter(
+      (event) => event.sourceType === "skill" && event.skillId === "skill_id_explosion_01"
+    );
+    expect(explosionEvents).toHaveLength(1);
+  });
+
+  it("start_spawn_timing=hit は同一attackSeqでも敵が異なれば開始する", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_explosion_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const weaponRuntime = {
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    };
+    const enemies = [
+      createEnemy("enemy-a", 160, 108, 220),
+      createEnemy("enemy-b", 420, 320, 220),
+    ];
+
+    const result = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies,
+      effects: [],
+      weapons: [weaponRuntime],
+      weaponStartEvents: [],
+      weaponHitEvents: [
+        { weaponId: "weapon-0", attackSeq: 1, enemyId: "enemy-a", worldX: 176, worldY: 124 },
+        { weaponId: "weapon-0", attackSeq: 1, enemyId: "enemy-b", worldX: 436, worldY: 336 },
+      ],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+    });
+
+    const explosionEvents = result.events.filter(
+      (event) => event.sourceType === "skill" && event.skillId === "skill_id_explosion_01"
+    );
+    expect(explosionEvents).toHaveLength(2);
+  });
+
   it("MAX_CHAIN_SPAWN により連鎖生成数が制限される", () => {
     const dungeon = createDungeon();
     const player = createPlayer();
