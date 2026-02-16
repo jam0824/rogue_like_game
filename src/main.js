@@ -277,8 +277,9 @@ function resolveGraphicAssetSrc(relativePath) {
   }
 
   const normalized = relativePath.replace(/^\/+/, "");
+  const resolvedPath = normalized.startsWith("graphic/") ? normalized : `graphic/${normalized}`;
   try {
-    return new URL(`../graphic/${normalized}`, import.meta.url).href;
+    return new URL(`../${resolvedPath}`, import.meta.url).href;
   } catch {
     return "";
   }
