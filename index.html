@@ -81,65 +81,168 @@
             <button id="inventory-close" type="button" aria-label="Close inventory">×</button>
           </header>
 
-          <div class="inventory-window-content">
-            <section class="inventory-grid-wrap">
-              <div id="inventory-grid" aria-label="Inventory grid">
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="0">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="1">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="2">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="3">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="4">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="5">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="6">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="7">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="8">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
-                <button type="button" class="inventory-slot" data-ui-inventory-slot="9">
-                  <span class="system-item-icon" data-ui-icon></span>
-                  <span class="system-item-qty" data-ui-qty></span>
-                </button>
+          <nav class="inventory-tabs" aria-label="Inventory tabs">
+            <button type="button" class="inventory-tab is-active" data-ui-inventory-tab="item">ITEM</button>
+            <button type="button" class="inventory-tab" data-ui-inventory-tab="weapon">WEAPON</button>
+            <button type="button" class="inventory-tab" data-ui-inventory-tab="chip">CHIP</button>
+          </nav>
+
+          <div class="inventory-tab-panels">
+            <section class="inventory-tab-panel" data-ui-tab-panel="item">
+              <div class="inventory-window-content">
+                <section class="inventory-grid-wrap">
+                  <div id="inventory-grid" aria-label="Inventory grid">
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="0">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="1">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="2">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="3">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="4">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="5">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="6">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="7">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="8">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                    <button type="button" class="inventory-slot" data-ui-inventory-slot="9">
+                      <span class="system-item-icon" data-ui-icon></span>
+                      <span class="system-item-qty" data-ui-qty></span>
+                    </button>
+                  </div>
+                </section>
+
+                <aside class="inventory-details" aria-label="Item details">
+                  <div id="inventory-details-icon"></div>
+                  <h3 id="inventory-details-name">空きスロット</h3>
+                  <p id="inventory-details-description">アイテムを選択してください。</p>
+                  <p id="inventory-details-effect">効果: -</p>
+                </aside>
+              </div>
+
+              <footer class="inventory-window-footer">
+                <button id="inventory-use" type="button">USE</button>
+                <button id="inventory-drop" type="button">DROP</button>
+              </footer>
+            </section>
+
+            <section class="inventory-tab-panel" data-ui-tab-panel="weapon" hidden>
+              <div class="inventory-weapon-content">
+                <section class="inventory-weapon-slots-wrap">
+                  <div class="inventory-weapon-header">
+                    <h3 class="inventory-subtitle">Equipped Weapons</h3>
+                  </div>
+                  <div class="inventory-weapon-grid" aria-label="Equipped weapon slots">
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="0">
+                      <span class="inventory-weapon-slot-index">1</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="1">
+                      <span class="inventory-weapon-slot-index">2</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="2">
+                      <span class="inventory-weapon-slot-index">3</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="3">
+                      <span class="inventory-weapon-slot-index">4</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="4">
+                      <span class="inventory-weapon-slot-index">5</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="5">
+                      <span class="inventory-weapon-slot-index">6</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="6">
+                      <span class="inventory-weapon-slot-index">7</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                    <button type="button" class="inventory-weapon-slot" data-ui-weapon-slot="7">
+                      <span class="inventory-weapon-slot-index">8</span>
+                      <span class="inventory-weapon-slot-icon" data-ui-weapon-icon></span>
+                    </button>
+                  </div>
+                  <div class="inventory-weapon-actions">
+                    <button id="inventory-weapon-equip" type="button">EQUIP</button>
+                  </div>
+                </section>
+
+                <aside class="inventory-weapon-details" aria-label="Weapon details">
+                  <div id="inventory-weapon-details-icon"></div>
+                  <h3 id="inventory-weapon-details-name">No Weapon</h3>
+                  <p id="inventory-weapon-details-rarity">Rarity: -</p>
+                  <ul id="inventory-weapon-details-stats"></ul>
+                  <ul id="inventory-weapon-details-skills"></ul>
+                </aside>
               </div>
             </section>
 
-            <aside class="inventory-details" aria-label="Item details">
-              <div id="inventory-details-icon"></div>
-              <h3 id="inventory-details-name">空きスロット</h3>
-              <p id="inventory-details-description">アイテムを選択してください。</p>
-              <p id="inventory-details-effect">効果: -</p>
-            </aside>
+            <section class="inventory-tab-panel" data-ui-tab-panel="chip" hidden>
+              <div class="inventory-chip-content">
+                <section class="inventory-chip-list-wrap">
+                  <h3 class="inventory-subtitle">Skill Chips</h3>
+                  <div id="inventory-chip-list" aria-label="Skill chip list"></div>
+                </section>
+                <aside class="inventory-chip-details" aria-label="Skill chip details">
+                  <div id="inventory-chip-details-icon"></div>
+                  <h3 id="inventory-chip-details-name">No Skill Chip</h3>
+                  <p id="inventory-chip-details-type">Type: -</p>
+                  <p id="inventory-chip-details-description">スキルチップを選択してください。</p>
+                </aside>
+              </div>
+            </section>
           </div>
-
-          <footer class="inventory-window-footer">
-            <button id="inventory-use" type="button">USE</button>
-            <button id="inventory-drop" type="button">DROP</button>
-          </footer>
         </section>
+
+        <div id="weapon-skill-overlay" hidden>
+          <section id="weapon-skill-window" aria-label="Weapon skill editor">
+            <header class="weapon-skill-titlebar">
+              <div id="weapon-skill-weapon-icon"></div>
+              <div class="weapon-skill-title-wrap">
+                <h3 id="weapon-skill-weapon-name">Skill Editor</h3>
+                <p id="weapon-skill-held">Holding: -</p>
+              </div>
+              <button id="weapon-skill-close" type="button" aria-label="Close weapon skill editor">×</button>
+            </header>
+            <div class="weapon-skill-content">
+              <section class="weapon-skill-section">
+                <h4>Skill Chain</h4>
+                <div id="weapon-skill-chain-row"></div>
+              </section>
+              <section class="weapon-skill-section">
+                <h4>Orbit</h4>
+                <div id="weapon-skill-orbit-row"></div>
+              </section>
+            </div>
+          </section>
+        </div>
       </section>
 
       <aside id="debug-panel" aria-label="Dungeon debug panel">

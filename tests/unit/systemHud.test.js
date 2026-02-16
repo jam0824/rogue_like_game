@@ -80,6 +80,13 @@ function createSlotButton() {
   return { button, icon, qty };
 }
 
+function createWeaponSlotButton() {
+  const button = createElement();
+  const icon = createElement();
+  button.__setChild("[data-ui-weapon-icon]", icon);
+  return { button, icon };
+}
+
 function createHudRoot() {
   const hpBar = createElement();
   const hpFill = createElement();
@@ -98,10 +105,43 @@ function createHudRoot() {
   const detailsEffect = createElement();
   const useButton = createElement();
   const dropButton = createElement();
+  const weaponEquipButton = createElement();
+  const weaponDetailsIcon = createElement();
+  const weaponDetailsName = createElement();
+  const weaponDetailsRarity = createElement();
+  const weaponDetailsStats = createElement();
+  const weaponDetailsSkills = createElement();
+  const chipList = createElement();
+  const chipDetailsIcon = createElement();
+  const chipDetailsName = createElement();
+  const chipDetailsType = createElement();
+  const chipDetailsDescription = createElement();
+  const weaponSkillOverlay = createElement();
+  const weaponSkillClose = createElement();
+  const weaponSkillWeaponIcon = createElement();
+  const weaponSkillWeaponName = createElement();
+  const weaponSkillHeld = createElement();
+  const weaponSkillChainRow = createElement();
+  const weaponSkillOrbitRow = createElement();
   const toast = createElement();
 
   const quickSlots = Array.from({ length: 8 }, () => createSlotButton());
   const inventorySlots = Array.from({ length: 10 }, () => createSlotButton());
+  const weaponSlots = Array.from({ length: 8 }, (_, index) => {
+    const slot = createWeaponSlotButton();
+    slot.button.dataset.uiWeaponSlot = String(index);
+    return slot;
+  });
+  const tabButtons = ["item", "weapon", "chip"].map((tab) => {
+    const button = createElement();
+    button.dataset.uiInventoryTab = tab;
+    return button;
+  });
+  const tabPanels = ["item", "weapon", "chip"].map((tab) => {
+    const panel = createElement();
+    panel.dataset.uiTabPanel = tab;
+    return panel;
+  });
 
   const byId = {
     "#system-hp-bar": hpBar,
@@ -121,6 +161,24 @@ function createHudRoot() {
     "#inventory-details-effect": detailsEffect,
     "#inventory-use": useButton,
     "#inventory-drop": dropButton,
+    "#inventory-weapon-equip": weaponEquipButton,
+    "#inventory-weapon-details-icon": weaponDetailsIcon,
+    "#inventory-weapon-details-name": weaponDetailsName,
+    "#inventory-weapon-details-rarity": weaponDetailsRarity,
+    "#inventory-weapon-details-stats": weaponDetailsStats,
+    "#inventory-weapon-details-skills": weaponDetailsSkills,
+    "#inventory-chip-list": chipList,
+    "#inventory-chip-details-icon": chipDetailsIcon,
+    "#inventory-chip-details-name": chipDetailsName,
+    "#inventory-chip-details-type": chipDetailsType,
+    "#inventory-chip-details-description": chipDetailsDescription,
+    "#weapon-skill-overlay": weaponSkillOverlay,
+    "#weapon-skill-close": weaponSkillClose,
+    "#weapon-skill-weapon-icon": weaponSkillWeaponIcon,
+    "#weapon-skill-weapon-name": weaponSkillWeaponName,
+    "#weapon-skill-held": weaponSkillHeld,
+    "#weapon-skill-chain-row": weaponSkillChainRow,
+    "#weapon-skill-orbit-row": weaponSkillOrbitRow,
     "#system-ui-toast": toast,
   };
 
@@ -132,6 +190,15 @@ function createHudRoot() {
       }
       if (selector === "[data-ui-inventory-slot]") {
         return inventorySlots.map((slot) => slot.button);
+      }
+      if (selector === "[data-ui-inventory-tab]") {
+        return tabButtons;
+      }
+      if (selector === "[data-ui-tab-panel]") {
+        return tabPanels;
+      }
+      if (selector === "[data-ui-weapon-slot]") {
+        return weaponSlots.map((slot) => slot.button);
       }
       return [];
     }),
@@ -155,6 +222,11 @@ function createHudRoot() {
     detailsEffect,
     useButton,
     dropButton,
+    tabButtons,
+    tabPanels,
+    weaponSlots,
+    weaponEquipButton,
+    weaponSkillChainRow,
     toast,
     quickSlots,
     inventorySlots,
@@ -226,6 +298,66 @@ describe("systemHud", () => {
 
     expect(onOpenInventoryWindow).toHaveBeenCalledTimes(1);
     expect(onCloseInventoryWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it("タブクリックで onSelectInventoryTab が呼ばれる", () => {
+    const refs = createHudRoot();
+    const onSelectInventoryTab = vi.fn();
+    createSystemHud(refs.root, { onSelectInventoryTab });
+
+    refs.tabButtons[1].trigger("click");
+    expect(onSelectInventoryTab).toHaveBeenCalledTimes(1);
+    expect(onSelectInventoryTab).toHaveBeenCalledWith("weapon");
+  });
+
+  it("武器スロットクリックで onSelectWeaponSlot が呼ばれ、再クリックで onOpenWeaponSkillEditor が呼ばれる", () => {
+    const refs = createHudRoot();
+    const onSelectWeaponSlot = vi.fn();
+    const onOpenWeaponSkillEditor = vi.fn();
+    const hud = createSystemHud(refs.root, { onSelectWeaponSlot, onOpenWeaponSkillEditor });
+
+    hud.setInventory({
+      capacity: 10,
+      items: [],
+      selectedItemId: null,
+      quickSlots: [],
+      isWindowOpen: true,
+      activeTab: "weapon",
+      weapon: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        canEquipSwap: false,
+        slots: [{ slot: 0, hasWeapon: true, weaponDefId: "weapon_sword_01", iconImageSrc: "/graphic/ui/icon/icon_weapon/icon_sword_01.png" }],
+        details: null,
+        skillEditor: { isOpen: false, heldSource: null, chainSlots: [], orbitSlots: [] },
+      },
+      chip: { entries: [], selectedChipKey: null, details: null },
+      toastMessage: "",
+    });
+
+    refs.weaponSlots[0].button.trigger("click");
+    expect(onSelectWeaponSlot).toHaveBeenCalledWith(0);
+    expect(onOpenWeaponSkillEditor).toHaveBeenCalledWith(0);
+  });
+
+  it("スキルスロットクリックで onSkillSlotClick の payload が渡る", () => {
+    const refs = createHudRoot();
+    const onSkillSlotClick = vi.fn();
+    createSystemHud(refs.root, { onSkillSlotClick });
+
+    const eventTarget = {
+      dataset: {
+        uiSkillRow: "chain",
+        uiSkillIndex: "2",
+      },
+      closest() {
+        return this;
+      },
+    };
+    refs.weaponSkillChainRow.trigger("click", { target: eventTarget });
+
+    expect(onSkillSlotClick).toHaveBeenCalledTimes(1);
+    expect(onSkillSlotClick).toHaveBeenCalledWith({ row: "chain", index: 2 });
   });
 
   it("選択アイテムに応じて詳細とボタン活性を更新する", () => {

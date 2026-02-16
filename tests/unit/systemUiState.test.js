@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  closeWeaponSkillEditor,
   clearToastMessage,
   createInitialSystemUiState,
   dropSelectedInventoryItemToGround,
   findDropTileNearPlayer,
+  openWeaponSkillEditor,
+  selectChipEntry,
+  selectWeaponSlot,
+  setHeldSkillSource,
+  setInventoryTab,
+  setWeaponSwapTargetSlot,
   tryAddInventoryItem,
   useInventoryItem,
   useQuickSlotItem,
@@ -87,6 +94,56 @@ describe("systemUiState", () => {
     const next = clearToastMessage(state);
     expect(next.toastMessage).toBe("");
     expect(state.toastMessage).toBe("temporary");
+  });
+
+  it("タブ切替は item/weapon/chip のみ許可し、未知値は item に正規化する", () => {
+    const state = createInitialSystemUiState();
+
+    const weaponTab = setInventoryTab(state, "weapon");
+    expect(weaponTab.inventory.activeTab).toBe("weapon");
+
+    const chipTab = setInventoryTab(weaponTab, "chip");
+    expect(chipTab.inventory.activeTab).toBe("chip");
+
+    const fallbackTab = setInventoryTab(chipTab, "unknown");
+    expect(fallbackTab.inventory.activeTab).toBe("item");
+  });
+
+  it("武器スロット選択・入替対象・スキルエディタ状態が更新される", () => {
+    const state = createInitialSystemUiState();
+
+    const selected = selectWeaponSlot(state, 3);
+    expect(selected.inventory.weaponUi.selectedSlot).toBe(3);
+
+    const target = setWeaponSwapTargetSlot(selected, 5);
+    expect(target.inventory.weaponUi.swapTargetSlot).toBe(5);
+
+    const editorOpen = openWeaponSkillEditor(target, 3);
+    expect(editorOpen.inventory.weaponUi.skillEditor).toEqual({
+      isOpen: true,
+      weaponSlot: 3,
+      heldSource: null,
+    });
+    expect(editorOpen.inventory.weaponUi.swapTargetSlot).toBeNull();
+
+    const held = setHeldSkillSource(editorOpen, { row: "chain", index: 1 });
+    expect(held.inventory.weaponUi.skillEditor.heldSource).toEqual({
+      row: "chain",
+      index: 1,
+    });
+
+    const editorClosed = closeWeaponSkillEditor(held);
+    expect(editorClosed.inventory.weaponUi.skillEditor).toEqual({
+      isOpen: false,
+      weaponSlot: null,
+      heldSource: null,
+    });
+  });
+
+  it("チップ選択状態を更新できる", () => {
+    const state = createInitialSystemUiState();
+    const next = selectChipEntry(state, "0:0:skill_attack_01");
+    expect(next.inventory.chipUi.selectedChipKey).toBe("0:0:skill_attack_01");
   });
 
   it("consumable の USE で個数が減り 0 で削除される", () => {

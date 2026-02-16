@@ -4,6 +4,8 @@ import { tJa } from "./uiTextJa.js";
 export const QUICK_SLOT_COUNT = 8;
 export const DEFAULT_INVENTORY_CAPACITY = 10;
 export const DROP_SEARCH_MAX_RADIUS = 6;
+export const DEFAULT_INVENTORY_TAB = "item";
+export const WEAPON_UI_MAX_SLOTS = 8;
 
 const STARTER_ITEMS = [];
 
@@ -55,6 +57,71 @@ function cloneStatusIcon(icon) {
   };
 }
 
+function normalizeInventoryTab(tab) {
+  if (tab === "weapon" || tab === "chip") {
+    return tab;
+  }
+  return DEFAULT_INVENTORY_TAB;
+}
+
+function normalizeWeaponSlot(slot, fallback = 0) {
+  const value = toNonNegativeInt(slot, fallback);
+  return Math.min(Math.max(0, value), WEAPON_UI_MAX_SLOTS - 1);
+}
+
+function normalizeWeaponSlotOrNull(slot) {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= WEAPON_UI_MAX_SLOTS) {
+    return null;
+  }
+  return slot;
+}
+
+function normalizeHeldSource(source) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+  const row = source.row === "orbit" ? "orbit" : source.row === "chain" ? "chain" : "";
+  if (!row) {
+    return null;
+  }
+  const index = toNonNegativeInt(source.index, -1);
+  if (index < 0) {
+    return null;
+  }
+  return {
+    row,
+    index,
+  };
+}
+
+function cloneWeaponUi(weaponUi) {
+  const source = weaponUi && typeof weaponUi === "object" ? weaponUi : {};
+  const sourceSkillEditor =
+    source.skillEditor && typeof source.skillEditor === "object" ? source.skillEditor : {};
+  const selectedSlot = normalizeWeaponSlot(source.selectedSlot, 0);
+  const swapTargetSlot = normalizeWeaponSlotOrNull(source.swapTargetSlot);
+
+  return {
+    selectedSlot,
+    swapTargetSlot: swapTargetSlot === selectedSlot ? null : swapTargetSlot,
+    skillEditor: {
+      isOpen: sourceSkillEditor.isOpen === true,
+      weaponSlot: normalizeWeaponSlotOrNull(sourceSkillEditor.weaponSlot),
+      heldSource: normalizeHeldSource(sourceSkillEditor.heldSource),
+    },
+  };
+}
+
+function cloneChipUi(chipUi) {
+  const source = chipUi && typeof chipUi === "object" ? chipUi : {};
+  return {
+    selectedChipKey:
+      typeof source.selectedChipKey === "string" && source.selectedChipKey.length > 0
+        ? source.selectedChipKey
+        : null,
+  };
+}
+
 function cloneSystemUiState(systemUi) {
   const source = systemUi && typeof systemUi === "object" ? systemUi : createInitialSystemUiState();
   const sourceInventory = source.inventory && typeof source.inventory === "object" ? source.inventory : {};
@@ -69,6 +136,9 @@ function cloneSystemUiState(systemUi) {
       droppedItems: Array.isArray(sourceInventory.droppedItems)
         ? sourceInventory.droppedItems.map(cloneDroppedItem)
         : [],
+      activeTab: normalizeInventoryTab(sourceInventory.activeTab),
+      weaponUi: cloneWeaponUi(sourceInventory.weaponUi),
+      chipUi: cloneChipUi(sourceInventory.chipUi),
     },
     statusEffects: {
       buffs: Array.isArray(sourceStatus.buffs) ? sourceStatus.buffs.map(cloneStatusIcon) : [],
@@ -205,6 +275,19 @@ export function createInitialSystemUiState() {
       items,
       selectedItemId: items[0]?.id ?? null,
       droppedItems: [],
+      activeTab: DEFAULT_INVENTORY_TAB,
+      weaponUi: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        skillEditor: {
+          isOpen: false,
+          weaponSlot: null,
+          heldSource: null,
+        },
+      },
+      chipUi: {
+        selectedChipKey: null,
+      },
     },
     statusEffects: {
       buffs: [],
@@ -217,6 +300,87 @@ export function createInitialSystemUiState() {
 export function setInventoryWindowOpen(systemUi, isOpen) {
   const nextState = cloneSystemUiState(systemUi);
   nextState.inventory.isWindowOpen = isOpen === true;
+  if (nextState.inventory.isWindowOpen !== true) {
+    nextState.inventory.weaponUi.swapTargetSlot = null;
+    nextState.inventory.weaponUi.skillEditor = {
+      isOpen: false,
+      weaponSlot: null,
+      heldSource: null,
+    };
+  }
+  return nextState;
+}
+
+export function setInventoryTab(systemUi, tab) {
+  const nextState = cloneSystemUiState(systemUi);
+  nextState.inventory.activeTab = normalizeInventoryTab(tab);
+  if (nextState.inventory.activeTab !== "weapon") {
+    nextState.inventory.weaponUi.swapTargetSlot = null;
+    nextState.inventory.weaponUi.skillEditor = {
+      isOpen: false,
+      weaponSlot: null,
+      heldSource: null,
+    };
+  }
+  return nextState;
+}
+
+export function selectWeaponSlot(systemUi, slot) {
+  const nextState = cloneSystemUiState(systemUi);
+  const selectedSlot = normalizeWeaponSlot(slot, nextState.inventory.weaponUi.selectedSlot);
+  nextState.inventory.weaponUi.selectedSlot = selectedSlot;
+  if (nextState.inventory.weaponUi.swapTargetSlot === selectedSlot) {
+    nextState.inventory.weaponUi.swapTargetSlot = null;
+  }
+  return nextState;
+}
+
+export function setWeaponSwapTargetSlot(systemUi, slotOrNull) {
+  const nextState = cloneSystemUiState(systemUi);
+  const swapTargetSlot = normalizeWeaponSlotOrNull(slotOrNull);
+  nextState.inventory.weaponUi.swapTargetSlot =
+    swapTargetSlot === nextState.inventory.weaponUi.selectedSlot ? null : swapTargetSlot;
+  return nextState;
+}
+
+export function openWeaponSkillEditor(systemUi, slot) {
+  const nextState = cloneSystemUiState(systemUi);
+  const selectedSlot = normalizeWeaponSlot(slot, nextState.inventory.weaponUi.selectedSlot);
+  nextState.inventory.activeTab = "weapon";
+  nextState.inventory.weaponUi.selectedSlot = selectedSlot;
+  nextState.inventory.weaponUi.swapTargetSlot = null;
+  nextState.inventory.weaponUi.skillEditor = {
+    isOpen: true,
+    weaponSlot: selectedSlot,
+    heldSource: null,
+  };
+  return nextState;
+}
+
+export function closeWeaponSkillEditor(systemUi) {
+  const nextState = cloneSystemUiState(systemUi);
+  nextState.inventory.weaponUi.skillEditor = {
+    isOpen: false,
+    weaponSlot: null,
+    heldSource: null,
+  };
+  return nextState;
+}
+
+export function setHeldSkillSource(systemUi, sourceOrNull) {
+  const nextState = cloneSystemUiState(systemUi);
+  if (nextState.inventory.weaponUi.skillEditor.isOpen !== true) {
+    nextState.inventory.weaponUi.skillEditor.heldSource = null;
+    return nextState;
+  }
+  nextState.inventory.weaponUi.skillEditor.heldSource = normalizeHeldSource(sourceOrNull);
+  return nextState;
+}
+
+export function selectChipEntry(systemUi, chipKey) {
+  const nextState = cloneSystemUiState(systemUi);
+  nextState.inventory.chipUi.selectedChipKey =
+    typeof chipKey === "string" && chipKey.length > 0 ? chipKey : null;
   return nextState;
 }
 

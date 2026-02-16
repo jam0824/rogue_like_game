@@ -4,6 +4,7 @@ const REQUIRED_KEYS = [
   "id",
   "name_key",
   "description_key",
+  "icon_file_name",
   "weapon_file_name",
   "width",
   "height",
@@ -65,6 +66,10 @@ function assertWeaponShape(rawWeapon, fileName) {
     throw new Error(`Weapon DB ${fileName} has invalid weapon_file_name: ${rawWeapon.weapon_file_name}`);
   }
 
+  if (typeof rawWeapon.icon_file_name !== "string" || rawWeapon.icon_file_name.length === 0) {
+    throw new Error(`Weapon DB ${fileName} has invalid icon_file_name: ${rawWeapon.icon_file_name}`);
+  }
+
   if (typeof rawWeapon.formation_id !== "string" || rawWeapon.formation_id.length === 0) {
     throw new Error(`Weapon DB ${fileName} has invalid formation_id: ${rawWeapon.formation_id}`);
   }
@@ -108,6 +113,7 @@ function normalizeWeaponRecord(rawWeapon, fileName) {
     id: rawWeapon.id,
     nameKey: rawWeapon.name_key,
     descriptionKey: rawWeapon.description_key,
+    iconFileName: rawWeapon.icon_file_name,
     weaponFileName: rawWeapon.weapon_file_name,
     width: rawWeapon.width,
     height: rawWeapon.height,

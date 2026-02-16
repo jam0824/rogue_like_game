@@ -6,6 +6,7 @@ function createWeaponRecord(overrides = {}) {
     id: "weapon_sword_01",
     name_key: "name_weapon_sword_01",
     description_key: "description_weapon_sword_01",
+    icon_file_name: "ui/icon/icon_weapon/icon_sword_01.png",
     weapon_file_name: "weapon_sword_01.png",
     width: 32,
     height: 64,
@@ -119,6 +120,7 @@ describe("weaponDb", () => {
 
     expect(definitions).toHaveLength(1);
     expect(definitions[0].id).toBe("weapon_sword_01");
+    expect(definitions[0].iconFileName).toBe("ui/icon/icon_weapon/icon_sword_01.png");
     expect(definitions[0].seKeyStartAttack).toBe("se_key_start_sword_01");
     expect(definitions[0].seKeyHitAttack).toBe("se_key_hit_sword_01");
     expect(definitions[0].effectIdStartAttack).toBe("effect_id_start_sword_01");

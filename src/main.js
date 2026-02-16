@@ -66,10 +66,17 @@ import {
   clearToastMessage,
   buildQuickSlots,
   createInitialSystemUiState,
+  closeWeaponSkillEditor,
   dropSelectedInventoryItemToGround,
+  openWeaponSkillEditor,
   QUICK_SLOT_COUNT,
+  selectChipEntry,
+  selectWeaponSlot,
   selectInventoryItem,
+  setHeldSkillSource,
   setInventoryWindowOpen,
+  setInventoryTab,
+  setWeaponSwapTargetSlot,
   tryAddInventoryItem,
   useInventoryItem,
   useQuickSlotItem,
@@ -96,6 +103,7 @@ import {
   removeDefeatedEnemies,
   updateWeaponsAndCombat,
 } from "./weapon/weaponSystem.js";
+import { buildSkillEditorLayout, flattenSkillEditorLayout, swapSkillSlots } from "./ui/weaponSkillLayout.js";
 import { createDungeonBgmPlayer } from "./audio/dungeonBgmPlayer.js";
 import { createSoundEffectPlayer } from "./audio/soundEffectPlayer.js";
 import { loadSoundEffectMap } from "./audio/soundDb.js";
@@ -109,6 +117,7 @@ const HERB_HEAL_AMOUNT = 50;
 const SYSTEM_UI_TOAST_DURATION_MS = 1800;
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
+const WEAPON_SLOT_UI_COUNT = 8;
 const SE_KEY_OPEN_CHEST = "se_key_open_chest";
 const SE_KEY_GET_ITEM = "se_key_get_item";
 const SE_KEY_PUT_ITEM = "se_key_put_item";
@@ -277,6 +286,278 @@ function getSystemUiState() {
   return appState.systemUi ?? createInitialSystemUiState();
 }
 
+function resolveGraphicAssetSrc(relativePath) {
+  if (typeof relativePath !== "string" || relativePath.length <= 0) {
+    return "";
+  }
+
+  const normalized = relativePath.replace(/^\/+/, "");
+  try {
+    return new URL(`../graphic/${normalized}`, import.meta.url).href;
+  } catch {
+    return "";
+  }
+}
+
+function getSkillTypeLabel(skillType) {
+  if (skillType === "attack") {
+    return tJa("ui_label_skill_type_attack");
+  }
+  if (skillType === "modifier") {
+    return tJa("ui_label_skill_type_modifier");
+  }
+  if (skillType === "passive") {
+    return tJa("ui_label_skill_type_passive");
+  }
+  if (skillType === "orbit") {
+    return tJa("ui_label_skill_type_orbit");
+  }
+  if (skillType === "replicate") {
+    return tJa("ui_label_skill_type_replicate");
+  }
+  if (skillType === "reaction_boost") {
+    return tJa("ui_label_skill_type_reaction_boost");
+  }
+  return skillType ?? "";
+}
+
+function getEquippedWeaponEntriesSorted(playerState) {
+  const entries = Array.isArray(playerState?.run?.equipped_weapons) ? playerState.run.equipped_weapons : [];
+  return entries
+    .filter((entry) => entry && typeof entry === "object" && entry.weapon && typeof entry.weapon === "object")
+    .slice()
+    .sort((a, b) => (Number(a?.slot) || 0) - (Number(b?.slot) || 0));
+}
+
+function buildEquippedWeaponSlotsView() {
+  const slots = Array.from({ length: WEAPON_SLOT_UI_COUNT }, (_, slot) => ({
+    slot,
+    entry: null,
+    weaponInstance: null,
+    runtimeWeapon: null,
+    weaponDefinition: null,
+  }));
+  const sortedEntries = getEquippedWeaponEntriesSorted(appState.playerState);
+  for (const entry of sortedEntries) {
+    const slot = Math.max(0, Math.floor(Number(entry?.slot) || 0));
+    if (slot >= WEAPON_SLOT_UI_COUNT) {
+      continue;
+    }
+    slots[slot].entry = entry;
+    slots[slot].weaponInstance = entry.weapon;
+    slots[slot].weaponDefinition = weaponDefinitionsById?.[entry.weapon.weapon_def_id] ?? null;
+  }
+
+  for (let index = 0; index < sortedEntries.length; index += 1) {
+    const slot = Math.max(0, Math.floor(Number(sortedEntries[index]?.slot) || 0));
+    if (slot < 0 || slot >= WEAPON_SLOT_UI_COUNT) {
+      continue;
+    }
+    slots[slot].runtimeWeapon = appState.weapons[index] ?? null;
+  }
+
+  return slots;
+}
+
+function normalizeWeaponSlotForUi(slot, fallback = 0) {
+  const normalized = Math.max(0, Math.floor(Number(slot) || 0));
+  if (normalized >= WEAPON_SLOT_UI_COUNT) {
+    return fallback;
+  }
+  return normalized;
+}
+
+function resolveWeaponDetailFromSlot(slotView) {
+  if (!slotView?.weaponInstance) {
+    return null;
+  }
+
+  const weaponInstance = slotView.weaponInstance;
+  const weaponDefinition = slotView.weaponDefinition;
+  const weaponNameKey =
+    typeof weaponDefinition?.nameKey === "string" && weaponDefinition.nameKey.length > 0
+      ? weaponDefinition.nameKey
+      : "";
+  const rarity =
+    typeof weaponInstance.rarity === "string" && weaponInstance.rarity.length > 0
+      ? weaponInstance.rarity
+      : typeof weaponDefinition?.rarity === "string"
+        ? weaponDefinition.rarity
+        : "-";
+
+  const skills = Array.isArray(weaponInstance.skills) ? weaponInstance.skills : [];
+  const skillNames = skills.map((skill) => {
+    const skillDefinition = skillDefinitionsById?.[skill?.id];
+    const skillNameKey =
+      typeof skillDefinition?.nameKey === "string" && skillDefinition.nameKey.length > 0
+        ? skillDefinition.nameKey
+        : skill?.id ?? "";
+    const plus = Math.max(0, Math.floor(Number(skill?.plus) || 0));
+    return plus > 0 ? `${tJa(skillNameKey, skillNameKey)} +${plus}` : tJa(skillNameKey, skillNameKey);
+  });
+
+  return {
+    hasWeapon: true,
+    weaponDefId: weaponInstance.weapon_def_id,
+    nameKey: weaponNameKey,
+    name: tJa(weaponNameKey, weaponNameKey || weaponInstance.weapon_def_id),
+    rarity,
+    rarityText: rarity,
+    iconImageSrc: resolveGraphicAssetSrc(weaponDefinition?.iconFileName ?? ""),
+    stats: [
+      {
+        label: tJa("ui_label_weapon_stat_damage", "Base DMG"),
+        value: Math.max(0, Math.floor(Number(weaponDefinition?.baseDamage) || 0)),
+      },
+      {
+        label: tJa("ui_label_weapon_stat_cooldown", "Cooldown"),
+        value: `${Math.max(0, Number(weaponDefinition?.attackCooldownSec) || 0).toFixed(2)}s`,
+      },
+      {
+        label: tJa("ui_label_weapon_stat_pierce", "Pierce"),
+        value: Math.max(0, Math.floor(Number(weaponDefinition?.pierceCount) || 0)),
+      },
+      {
+        label: tJa("ui_label_weapon_stat_chip_slots", "Chip Slots"),
+        value: Math.max(0, Math.floor(Number(weaponDefinition?.chipSlotCount) || skills.length)),
+      },
+    ],
+    skillNames: skillNames.length > 0 ? skillNames : [tJa("ui_label_weapon_skill_list_empty", "No Skills")],
+  };
+}
+
+function buildWeaponUiViewModel(systemUiState) {
+  const inventory = systemUiState?.inventory ?? {};
+  const weaponUi = inventory.weaponUi && typeof inventory.weaponUi === "object" ? inventory.weaponUi : {};
+  const selectedSlot = normalizeWeaponSlotForUi(weaponUi.selectedSlot, 0);
+  const swapTargetSlot = Number.isInteger(weaponUi.swapTargetSlot)
+    ? normalizeWeaponSlotForUi(weaponUi.swapTargetSlot, selectedSlot)
+    : null;
+  const slots = buildEquippedWeaponSlotsView();
+  const slotView = slots[selectedSlot] ?? null;
+
+  const skillEditorState = weaponUi.skillEditor && typeof weaponUi.skillEditor === "object" ? weaponUi.skillEditor : {};
+  const skillEditorSlot = Number.isInteger(skillEditorState.weaponSlot)
+    ? normalizeWeaponSlotForUi(skillEditorState.weaponSlot, selectedSlot)
+    : selectedSlot;
+  const skillEditorSlotView = slots[skillEditorSlot] ?? null;
+  const chipSlotCount = Math.max(
+    0,
+    Math.floor(Number(skillEditorSlotView?.weaponDefinition?.chipSlotCount) || Number(skillEditorSlotView?.weaponInstance?.skills?.length) || 0)
+  );
+  const skillLayout = buildSkillEditorLayout(skillEditorSlotView?.weaponInstance?.skills, chipSlotCount, skillDefinitionsById);
+  const heldSource = skillEditorState.heldSource ?? null;
+  const heldSkill = heldSource
+    ? heldSource.row === "orbit"
+      ? skillLayout.orbitSlots[heldSource.index] ?? null
+      : skillLayout.chainSlots[heldSource.index] ?? null
+    : null;
+  const heldName = heldSkill ? tJa(skillDefinitionsById?.[heldSkill.id]?.nameKey, heldSkill.id) : "-";
+
+  const chainSlots = skillLayout.chainSlots.map((skill, index) => {
+    const skillDefinition = skillDefinitionsById?.[skill?.id] ?? null;
+    return {
+      index,
+      skillId: skill?.id ?? "",
+      name: skill ? tJa(skillDefinition?.nameKey, skill.id) : "",
+      plus: Math.max(0, Math.floor(Number(skill?.plus) || 0)),
+      skillType: skillDefinition?.skillType ?? "",
+      iconImageSrc: resolveGraphicAssetSrc(skillDefinition?.ui?.iconFileName ?? ""),
+    };
+  });
+
+  const orbitSlots = skillLayout.orbitSlots.map((skill, index) => {
+    const skillDefinition = skillDefinitionsById?.[skill?.id] ?? null;
+    return {
+      index,
+      skillId: skill?.id ?? "",
+      name: skill ? tJa(skillDefinition?.nameKey, skill.id) : "",
+      plus: Math.max(0, Math.floor(Number(skill?.plus) || 0)),
+      skillType: skillDefinition?.skillType ?? "",
+      iconImageSrc: resolveGraphicAssetSrc(skillDefinition?.ui?.iconFileName ?? ""),
+    };
+  });
+
+  return {
+    selectedSlot,
+    swapTargetSlot,
+    canEquipSwap: Number.isInteger(swapTargetSlot),
+    slots: slots.map((slotEntry, slot) => ({
+      slot,
+      hasWeapon: !!slotEntry.weaponInstance,
+      weaponDefId: slotEntry.weaponInstance?.weapon_def_id ?? "",
+      nameKey: slotEntry.weaponDefinition?.nameKey ?? "",
+      name: slotEntry.weaponDefinition?.nameKey ? tJa(slotEntry.weaponDefinition.nameKey) : "",
+      rarity: slotEntry.weaponInstance?.rarity ?? slotEntry.weaponDefinition?.rarity ?? "",
+      iconImageSrc: resolveGraphicAssetSrc(slotEntry.weaponDefinition?.iconFileName ?? ""),
+    })),
+    details: resolveWeaponDetailFromSlot(slotView),
+    skillEditor: {
+      isOpen: skillEditorState.isOpen === true,
+      weaponSlot: skillEditorSlot,
+      weaponNameKey: skillEditorSlotView?.weaponDefinition?.nameKey ?? "",
+      weaponName: skillEditorSlotView?.weaponDefinition?.nameKey
+        ? tJa(skillEditorSlotView.weaponDefinition.nameKey)
+        : tJa("ui_label_weapon_none"),
+      weaponIconImageSrc: resolveGraphicAssetSrc(skillEditorSlotView?.weaponDefinition?.iconFileName ?? ""),
+      heldSource,
+      heldLabel: `${tJa("ui_label_skill_editor_holding_prefix", "Holding")}: ${heldName}`,
+      chainSlots,
+      orbitSlots,
+    },
+  };
+}
+
+function buildChipUiViewModel(systemUiState) {
+  const inventory = systemUiState?.inventory ?? {};
+  const selectedChipKey =
+    typeof inventory?.chipUi?.selectedChipKey === "string" && inventory.chipUi.selectedChipKey.length > 0
+      ? inventory.chipUi.selectedChipKey
+      : null;
+  const slots = buildEquippedWeaponSlotsView();
+  const entries = [];
+
+  for (const slot of slots) {
+    if (!slot.weaponInstance || !Array.isArray(slot.weaponInstance.skills)) {
+      continue;
+    }
+    for (let index = 0; index < slot.weaponInstance.skills.length; index += 1) {
+      const skillInstance = slot.weaponInstance.skills[index];
+      const skillDefinition = skillDefinitionsById?.[skillInstance?.id] ?? null;
+      const key = `${slot.slot}:${index}:${skillInstance?.id ?? ""}`;
+      entries.push({
+        key,
+        slot: slot.slot,
+        index,
+        skillId: skillInstance?.id ?? "",
+        plus: Math.max(0, Math.floor(Number(skillInstance?.plus) || 0)),
+        nameKey: skillDefinition?.nameKey ?? "",
+        name: tJa(skillDefinition?.nameKey, skillInstance?.id ?? ""),
+        descriptionKey: skillDefinition?.descriptionKey ?? "",
+        description: tJa(skillDefinition?.descriptionKey, skillDefinition?.descriptionKey ?? ""),
+        skillType: skillDefinition?.skillType ?? "",
+        skillTypeText: getSkillTypeLabel(skillDefinition?.skillType ?? ""),
+        iconImageSrc: resolveGraphicAssetSrc(skillDefinition?.ui?.iconFileName ?? ""),
+      });
+    }
+  }
+
+  const fallbackSelected = selectedChipKey && entries.some((entry) => entry.key === selectedChipKey)
+    ? selectedChipKey
+    : entries[0]?.key ?? null;
+  const selected = entries.find((entry) => entry.key === fallbackSelected) ?? null;
+
+  return {
+    selectedChipKey: fallbackSelected,
+    entries,
+    details: selected
+      ? {
+          ...selected,
+        }
+      : null,
+  };
+}
+
 function buildInventoryItemTextState(item) {
   return {
     id: item.id,
@@ -322,11 +603,45 @@ function buildInventoryTextState() {
   const systemUi = getSystemUiState();
   const items = Array.isArray(systemUi.inventory?.items) ? systemUi.inventory.items : [];
   const droppedItems = Array.isArray(systemUi.inventory?.droppedItems) ? systemUi.inventory.droppedItems : [];
+  const activeTab = systemUi.inventory?.activeTab === "weapon" || systemUi.inventory?.activeTab === "chip"
+    ? systemUi.inventory.activeTab
+    : "item";
+  const selectedSlot = normalizeWeaponSlotForUi(systemUi.inventory?.weaponUi?.selectedSlot, 0);
+  const swapTargetSlot = Number.isInteger(systemUi.inventory?.weaponUi?.swapTargetSlot)
+    ? normalizeWeaponSlotForUi(systemUi.inventory.weaponUi.swapTargetSlot, selectedSlot)
+    : null;
+  const skillEditor = systemUi.inventory?.weaponUi?.skillEditor ?? {};
 
   return {
     capacity: Number(systemUi.inventory?.capacity) || 10,
     isWindowOpen: systemUi.inventory?.isWindowOpen === true,
     selectedItemId: typeof systemUi.inventory?.selectedItemId === "string" ? systemUi.inventory.selectedItemId : null,
+    activeTab,
+    weaponUi: {
+      selectedSlot,
+      swapTargetSlot,
+      skillEditor: {
+        isOpen: skillEditor.isOpen === true,
+        weaponSlot: Number.isInteger(skillEditor.weaponSlot) ? normalizeWeaponSlotForUi(skillEditor.weaponSlot, selectedSlot) : null,
+        heldSource:
+          skillEditor.heldSource &&
+          typeof skillEditor.heldSource === "object" &&
+          (skillEditor.heldSource.row === "chain" || skillEditor.heldSource.row === "orbit") &&
+          Number.isFinite(skillEditor.heldSource.index)
+            ? {
+                row: skillEditor.heldSource.row,
+                index: Math.max(0, Math.floor(Number(skillEditor.heldSource.index))),
+              }
+            : null,
+      },
+    },
+    chipUi: {
+      selectedChipKey:
+        typeof systemUi.inventory?.chipUi?.selectedChipKey === "string" &&
+        systemUi.inventory.chipUi.selectedChipKey.length > 0
+          ? systemUi.inventory.chipUi.selectedChipKey
+          : null,
+    },
     quickSlots: buildQuickSlots(items, QUICK_SLOT_COUNT).map((slot) => buildInventoryQuickSlotTextState(slot)),
     items: items.map((item) => buildInventoryItemTextState(item)),
     droppedItems: droppedItems.map((item) => ({
@@ -1050,6 +1365,94 @@ function applySystemUiState(nextSystemUiState) {
   scheduleToastAutoClear(nextSystemUiState);
 }
 
+function normalizeSkillInstancesForSave(skills) {
+  if (!Array.isArray(skills)) {
+    return [];
+  }
+  return skills
+    .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+    .map((skill) => ({
+      id: skill.id,
+      plus: Math.max(0, Math.floor(Number(skill.plus) || 0)),
+    }));
+}
+
+function swapEquippedWeaponSlots(slotA, slotB) {
+  if (!appState.playerState?.run || !Array.isArray(appState.playerState.run.equipped_weapons)) {
+    return false;
+  }
+
+  const resolvedSlotA = normalizeWeaponSlotForUi(slotA, 0);
+  const resolvedSlotB = normalizeWeaponSlotForUi(slotB, 0);
+  if (resolvedSlotA === resolvedSlotB) {
+    return false;
+  }
+
+  const entryBySlot = Array.from({ length: WEAPON_SLOT_UI_COUNT }, () => null);
+  const runtimeBySlot = Array.from({ length: WEAPON_SLOT_UI_COUNT }, () => null);
+  const sortedEntries = getEquippedWeaponEntriesSorted(appState.playerState);
+
+  for (const entry of sortedEntries) {
+    const slot = normalizeWeaponSlotForUi(entry.slot, 0);
+    entryBySlot[slot] = entry;
+  }
+  for (let index = 0; index < sortedEntries.length; index += 1) {
+    const slot = normalizeWeaponSlotForUi(sortedEntries[index].slot, 0);
+    runtimeBySlot[slot] = appState.weapons[index] ?? null;
+  }
+
+  const entryA = entryBySlot[resolvedSlotA];
+  const entryB = entryBySlot[resolvedSlotB];
+  const runtimeA = runtimeBySlot[resolvedSlotA];
+  const runtimeB = runtimeBySlot[resolvedSlotB];
+
+  if (!entryA && !entryB) {
+    return false;
+  }
+
+  entryBySlot[resolvedSlotA] = entryB;
+  entryBySlot[resolvedSlotB] = entryA;
+  runtimeBySlot[resolvedSlotA] = runtimeB;
+  runtimeBySlot[resolvedSlotB] = runtimeA;
+
+  const rebuiltEntries = [];
+  for (let slot = 0; slot < entryBySlot.length; slot += 1) {
+    const entry = entryBySlot[slot];
+    if (!entry) {
+      continue;
+    }
+    entry.slot = slot;
+    rebuiltEntries.push(entry);
+  }
+  appState.playerState.run.equipped_weapons = rebuiltEntries;
+
+  appState.weapons = runtimeBySlot.filter((weaponRuntime) => weaponRuntime !== null);
+  return true;
+}
+
+function updateWeaponSkillsAtSlot(slot, nextSkills) {
+  const slots = buildEquippedWeaponSlotsView();
+  const slotView = slots[normalizeWeaponSlotForUi(slot, 0)];
+  if (!slotView?.weaponInstance) {
+    return false;
+  }
+
+  const normalizedSkills = normalizeSkillInstancesForSave(nextSkills);
+  slotView.weaponInstance.skills = normalizedSkills.map((skill) => ({ ...skill }));
+  if (slotView.runtimeWeapon) {
+    slotView.runtimeWeapon.skillInstances = normalizedSkills.map((skill) => ({ ...skill }));
+  }
+  return true;
+}
+
+function getSkillAtEditorSlot(layout, row, index) {
+  const safeIndex = Math.max(0, Math.floor(Number(index) || 0));
+  if (row === "orbit") {
+    return layout.orbitSlots[safeIndex] ?? null;
+  }
+  return layout.chainSlots[safeIndex] ?? null;
+}
+
 function getInventoryItemCount(systemUi, itemId) {
   const items = Array.isArray(systemUi?.inventory?.items) ? systemUi.inventory.items : [];
   const found = items.find((item) => item.id === itemId);
@@ -1269,6 +1672,81 @@ function syncGroundItemPickup() {
   }
 }
 
+function resolveSkillEditorContext(systemUiState) {
+  const skillEditor = systemUiState?.inventory?.weaponUi?.skillEditor ?? {};
+  if (skillEditor.isOpen !== true) {
+    return null;
+  }
+
+  const slot = Number.isInteger(skillEditor.weaponSlot)
+    ? normalizeWeaponSlotForUi(skillEditor.weaponSlot, 0)
+    : normalizeWeaponSlotForUi(systemUiState?.inventory?.weaponUi?.selectedSlot, 0);
+  const slotView = buildEquippedWeaponSlotsView()[slot];
+  if (!slotView?.weaponInstance) {
+    return null;
+  }
+
+  const chipSlotCount = Math.max(
+    0,
+    Math.floor(Number(slotView.weaponDefinition?.chipSlotCount) || Number(slotView.weaponInstance.skills?.length) || 0)
+  );
+  const layout = buildSkillEditorLayout(slotView.weaponInstance.skills, chipSlotCount, skillDefinitionsById);
+  return {
+    slot,
+    layout,
+  };
+}
+
+function handleSkillSlotClick(payload) {
+  const beforeSystemUi = getSystemUiState();
+  const context = resolveSkillEditorContext(beforeSystemUi);
+  if (!context) {
+    return;
+  }
+
+  const heldSource = beforeSystemUi.inventory?.weaponUi?.skillEditor?.heldSource ?? null;
+  if (!heldSource) {
+    const targetSkill = getSkillAtEditorSlot(context.layout, payload?.row, payload?.index);
+    if (!targetSkill) {
+      return;
+    }
+    applySystemUiState(setHeldSkillSource(beforeSystemUi, payload));
+    return;
+  }
+
+  const swapResult = swapSkillSlots(context.layout, heldSource, payload, skillDefinitionsById);
+  if (!swapResult.changed) {
+    return;
+  }
+
+  const nextSkills = flattenSkillEditorLayout(swapResult.layout);
+  if (!updateWeaponSkillsAtSlot(context.slot, nextSkills)) {
+    return;
+  }
+  applySystemUiState(setHeldSkillSource(beforeSystemUi, null));
+}
+
+function handleSkillSlotDrop(payload) {
+  const beforeSystemUi = getSystemUiState();
+  const context = resolveSkillEditorContext(beforeSystemUi);
+  if (!context) {
+    return;
+  }
+
+  const source = payload?.source;
+  const target = payload?.target;
+  const swapResult = swapSkillSlots(context.layout, source, target, skillDefinitionsById);
+  if (!swapResult.changed) {
+    return;
+  }
+
+  const nextSkills = flattenSkillEditorLayout(swapResult.layout);
+  if (!updateWeaponSkillsAtSlot(context.slot, nextSkills)) {
+    return;
+  }
+  applySystemUiState(setHeldSkillSource(beforeSystemUi, null));
+}
+
 const systemHud = systemUiRoot
   ? createSystemHud(systemUiRoot, {
       onUseQuickSlot: (slotIndex) => {
@@ -1285,8 +1763,66 @@ const systemHud = systemUiRoot
       onCloseInventoryWindow: () => {
         applySystemUiState(setInventoryWindowOpen(getSystemUiState(), false));
       },
+      onSelectInventoryTab: (tab) => {
+        applySystemUiState(setInventoryTab(getSystemUiState(), tab));
+      },
       onSelectInventoryItem: (itemId) => {
         applySystemUiState(selectInventoryItem(getSystemUiState(), itemId));
+      },
+      onSelectChipEntry: (chipKey) => {
+        applySystemUiState(selectChipEntry(getSystemUiState(), chipKey));
+      },
+      onSelectWeaponSlot: (slot) => {
+        const beforeSystemUi = getSystemUiState();
+        const selectedSlot = normalizeWeaponSlotForUi(beforeSystemUi.inventory?.weaponUi?.selectedSlot, 0);
+        if (slot === selectedSlot) {
+          applySystemUiState(setWeaponSwapTargetSlot(beforeSystemUi, null));
+          return;
+        }
+
+        let nextSystemUi = selectWeaponSlot(beforeSystemUi, slot);
+        nextSystemUi = setWeaponSwapTargetSlot(nextSystemUi, selectedSlot);
+        applySystemUiState(nextSystemUi);
+      },
+      onEquipWeaponSwap: () => {
+        const beforeSystemUi = getSystemUiState();
+        const selectedSlot = normalizeWeaponSlotForUi(beforeSystemUi.inventory?.weaponUi?.selectedSlot, 0);
+        const swapTargetSlot = Number.isInteger(beforeSystemUi.inventory?.weaponUi?.swapTargetSlot)
+          ? normalizeWeaponSlotForUi(beforeSystemUi.inventory.weaponUi.swapTargetSlot, selectedSlot)
+          : null;
+        if (!Number.isInteger(swapTargetSlot)) {
+          return;
+        }
+
+        if (!swapEquippedWeaponSlots(selectedSlot, swapTargetSlot)) {
+          return;
+        }
+
+        applySystemUiState(setWeaponSwapTargetSlot(beforeSystemUi, null));
+      },
+      onOpenWeaponSkillEditor: (slot) => {
+        const beforeSystemUi = getSystemUiState();
+        if (Number.isInteger(beforeSystemUi.inventory?.weaponUi?.swapTargetSlot)) {
+          return;
+        }
+        const resolvedSlot = normalizeWeaponSlotForUi(slot, 0);
+        const slotView = buildEquippedWeaponSlotsView()[resolvedSlot];
+        if (!slotView?.weaponInstance) {
+          return;
+        }
+        applySystemUiState(openWeaponSkillEditor(beforeSystemUi, resolvedSlot));
+      },
+      onCloseWeaponSkillEditor: () => {
+        applySystemUiState(closeWeaponSkillEditor(getSystemUiState()));
+      },
+      onSkillSlotClick: (payload) => {
+        handleSkillSlotClick(payload);
+      },
+      onSkillSlotDrop: (payload) => {
+        handleSkillSlotDrop(payload);
+      },
+      onClearHeldSkill: () => {
+        applySystemUiState(setHeldSkillSource(getSystemUiState(), null));
       },
       onUseSelectedItem: () => {
         const beforeSystemUi = getSystemUiState();
@@ -1323,6 +1859,8 @@ const systemHud = systemUiRoot
 function buildSystemUiDigest() {
   const inventory = buildInventoryTextState();
   const hud = buildHudTextState();
+  const weapon = buildWeaponUiViewModel(getSystemUiState());
+  const chip = buildChipUiViewModel(getSystemUiState());
 
   return JSON.stringify({
     hpCurrent: hud.hp.current,
@@ -1333,6 +1871,8 @@ function buildSystemUiDigest() {
     debuffs: hud.debuffs,
     toastMessage: getSystemUiState().toastMessage,
     inventory,
+    weapon,
+    chip,
   });
 }
 
@@ -1348,6 +1888,8 @@ function syncSystemHud() {
 
   const hud = buildHudTextState();
   const inventory = buildInventoryTextState();
+  const weapon = buildWeaponUiViewModel(getSystemUiState());
+  const chip = buildChipUiViewModel(getSystemUiState());
   systemHud.setHud({
     hpCurrent: hud.hp.current,
     hpMax: hud.hp.max,
@@ -1362,6 +1904,9 @@ function syncSystemHud() {
     selectedItemId: inventory.selectedItemId,
     quickSlots: inventory.quickSlots,
     isWindowOpen: inventory.isWindowOpen,
+    activeTab: inventory.activeTab,
+    weapon,
+    chip,
     toastMessage: getSystemUiState().toastMessage,
   });
 
