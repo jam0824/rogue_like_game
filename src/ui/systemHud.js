@@ -288,6 +288,7 @@ export function createSystemHud(root, handlers = {}) {
   const weaponDetailsName = root.querySelector("#inventory-weapon-details-name");
   const weaponDetailsRarity = root.querySelector("#inventory-weapon-details-rarity");
   const weaponDetailsStats = root.querySelector("#inventory-weapon-details-stats");
+  const weaponDetailsSkillsLabel = root.querySelector("#inventory-weapon-details-skills-label");
   const weaponDetailsSkills = root.querySelector("#inventory-weapon-details-skills");
 
   const chipList = root.querySelector("#inventory-chip-list");
@@ -670,6 +671,7 @@ export function createSystemHud(root, handlers = {}) {
       }
 
       const weaponDetails = weapon.details && typeof weapon.details === "object" ? weapon.details : null;
+      setText(weaponDetailsSkillsLabel, tJa("ui_label_weapon_skills", "スキル"));
       if (!weaponDetails || weaponDetails.hasWeapon !== true) {
         setAssetIcon(weaponDetailsIcon, "", "", "");
         setText(weaponDetailsName, tJa("ui_label_weapon_none"));

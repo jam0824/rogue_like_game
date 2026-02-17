@@ -110,6 +110,7 @@ function createHudRoot() {
   const weaponDetailsName = createElement();
   const weaponDetailsRarity = createElement();
   const weaponDetailsStats = createElement();
+  const weaponDetailsSkillsLabel = createElement();
   const weaponDetailsSkills = createElement();
   const chipList = createElement();
   const chipDetailsIcon = createElement();
@@ -167,6 +168,7 @@ function createHudRoot() {
     "#inventory-weapon-details-name": weaponDetailsName,
     "#inventory-weapon-details-rarity": weaponDetailsRarity,
     "#inventory-weapon-details-stats": weaponDetailsStats,
+    "#inventory-weapon-details-skills-label": weaponDetailsSkillsLabel,
     "#inventory-weapon-details-skills": weaponDetailsSkills,
     "#inventory-chip-list": chipList,
     "#inventory-chip-details-icon": chipDetailsIcon,
@@ -228,6 +230,7 @@ function createHudRoot() {
     tabPanels,
     weaponSlots,
     weaponEquipButton,
+    weaponDetailsSkillsLabel,
     weaponSkillChainRow,
     weaponSkillFormationLabel,
     weaponSkillFormationSlot,
@@ -400,6 +403,63 @@ describe("systemHud", () => {
     expect(refs.weaponSkillFormationLabel.textContent).toBe("Formation");
     expect(refs.weaponSkillFormationSlot.innerHTML).toContain("weapon-formation-slot");
     expect(refs.weaponSkillFormationSlot.innerHTML).toContain("サークル");
+  });
+
+  it("武器詳細にスキルラベルを表示する", () => {
+    const refs = createHudRoot();
+    const hud = createSystemHud(refs.root, {});
+
+    hud.setInventory({
+      capacity: 10,
+      items: [],
+      selectedItemId: null,
+      quickSlots: [],
+      isWindowOpen: true,
+      activeTab: "weapon",
+      weapon: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        canEquipSwap: false,
+        slots: [],
+        details: {
+          hasWeapon: true,
+          weaponDefId: "weapon_sword_01",
+          nameKey: "name_weapon_sword_01",
+          name: "ショートソード",
+          rarity: "normal",
+          rarityText: "normal",
+          iconImageSrc: "/graphic/ui/icon/icon_weapon/icon_sword_01.png",
+          stats: [{ label: "Formation", value: "サークル" }],
+          skillNames: ["マジックボール"],
+        },
+        skillEditor: { isOpen: false, heldSource: null, chainSlots: [], formationSlot: null },
+      },
+      chip: { entries: [], selectedChipKey: null, details: null },
+      toastMessage: "",
+    });
+
+    expect(refs.weaponDetailsSkillsLabel.textContent).toBe("スキル");
+
+    hud.setInventory({
+      capacity: 10,
+      items: [],
+      selectedItemId: null,
+      quickSlots: [],
+      isWindowOpen: true,
+      activeTab: "weapon",
+      weapon: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        canEquipSwap: false,
+        slots: [],
+        details: null,
+        skillEditor: { isOpen: false, heldSource: null, chainSlots: [], formationSlot: null },
+      },
+      chip: { entries: [], selectedChipKey: null, details: null },
+      toastMessage: "",
+    });
+
+    expect(refs.weaponDetailsSkillsLabel.textContent).toBe("スキル");
   });
 
   it("選択アイテムに応じて詳細とボタン活性を更新する", () => {

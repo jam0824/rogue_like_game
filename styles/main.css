@@ -840,12 +840,20 @@ body {
   font-size: 13px;
 }
 
+#inventory-weapon-details-skills-label {
+  margin: 2px 0 0;
+  color: #f0ddbd;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 #inventory-weapon-details-stats,
 #inventory-weapon-details-skills {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 

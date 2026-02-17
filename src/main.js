@@ -435,6 +435,10 @@ function resolveWeaponDetailFromSlot(slotView) {
     iconImageSrc: resolveGraphicAssetSrc(weaponDefinition?.iconFileName ?? ""),
     stats: [
       {
+        label: tJa("ui_label_weapon_stat_formation", "Formation"),
+        value: formationName,
+      },
+      {
         label: tJa("ui_label_weapon_stat_damage", "Base DMG"),
         value: Math.max(0, Math.floor(Number(weaponDefinition?.baseDamage) || 0)),
       },
@@ -449,10 +453,6 @@ function resolveWeaponDetailFromSlot(slotView) {
       {
         label: tJa("ui_label_weapon_stat_chip_slots", "Chip Slots"),
         value: Math.max(0, Math.floor(Number(weaponDefinition?.chipSlotCount) || skills.length)),
-      },
-      {
-        label: tJa("ui_label_weapon_stat_formation", "Formation"),
-        value: formationName,
       },
     ],
     skillNames: skillNames.length > 0 ? skillNames : [tJa("ui_label_weapon_skill_list_empty", "No Skills")],
@@ -521,7 +521,7 @@ function buildWeaponUiViewModel(systemUiState) {
         : tJa("ui_label_weapon_none"),
       weaponIconImageSrc: resolveGraphicAssetSrc(skillEditorSlotView?.weaponDefinition?.iconFileName ?? ""),
       heldSource,
-      heldLabel: `${tJa("ui_label_skill_editor_holding_prefix", "Holding")}: ${heldName}`,
+      heldLabel: `${tJa("ui_label_skill_editor_holding_prefix", "Selected Skill")}: ${heldName}`,
       chainSlots,
       formationSlot,
     },
