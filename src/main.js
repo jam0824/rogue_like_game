@@ -1,4 +1,5 @@
 import {
+  GAME_VIEW_SCALE,
   INITIAL_SEED,
   PLAYER_FOOT_HITBOX_HEIGHT,
   PLAYER_HEIGHT,
@@ -54,6 +55,7 @@ import {
   syncPlayerStateFromRuntime,
 } from "./player/playerStateStore.js";
 import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
+import { computeCameraScroll, resolveGameViewScale } from "./render/gameViewScale.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { derivePlayerCombatStats } from "./status/derivedStats.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
@@ -131,6 +133,14 @@ const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
 const systemUiRoot = document.querySelector("#system-ui-layer");
+const gameViewScale = resolveGameViewScale(GAME_VIEW_SCALE);
+
+function applyCanvasDisplayScale() {
+  canvas.style.width = `${canvas.width * gameViewScale}px`;
+  canvas.style.height = `${canvas.height * gameViewScale}px`;
+}
+
+applyCanvasDisplayScale();
 
 function retryAudioPlayback() {
   void dungeonBgmPlayer.retryPending();
@@ -986,6 +996,7 @@ function renderErrorScreen(message) {
   const ctx = canvas.getContext("2d");
   canvas.width = 960;
   canvas.height = 540;
+  applyCanvasDisplayScale();
   ctx.fillStyle = "#090b12";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#ffb3b3";
@@ -998,19 +1009,26 @@ function followPlayerInView() {
     return;
   }
 
-  const viewWidth = canvasScroll.clientWidth;
-  const viewHeight = canvasScroll.clientHeight;
-  if (viewWidth <= 0 || viewHeight <= 0) {
+  const viewportWidthPx = canvasScroll.clientWidth;
+  const viewportHeightPx = canvasScroll.clientHeight;
+  if (viewportWidthPx <= 0 || viewportHeightPx <= 0) {
     return;
   }
 
   const feetCenterX = appState.player.x + PLAYER_WIDTH / 2;
   const feetCenterY = appState.player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
-  const maxLeft = Math.max(0, appState.backdrop.widthPx - viewWidth);
-  const maxTop = Math.max(0, appState.backdrop.heightPx - viewHeight);
+  const nextScroll = computeCameraScroll({
+    centerX: feetCenterX,
+    centerY: feetCenterY,
+    worldWidthPx: appState.backdrop.widthPx,
+    worldHeightPx: appState.backdrop.heightPx,
+    viewportWidthPx,
+    viewportHeightPx,
+    scale: gameViewScale,
+  });
 
-  canvasScroll.scrollLeft = clamp(feetCenterX - viewWidth / 2, 0, maxLeft);
-  canvasScroll.scrollTop = clamp(feetCenterY - viewHeight / 2, 0, maxTop);
+  canvasScroll.scrollLeft = nextScroll.left;
+  canvasScroll.scrollTop = nextScroll.top;
 }
 
 const playerAsset = await loadPlayerAsset();
@@ -2500,6 +2518,7 @@ function renderCurrentFrame() {
     groundItemDrawables,
     appState.damagePopups
   );
+  applyCanvasDisplayScale();
 }
 
 function stepSimulation(dt) {
