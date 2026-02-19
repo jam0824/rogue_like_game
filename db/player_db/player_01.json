@@ -1,0 +1,12 @@
+{
+    "id": "player_01",
+    "name_key": "name_player_01",
+    "description_key": "description_player_01",
+    "width" : 24,
+    "height" : 24,
+    "fps" : 10,
+    "player_png_facing_direction" : "facing left",
+    "walk_png_file_path" : "graphic/player/player_chip/player_01_walk.png",
+    "idle_png_file_path" : "graphic/player/player_chip/player_01_idle.png",
+    "death_png_file_path" : "graphic/player/player_chip/player_01_death.png"
+}

@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixel Art Sprite Preview (No Server)</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
+      background: #0f1115;
+      color: #e8e8ea;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 12px; }
+    h1 { margin: 0 0 6px; font-size: 18px; font-weight: 700; }
+    .row { display: grid; gap: 12px; }
+    .card {
+      background: #141824;
+      border: 1px solid #2a3144;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    }
+    .drop {
+      border: 2px dashed #3a4462;
+      border-radius: 14px;
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      transition: .12s ease;
+      outline: none;
+    }
+    .drop.dragover {
+      border-color: #7aa2f7;
+      background: rgba(122,162,247,.08);
+      transform: translateY(-1px);
+    }
+    .muted { color: #b8b9c0; font-size: 12px; }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px 12px;
+      align-items: end;
+    }
+    label { display: grid; gap: 6px; font-size: 12px; color: #cfd3df; }
+    input[type="number"], select {
+      width: 100%;
+      padding: 10px 10px;
+      border-radius: 10px;
+      border: 1px solid #2a3144;
+      background: #0f1320;
+      color: #e8e8ea;
+      outline: none;
+    }
+    input[type="number"]:focus, select:focus { border-color: #7aa2f7; }
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #2a3144;
+      background: #10162a;
+      color: #e8e8ea;
+      cursor: pointer;
+      transition: .12s ease;
+      font-weight: 650;
+    }
+    button:hover { transform: translateY(-1px); border-color: #7aa2f7; }
+    button:active { transform: translateY(0px); }
+    button.secondary { background: #0f1320; }
+    button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+    .stage {
+      display: grid;
+      place-items: center;
+      min-height: 240px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #2a3144;
+    }
+    .bg-checker {
+      background:
+        linear-gradient(45deg, rgba(255,255,255,.06) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255,255,255,.06) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255,255,255,.06) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.06) 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
+      background-color: #0b0d12;
+    }
+    .bg-black { background: #000; }
+    .bg-white { background: #fff; }
+    .bg-gray  { background: #2b2f3a; }
+
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.35);
+      background: transparent;
+    }
+
+    .info {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: #cfd3df;
+      line-height: 1.5;
+    }
+    .warn { color: #ffcf7a; }
+    .err  { color: #ff7a7a; }
+    .ok   { color: #a6e3a1; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 6px; border: 1px solid #2a3144; border-radius: 8px; background: #0f1320; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div>
+      <h1>Pixel Art スプライトシート プレビュー（サーバー不要）</h1>
+      <div class="muted">横一列にコマが並んだ画像を読み込み、FPS/倍率/1コマサイズを指定してループ再生します。</div>
+    </div>
+
+    <div id="dropZone" class="card drop" tabindex="0" role="button" aria-label="画像をドロップまたは選択">
+      <div style="font-size:14px;font-weight:750;">ここに画像をドラッグ＆ドロップ</div>
+      <div class="muted">またはクリックしてファイル選択（PNG/GIF/JPGなど）</div>
+      <div class="muted" style="margin-top:6px;">ショートカット: <span class="kbd">Space</span> 再生/停止、<span class="kbd">←</span><span class="kbd">→</span> コマ送り</div>
+    </div>
+
+    <div class="card">
+      <div class="controls">
+        <label>
+          1コマの幅 (px)
+          <input id="frameW" type="number" min="1" step="1" value="32" />
+        </label>
+        <label>
+          1コマの高さ (px)
+          <input id="frameH" type="number" min="1" step="1" value="32" />
+        </label>
+        <label>
+          FPS
+          <input id="fps" type="number" min="0.1" step="0.1" value="12" />
+        </label>
+        <label>
+          表示倍率（拡大）
+          <input id="scale" type="number" min="0.1" step="0.25" value="6" />
+        </label>
+        <label>
+          背景
+          <select id="bg">
+            <option value="checker">チェッカー</option>
+            <option value="black">黒</option>
+            <option value="gray">グレー</option>
+            <option value="white">白</option>
+          </select>
+        </label>
+
+        <div class="btns">
+          <button id="playBtn">⏸ 停止</button>
+          <button id="resetBtn" class="secondary">↩ 最初</button>
+          <button id="prevBtn" class="secondary">← 1コマ</button>
+          <button id="nextBtn" class="secondary">1コマ →</button>
+          <button id="pickBtn" class="secondary">📁 選択</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stage" class="stage bg-checker">
+      <canvas id="cv"></canvas>
+    </div>
+
+    <div class="card info">
+      <div id="infoLine">画像未読み込み</div>
+      <div id="msgLine" class="muted"></div>
+    </div>
+
+    <input id="fileInput" type="file" accept="image/*" hidden />
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const dropZone = $("dropZone");
+  const fileInput = $("fileInput");
+  const pickBtn = $("pickBtn");
+
+  const frameWEl = $("frameW");
+  const frameHEl = $("frameH");
+  const fpsEl = $("fps");
+  const scaleEl = $("scale");
+  const bgEl = $("bg");
+
+  const playBtn = $("playBtn");
+  const resetBtn = $("resetBtn");
+  const prevBtn = $("prevBtn");
+  const nextBtn = $("nextBtn");
+
+  const stage = $("stage");
+  const canvas = $("cv");
+  const ctx = canvas.getContext("2d");
+
+  const infoLine = $("infoLine");
+  const msgLine = $("msgLine");
+
+  let img = null;
+  let frameW = 32;
+  let frameH = 32;
+  let fps = 12;
+  let scale = 6;
+
+  let frameCount = 0;
+  let frameIndex = 0;
+
+  let playing = true;
+  let lastTick = 0;
+
+  function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+  function readNumber(el, fallback) {
+    const v = Number(el.value);
+    return Number.isFinite(v) ? v : fallback;
+  }
+
+  function setBg(value) {
+    stage.classList.remove("bg-checker", "bg-black", "bg-white", "bg-gray");
+    if (value === "black") stage.classList.add("bg-black");
+    else if (value === "white") stage.classList.add("bg-white");
+    else if (value === "gray") stage.classList.add("bg-gray");
+    else stage.classList.add("bg-checker");
+  }
+
+  function resizeCanvas() {
+    // CSSピクセル基準で表示しつつ、内部はDPRでシャープに
+    const dpr = window.devicePixelRatio || 1;
+
+    const cssW = Math.max(1, frameW * scale);
+    const cssH = Math.max(1, frameH * scale);
+
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+
+    canvas.width = Math.max(1, Math.round(cssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 以降の描画座標はCSSピクセル
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  function computeFrames() {
+    if (!img) {
+      frameCount = 0;
+      return;
+    }
+    frameCount = Math.floor(img.width / frameW);
+    frameCount = Math.max(0, frameCount);
+    if (frameCount > 0) frameIndex = frameIndex % frameCount;
+    else frameIndex = 0;
+  }
+
+  function renderPlaceholder() {
+    resizeCanvas();
+    const w = frameW * scale;
+    const h = frameH * scale;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillStyle = "#cfd3df";
+    ctx.fillText("画像を読み込んでください", 10, 20);
+    ctx.restore();
+  }
+
+  function render() {
+    resizeCanvas();
+    const w = frameW * scale;
+    const h = frameH * scale;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!img || frameCount <= 0) {
+      renderPlaceholder();
+      return;
+    }
+
+    const sx = frameIndex * frameW;
+    const sy = 0;
+
+    // 画像の範囲チェック（安全側）
+    const sw = Math.min(frameW, img.width - sx);
+    const sh = Math.min(frameH, img.height - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    ctx.drawImage(
+      img,
+      sx, sy, sw, sh,
+      0, 0, frameW * scale, frameH * scale
+    );
+  }
+
+  function updateInfo() {
+    if (!img) {
+      infoLine.textContent = "画像未読み込み";
+      msgLine.textContent = "";
+      return;
+    }
+
+    const remainder = img.width % frameW;
+    const lines = [];
+
+    lines.push(`画像: ${img.width}×${img.height}px`);
+    lines.push(`1コマ: ${frameW}×${frameH}px / コマ数: ${frameCount} / 現在: ${frameCount ? (frameIndex + 1) : 0}/${frameCount}`);
+
+    let msg = "";
+    let cls = "muted";
+
+    if (frameW > img.width) {
+      msg = "⚠ コマ幅が画像幅より大きいです。frameW を下げてください。";
+      cls = "err";
+    } else if (frameH > img.height) {
+      msg = "⚠ コマ高さが画像高さより大きいです（上側だけ表示されます）。";
+      cls = "warn";
+    } else if (remainder !== 0) {
+      msg = `⚠ 画像幅(${img.width}) がコマ幅(${frameW})で割り切れません。余り: ${remainder}px（最後が切り捨てになります）`;
+      cls = "warn";
+    } else {
+      msg = "OK";
+      cls = "ok";
+    }
+
+    infoLine.textContent = lines.join(" / ");
+    msgLine.textContent = msg;
+    msgLine.className = cls;
+  }
+
+  function applyFromControls() {
+    frameW = Math.max(1, Math.floor(readNumber(frameWEl, frameW)));
+    frameH = Math.max(1, Math.floor(readNumber(frameHEl, frameH)));
+    fps = clamp(readNumber(fpsEl, fps), 0.1, 240);
+    scale = clamp(readNumber(scaleEl, scale), 0.1, 64);
+
+    frameWEl.value = frameW;
+    frameHEl.value = frameH;
+    fpsEl.value = fps;
+    scaleEl.value = scale;
+
+    setBg(bgEl.value);
+
+    computeFrames();
+    updateInfo();
+    render();
+  }
+
+  function setPlaying(next) {
+    playing = next;
+    playBtn.textContent = playing ? "⏸ 停止" : "▶ 再生";
+    lastTick = 0;
+  }
+
+  function step(delta) {
+    if (!img || frameCount <= 0) return;
+    frameIndex = (frameIndex + delta) % frameCount;
+    if (frameIndex < 0) frameIndex += frameCount;
+    updateInfo();
+    render();
+  }
+
+  function animate(t) {
+    requestAnimationFrame(animate);
+    if (!playing || !img || frameCount <= 0) return;
+
+    const interval = 1000 / fps;
+    if (!lastTick) lastTick = t;
+
+    const elapsed = t - lastTick;
+    if (elapsed >= interval) {
+      const steps = Math.floor(elapsed / interval);
+      frameIndex = (frameIndex + steps) % frameCount;
+      lastTick += steps * interval;
+      updateInfo();
+      render();
+    }
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith("image/")) {
+      msgLine.textContent = "画像ファイルを選択してください。";
+      msgLine.className = "err";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        img = im;
+        frameIndex = 0;
+        lastTick = 0;
+        applyFromControls();
+      };
+      im.onerror = () => {
+        msgLine.textContent = "画像の読み込みに失敗しました。";
+        msgLine.className = "err";
+      };
+      im.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // --- UI events ---
+  pickBtn.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files && fileInput.files[0];
+    loadFile(f);
+    fileInput.value = "";
+  });
+
+  ["input", "change"].forEach(evt => {
+    frameWEl.addEventListener(evt, applyFromControls);
+    frameHEl.addEventListener(evt, applyFromControls);
+    fpsEl.addEventListener(evt, applyFromControls);
+    scaleEl.addEventListener(evt, applyFromControls);
+    bgEl.addEventListener(evt, applyFromControls);
+  });
+
+  playBtn.addEventListener("click", () => setPlaying(!playing));
+  resetBtn.addEventListener("click", () => { frameIndex = 0; updateInfo(); render(); });
+  prevBtn.addEventListener("click", () => { setPlaying(false); step(-1); });
+  nextBtn.addEventListener("click", () => { setPlaying(false); step(+1); });
+
+  // Drag & Drop
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    loadFile(f);
+  });
+
+  // Keyboard shortcuts
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); setPlaying(false); step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); setPlaying(false); step(+1); }
+  });
+
+  window.addEventListener("resize", () => render());
+
+  // init
+  applyFromControls();
+  renderPlaceholder();
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
