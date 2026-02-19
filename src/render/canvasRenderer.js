@@ -100,16 +100,42 @@ function normalizeFlashColor(color) {
   return typeof color === "string" && color.trim().length > 0 ? color.trim().toLowerCase() : "#ffffff";
 }
 
-function drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad) {
+function drawFrameWithTransform(
+  ctx,
+  asset,
+  sx,
+  sy,
+  sourceWidth,
+  sourceHeight,
+  drawWidth,
+  drawHeight,
+  dx,
+  dy,
+  rotationRad,
+  flipX = false
+) {
   ctx.save();
-  if (Math.abs(rotationRad) > 0.000001) {
+  if (Math.abs(rotationRad) > 0.000001 || flipX) {
     const centerX = dx + drawWidth / 2;
     const centerY = dy + drawHeight / 2;
     ctx.translate(centerX, centerY);
+    if (flipX) {
+      ctx.scale(-1, 1);
+    }
     ctx.rotate(rotationRad);
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.drawImage(
+      asset.image,
+      sx,
+      sy,
+      sourceWidth,
+      sourceHeight,
+      -drawWidth / 2,
+      -drawHeight / 2,
+      drawWidth,
+      drawHeight
+    );
   } else {
-    ctx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, dx, dy, drawWidth, drawHeight);
+    ctx.drawImage(asset.image, sx, sy, sourceWidth, sourceHeight, dx, dy, drawWidth, drawHeight);
   }
   ctx.restore();
 }
@@ -139,13 +165,16 @@ function drawTintedFrame(
   asset,
   sx,
   sy,
+  sourceWidth,
+  sourceHeight,
   drawWidth,
   drawHeight,
   dx,
   dy,
   rotationRad,
   color,
-  alpha
+  alpha,
+  flipX = false
 ) {
   const tintAlpha = clamp(Number(alpha) || 0, 0, 1);
   if (tintAlpha <= 0) {
@@ -157,7 +186,7 @@ function drawTintedFrame(
 
   tintCtx.globalCompositeOperation = "source-over";
   tintCtx.clearRect(0, 0, drawWidth, drawHeight);
-  tintCtx.drawImage(asset.image, sx, sy, drawWidth, drawHeight, 0, 0, drawWidth, drawHeight);
+  tintCtx.drawImage(asset.image, sx, sy, sourceWidth, sourceHeight, 0, 0, drawWidth, drawHeight);
   tintCtx.globalCompositeOperation = "source-in";
   tintCtx.fillStyle = color;
   tintCtx.fillRect(0, 0, drawWidth, drawHeight);
@@ -169,7 +198,16 @@ function drawTintedFrame(
     const centerX = dx + drawWidth / 2;
     const centerY = dy + drawHeight / 2;
     ctx.translate(centerX, centerY);
+    if (flipX) {
+      ctx.scale(-1, 1);
+    }
     ctx.rotate(rotationRad);
+    ctx.drawImage(tintSurface.canvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  } else if (flipX) {
+    const centerX = dx + drawWidth / 2;
+    const centerY = dy + drawHeight / 2;
+    ctx.translate(centerX, centerY);
+    ctx.scale(-1, 1);
     ctx.drawImage(tintSurface.canvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
   } else {
     ctx.drawImage(tintSurface.canvas, dx, dy, drawWidth, drawHeight);
@@ -227,19 +265,62 @@ export function buildDungeonBackdrop(assets, dungeon) {
 function drawSprite(ctx, asset, frame, entity, options = {}) {
   const sx = frame.col * asset.frameWidth;
   const sy = frame.row * asset.frameHeight;
-  const dx = Math.round(entity.x);
-  const dy = Math.round(entity.y);
+  const drawScale = Math.max(0.0001, Number(options.drawScale) || 1);
+  const anchorFeet = options.anchorFeet === true;
+  const drawWidth = asset.frameWidth * drawScale;
+  const drawHeight = asset.frameHeight * drawScale;
+  let dx = Math.round(entity.x);
+  let dy = Math.round(entity.y);
+
+  if (anchorFeet) {
+    const entityWidth = Number.isFinite(entity?.width) ? entity.width : asset.frameWidth;
+    const entityHeight = Number.isFinite(entity?.height) ? entity.height : asset.frameHeight;
+    const feetX = entity.x + entityWidth / 2;
+    const feetY = entity.y + entityHeight;
+    dx = Math.round(feetX - drawWidth / 2);
+    dy = Math.round(feetY - drawHeight);
+  }
+
   const rotationRad = Number.isFinite(options.rotationRad) ? options.rotationRad : 0;
+  const flipX = options.flipX === true;
   const telegraphAlpha = clamp(Number(options.telegraphAlpha) || 0, 0, 1);
   const flashAlpha = clamp(Number(options.flashAlpha) || 0, 0, 1);
   const flashColor = normalizeFlashColor(options.flashColor);
-  const drawWidth = asset.frameWidth;
-  const drawHeight = asset.frameHeight;
+  const sourceWidth = asset.frameWidth;
+  const sourceHeight = asset.frameHeight;
 
-  drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad);
+  drawFrameWithTransform(
+    ctx,
+    asset,
+    sx,
+    sy,
+    sourceWidth,
+    sourceHeight,
+    drawWidth,
+    drawHeight,
+    dx,
+    dy,
+    rotationRad,
+    flipX
+  );
 
   if (telegraphAlpha > 0) {
-    drawTintedFrame(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad, "#ff2d2d", telegraphAlpha);
+    drawTintedFrame(
+      ctx,
+      asset,
+      sx,
+      sy,
+      sourceWidth,
+      sourceHeight,
+      drawWidth,
+      drawHeight,
+      dx,
+      dy,
+      rotationRad,
+      "#ff2d2d",
+      telegraphAlpha,
+      flipX
+    );
   }
 
   if (flashAlpha <= 0) {
@@ -247,14 +328,42 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
   }
 
   if (flashColor !== "#ffffff") {
-    drawTintedFrame(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad, flashColor, flashAlpha);
+    drawTintedFrame(
+      ctx,
+      asset,
+      sx,
+      sy,
+      sourceWidth,
+      sourceHeight,
+      drawWidth,
+      drawHeight,
+      dx,
+      dy,
+      rotationRad,
+      flashColor,
+      flashAlpha,
+      flipX
+    );
     return;
   }
 
   ctx.save();
   ctx.globalAlpha = flashAlpha;
   ctx.filter = "brightness(0) invert(1)";
-  drawFrameWithTransform(ctx, asset, sx, sy, drawWidth, drawHeight, dx, dy, rotationRad);
+  drawFrameWithTransform(
+    ctx,
+    asset,
+    sx,
+    sy,
+    sourceWidth,
+    sourceHeight,
+    drawWidth,
+    drawHeight,
+    dx,
+    dy,
+    rotationRad,
+    flipX
+  );
   ctx.restore();
 }
 
@@ -335,7 +444,19 @@ function drawEffects(ctx, effectDrawables) {
 
     ctx.save();
     ctx.globalCompositeOperation = effect.blendMode === "add" ? "lighter" : "source-over";
-    drawFrameWithTransform(ctx, asset, sx, sy, frameWidth, frameHeight, dx, dy, rotationRad);
+    drawFrameWithTransform(
+      ctx,
+      asset,
+      sx,
+      sy,
+      frameWidth,
+      frameHeight,
+      drawWidth,
+      drawHeight,
+      dx,
+      dy,
+      rotationRad
+    );
     ctx.restore();
   }
 }
@@ -400,7 +521,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {HTMLCanvasElement} canvas
  * @param {{canvas:HTMLCanvasElement,widthPx:number,heightPx:number}} backdrop
  * @param {{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null} playerAsset
- * @param {{row:number,col:number}|null} playerFrame
+ * @param {{row:number,col:number,flipX?:boolean,drawScale?:number,anchorFeet?:boolean}|null} playerFrame
  * @param {{x:number,y:number}|null} player
  * @param {number} playerFlashAlpha
  * @param {string} playerFlashColor
@@ -527,6 +648,9 @@ export function renderFrame(
       feetY: player.y + playerAsset.frameHeight,
       draw() {
         drawSprite(ctx, playerAsset, playerFrame, player, {
+          drawScale: Number(playerFrame.drawScale) || 1,
+          anchorFeet: playerFrame.anchorFeet === true,
+          flipX: playerFrame.flipX === true,
           flashAlpha: playerFlashAlpha,
           flashColor: playerFlashColor,
         });

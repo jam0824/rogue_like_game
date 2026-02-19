@@ -56,10 +56,13 @@ function createWalkableDungeon(width, height, walkable = true) {
   };
 }
 
-function createPlayerAtFeetTile(tileX, tileY) {
+function createPlayerAtFeetTile(tileX, tileY, { width = 32, height = 64, footHitboxHeight = 32 } = {}) {
   return {
     x: tileX * TILE_SIZE,
-    y: tileY * TILE_SIZE - 48,
+    y: tileY * TILE_SIZE - (height - footHitboxHeight / 2),
+    width,
+    height,
+    footHitboxHeight,
   };
 }
 
@@ -241,6 +244,20 @@ describe("systemUiState", () => {
     expect(drop).not.toBeNull();
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("3:3");
     expect(`${drop.tileX}:${drop.tileY}`).not.toBe("2:3");
+  });
+
+  it("findDropTileNearPlayer は player runtime 寸法(24x24)でも足元タイルを正しく解決する", () => {
+    const dungeon = createWalkableDungeon(7, 7, true);
+    const player = createPlayerAtFeetTile(3, 3, {
+      width: 24,
+      height: 24,
+      footHitboxHeight: 24,
+    });
+
+    const drop = findDropTileNearPlayer(dungeon, player, []);
+
+    expect(drop).not.toBeNull();
+    expect(`${drop.tileX}:${drop.tileY}`).not.toBe("3:3");
   });
 
   it("dropSelectedInventoryItemToGround は runtimeItem の主要情報を保持する", () => {

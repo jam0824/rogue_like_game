@@ -40,8 +40,15 @@ function getPlayerFeetTile(player) {
     return null;
   }
 
-  const feetX = player.x + PLAYER_WIDTH / 2;
-  const feetY = player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
+  const width = Number.isFinite(player.width) && player.width > 0 ? player.width : PLAYER_WIDTH;
+  const height = Number.isFinite(player.height) && player.height > 0 ? player.height : PLAYER_HEIGHT;
+  const footHitboxHeight =
+    Number.isFinite(player.footHitboxHeight) && player.footHitboxHeight > 0
+      ? Math.min(height, player.footHitboxHeight)
+      : PLAYER_FOOT_HITBOX_HEIGHT;
+
+  const feetX = player.x + width / 2;
+  const feetY = player.y + height - footHitboxHeight / 2;
   return {
     tileX: Math.floor(feetX / TILE_SIZE),
     tileY: Math.floor(feetY / TILE_SIZE),

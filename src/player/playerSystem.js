@@ -1,19 +1,16 @@
-import {
-  PLAYER_ANIM_FPS,
-  PLAYER_ANIM_SEQUENCE,
-  PLAYER_FOOT_HITBOX_HEIGHT,
-  PLAYER_HEIGHT,
-  PLAYER_IDLE_FRAME_COL,
-  PLAYER_SPEED_PX_PER_SEC,
-  PLAYER_WIDTH,
-  TILE_SIZE,
-} from "../config/constants.js";
+import { PLAYER_SPEED_PX_PER_SEC, TILE_SIZE } from "../config/constants.js";
 
 const MAX_SUBSTEP_PIXELS = 4;
 const MOVE_EPSILON = 0.001;
 const PLAYER_MAX_HP_DEFAULT = 100;
 const PLAYER_HIT_FLASH_DURATION_SEC = 0.12;
 const PLAYER_HIT_FLASH_COLOR_DEFAULT = "#ffffff";
+const PLAYER_DEFAULT_WIDTH = 24;
+const PLAYER_DEFAULT_HEIGHT = 24;
+const PLAYER_DEFAULT_ANIM_FPS = 10;
+const PLAYER_DEFAULT_SPRITE_FACING = "left";
+const PLAYER_SPRITE_SWITCH_MARGIN_DEFAULT = 6;
+const PLAYER_DEATH_STOP_FRAME_INDEX = 2;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -21,6 +18,57 @@ function clamp(value, min, max) {
 
 function round2(value) {
   return Math.round(value * 100) / 100;
+}
+
+function toPositiveNumber(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? Number(value) : fallback;
+}
+
+function normalizeSpriteFacing(value, fallback = PLAYER_DEFAULT_SPRITE_FACING) {
+  if (typeof value !== "string" || value.trim().length <= 0) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized.includes("right")) {
+    return "right";
+  }
+  if (normalized.includes("left")) {
+    return "left";
+  }
+
+  return fallback;
+}
+
+function resolvePlayerDefaults(playerDefinition) {
+  const width = toPositiveNumber(playerDefinition?.width, PLAYER_DEFAULT_WIDTH);
+  const height = toPositiveNumber(playerDefinition?.height, PLAYER_DEFAULT_HEIGHT);
+  const animFps = toPositiveNumber(playerDefinition?.fps, PLAYER_DEFAULT_ANIM_FPS);
+  const defaultSpriteFacing = normalizeSpriteFacing(
+    playerDefinition?.playerPngFacingDirection,
+    PLAYER_DEFAULT_SPRITE_FACING
+  );
+
+  return {
+    width,
+    height,
+    footHitboxHeight: height,
+    animFps,
+    defaultSpriteFacing,
+  };
+}
+
+function getPlayerDimensions(player) {
+  const width = toPositiveNumber(player?.width, PLAYER_DEFAULT_WIDTH);
+  const height = toPositiveNumber(player?.height, PLAYER_DEFAULT_HEIGHT);
+  const requestedFootHitboxHeight = toPositiveNumber(player?.footHitboxHeight, height);
+  const footHitboxHeight = clamp(requestedFootHitboxHeight, 1, height);
+
+  return {
+    width,
+    height,
+    footHitboxHeight,
+  };
 }
 
 function getWalkableGrid(dungeon) {
@@ -31,26 +79,26 @@ function hasStepMovement(fromX, fromY, toX, toY) {
   return Math.hypot(toX - fromX, toY - fromY) > MOVE_EPSILON;
 }
 
-function getPlayerBoundsPx(dungeon) {
+function getPlayerBoundsPx(dungeon, dimensions) {
   const widthPx = dungeon.gridWidth * TILE_SIZE;
   const heightPx = dungeon.gridHeight * TILE_SIZE;
 
   return {
     minX: 0,
-    maxX: widthPx - PLAYER_WIDTH,
-    minY: -PLAYER_FOOT_HITBOX_HEIGHT,
-    maxY: heightPx - PLAYER_HEIGHT,
+    maxX: widthPx - dimensions.width,
+    minY: -dimensions.footHitboxHeight,
+    maxY: heightPx - dimensions.height,
     maxTargetX: Math.max(0, widthPx - 1),
     maxTargetY: Math.max(0, heightPx - 1),
   };
 }
 
-function getFeetRect(x, y) {
+function getFeetRect(x, y, dimensions) {
   return {
     x,
-    y: y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT,
-    width: PLAYER_WIDTH,
-    height: PLAYER_FOOT_HITBOX_HEIGHT,
+    y: y + dimensions.height - dimensions.footHitboxHeight,
+    width: dimensions.width,
+    height: dimensions.footHitboxHeight,
   };
 }
 
@@ -79,9 +127,10 @@ function isFeetRectWalkable(walkableGrid, rect) {
 }
 
 function getFeetCenter(player) {
+  const dimensions = getPlayerDimensions(player);
   return {
-    x: player.x + PLAYER_WIDTH / 2,
-    y: player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2,
+    x: player.x + dimensions.width / 2,
+    y: player.y + dimensions.height - dimensions.footHitboxHeight / 2,
   };
 }
 
@@ -94,8 +143,17 @@ function updateFacing(player, dx, dy) {
   player.facing = dy >= 0 ? "down" : "up";
 }
 
-function clampPlayerToBounds(x, y, dungeon) {
-  const bounds = getPlayerBoundsPx(dungeon);
+function updateSpriteFacing(player, horizontalIntentPx) {
+  const margin = toPositiveNumber(player?.spriteFacingSwitchMarginPx, PLAYER_SPRITE_SWITCH_MARGIN_DEFAULT);
+  if (Math.abs(horizontalIntentPx) <= margin) {
+    return;
+  }
+
+  player.spriteFacing = horizontalIntentPx >= 0 ? "right" : "left";
+}
+
+function clampPlayerToBounds(x, y, dungeon, dimensions) {
+  const bounds = getPlayerBoundsPx(dungeon, dimensions);
 
   return {
     x: clamp(x, bounds.minX, bounds.maxX),
@@ -103,8 +161,8 @@ function clampPlayerToBounds(x, y, dungeon) {
   };
 }
 
-function clampTarget(target, dungeon) {
-  const bounds = getPlayerBoundsPx(dungeon);
+function clampTarget(target, dungeon, dimensions) {
+  const bounds = getPlayerBoundsPx(dungeon, dimensions);
 
   return {
     x: clamp(target.x, 0, bounds.maxTargetX),
@@ -116,28 +174,29 @@ function findStartRoom(dungeon) {
   return dungeon.rooms.find((room) => room.id === dungeon.startRoomId) ?? null;
 }
 
-function isWalkableStep(fromX, fromY, toX, toY, walkableGrid) {
+function isWalkableStep(fromX, fromY, toX, toY, walkableGrid, dimensions) {
   if (!hasStepMovement(fromX, fromY, toX, toY)) {
     return false;
   }
 
-  const feetRect = getFeetRect(toX, toY);
+  const feetRect = getFeetRect(toX, toY, dimensions);
   return isFeetRectWalkable(walkableGrid, feetRect);
 }
 
 function resolveMoveStep(player, dungeon, walkableGrid, desiredDx, desiredDy) {
+  const dimensions = getPlayerDimensions(player);
   const fromX = player.x;
   const fromY = player.y;
 
-  const combined = clampPlayerToBounds(fromX + desiredDx, fromY + desiredDy, dungeon);
-  if (isWalkableStep(fromX, fromY, combined.x, combined.y, walkableGrid)) {
+  const combined = clampPlayerToBounds(fromX + desiredDx, fromY + desiredDy, dungeon, dimensions);
+  if (isWalkableStep(fromX, fromY, combined.x, combined.y, walkableGrid, dimensions)) {
     return combined;
   }
 
-  const xOnly = clampPlayerToBounds(fromX + desiredDx, fromY, dungeon);
-  const yOnly = clampPlayerToBounds(fromX, fromY + desiredDy, dungeon);
-  const canMoveX = isWalkableStep(fromX, fromY, xOnly.x, xOnly.y, walkableGrid);
-  const canMoveY = isWalkableStep(fromX, fromY, yOnly.x, yOnly.y, walkableGrid);
+  const xOnly = clampPlayerToBounds(fromX + desiredDx, fromY, dungeon, dimensions);
+  const yOnly = clampPlayerToBounds(fromX, fromY + desiredDy, dungeon, dimensions);
+  const canMoveX = isWalkableStep(fromX, fromY, xOnly.x, xOnly.y, walkableGrid, dimensions);
+  const canMoveY = isWalkableStep(fromX, fromY, yOnly.x, yOnly.y, walkableGrid, dimensions);
 
   if (canMoveX && canMoveY) {
     return Math.abs(desiredDx) >= Math.abs(desiredDy) ? xOnly : yOnly;
@@ -154,17 +213,17 @@ function resolveMoveStep(player, dungeon, walkableGrid, desiredDx, desiredDy) {
   return null;
 }
 
-function findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, walkableGrid) {
+function findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, walkableGrid, dimensions) {
   let best = null;
 
   for (let tileY = startRoom.y; tileY < startRoom.y + startRoom.h; tileY += 1) {
     for (let tileX = startRoom.x; tileX < startRoom.x + startRoom.w; tileX += 1) {
       const feetCenterX = tileX * TILE_SIZE + TILE_SIZE / 2;
       const feetCenterY = tileY * TILE_SIZE + TILE_SIZE / 2;
-      const rawX = feetCenterX - PLAYER_WIDTH / 2;
-      const rawY = feetCenterY - (PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2);
-      const candidate = clampPlayerToBounds(rawX, rawY, dungeon);
-      const feetRect = getFeetRect(candidate.x, candidate.y);
+      const rawX = feetCenterX - dimensions.width / 2;
+      const rawY = feetCenterY - (dimensions.height - dimensions.footHitboxHeight / 2);
+      const candidate = clampPlayerToBounds(rawX, rawY, dungeon, dimensions);
+      const feetRect = getFeetRect(candidate.x, candidate.y, dimensions);
 
       if (!isFeetRectWalkable(walkableGrid, feetRect)) {
         continue;
@@ -173,11 +232,7 @@ function findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, wa
       const distance =
         Math.abs(feetCenterX - preferredFeetCenter.x) + Math.abs(feetCenterY - preferredFeetCenter.y);
 
-      if (
-        !best ||
-        distance < best.distance ||
-        (distance === best.distance && tileY > best.tileY)
-      ) {
+      if (!best || distance < best.distance || (distance === best.distance && tileY > best.tileY)) {
         best = {
           distance,
           tileY,
@@ -198,12 +253,36 @@ function findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, wa
   };
 }
 
-export function createPlayerState(dungeon) {
+function isPlayerDead(player) {
+  return player?.isDead === true || (Number.isFinite(player?.hp) && player.hp <= 0);
+}
+
+function getAnimationFps(player, playerAssets) {
+  return toPositiveNumber(playerAssets?.fps, toPositiveNumber(player?.animFps, PLAYER_DEFAULT_ANIM_FPS));
+}
+
+function getAnimationFrameCount(playerAssets, animation) {
+  const frameCount = Number(playerAssets?.[animation]?.frameCount);
+  if (!Number.isFinite(frameCount) || frameCount <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(frameCount));
+}
+
+function getLoopFrameIndex(animTime, fps, frameCount) {
+  if (frameCount <= 1) {
+    return 0;
+  }
+  return Math.floor(Math.max(0, Number(animTime) || 0) * fps) % frameCount;
+}
+
+export function createPlayerState(dungeon, playerDefinition = null) {
   const startRoom = findStartRoom(dungeon);
   if (!startRoom) {
     throw new Error("Failed to spawn player: start room is missing.");
   }
 
+  const defaults = resolvePlayerDefaults(playerDefinition);
   const walkableGrid = getWalkableGrid(dungeon);
   const preferredFeetCenter = {
     x: startRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
@@ -211,33 +290,41 @@ export function createPlayerState(dungeon) {
   };
 
   const preferredPlayerPos = clampPlayerToBounds(
-    preferredFeetCenter.x - PLAYER_WIDTH / 2,
-    preferredFeetCenter.y - (PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2),
-    dungeon
+    preferredFeetCenter.x - defaults.width / 2,
+    preferredFeetCenter.y - (defaults.height - defaults.footHitboxHeight / 2),
+    dungeon,
+    defaults
   );
 
-  const preferredFeetRect = getFeetRect(preferredPlayerPos.x, preferredPlayerPos.y);
+  const preferredFeetRect = getFeetRect(preferredPlayerPos.x, preferredPlayerPos.y, defaults);
   const spawnFeetCenter = isFeetRectWalkable(walkableGrid, preferredFeetRect)
     ? preferredFeetCenter
-    : findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, walkableGrid);
+    : findFallbackSpawnFeetCenter(dungeon, startRoom, preferredFeetCenter, walkableGrid, defaults);
 
   const spawnPlayerPos = clampPlayerToBounds(
-    spawnFeetCenter.x - PLAYER_WIDTH / 2,
-    spawnFeetCenter.y - (PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2),
-    dungeon
+    spawnFeetCenter.x - defaults.width / 2,
+    spawnFeetCenter.y - (defaults.height - defaults.footHitboxHeight / 2),
+    dungeon,
+    defaults
   );
 
   return {
     x: spawnPlayerPos.x,
     y: spawnPlayerPos.y,
-    width: PLAYER_WIDTH,
-    height: PLAYER_HEIGHT,
-    footHitboxHeight: PLAYER_FOOT_HITBOX_HEIGHT,
+    width: defaults.width,
+    height: defaults.height,
+    footHitboxHeight: defaults.footHitboxHeight,
     facing: "down",
+    spriteFacing: defaults.defaultSpriteFacing,
+    defaultSpriteFacing: defaults.defaultSpriteFacing,
+    spriteFacingSwitchMarginPx: PLAYER_SPRITE_SWITCH_MARGIN_DEFAULT,
     pointerActive: false,
     target: null,
     isMoving: false,
+    isDead: false,
     animTime: 0,
+    deathAnimTime: 0,
+    animFps: defaults.animFps,
     hp: PLAYER_MAX_HP_DEFAULT,
     maxHp: PLAYER_MAX_HP_DEFAULT,
     moveSpeedPxPerSec: PLAYER_SPEED_PX_PER_SEC,
@@ -268,9 +355,10 @@ export function tryRestorePlayerPosition(player, dungeon, savedPos) {
     return false;
   }
 
+  const dimensions = getPlayerDimensions(player);
   const walkableGrid = getWalkableGrid(dungeon);
-  const clamped = clampPlayerToBounds(savedPos.x, savedPos.y, dungeon);
-  const feetRect = getFeetRect(clamped.x, clamped.y);
+  const clamped = clampPlayerToBounds(savedPos.x, savedPos.y, dungeon, dimensions);
+  const feetRect = getFeetRect(clamped.x, clamped.y, dimensions);
   if (!isFeetRectWalkable(walkableGrid, feetRect)) {
     return false;
   }
@@ -281,7 +369,11 @@ export function tryRestorePlayerPosition(player, dungeon, savedPos) {
 }
 
 export function setPointerTarget(player, active, worldX, worldY) {
-  if (!active) {
+  if (!player) {
+    return;
+  }
+
+  if (!active || isPlayerDead(player)) {
     player.pointerActive = false;
     player.target = null;
     return;
@@ -305,13 +397,29 @@ export function updatePlayer(player, dungeon, dt) {
 
   player.hitFlashTimerSec = Math.max(0, (Number(player.hitFlashTimerSec) || 0) - dt);
 
-  if (!player.pointerActive || !player.target) {
+  if (Number.isFinite(player.hp) && player.hp <= 0) {
+    player.hp = 0;
+    player.isDead = true;
+    player.pointerActive = false;
+    player.target = null;
     player.isMoving = false;
-    player.animTime = 0;
+    player.deathAnimTime = Math.max(0, Number(player.deathAnimTime) || 0) + dt;
     return;
   }
 
-  player.target = clampTarget(player.target, dungeon);
+  if (player.isDead === true) {
+    player.isDead = false;
+    player.deathAnimTime = 0;
+  }
+
+  if (!player.pointerActive || !player.target) {
+    player.isMoving = false;
+    player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
+    return;
+  }
+
+  const dimensions = getPlayerDimensions(player);
+  player.target = clampTarget(player.target, dungeon, dimensions);
 
   const feetCenter = getFeetCenter(player);
   const toTargetX = player.target.x - feetCenter.x;
@@ -320,7 +428,7 @@ export function updatePlayer(player, dungeon, dt) {
 
   if (distance <= MOVE_EPSILON) {
     player.isMoving = false;
-    player.animTime = 0;
+    player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
     return;
   }
 
@@ -333,7 +441,6 @@ export function updatePlayer(player, dungeon, dt) {
   const substeps = Math.max(1, Math.ceil(Math.hypot(moveX, moveY) / MAX_SUBSTEP_PIXELS));
   const stepX = moveX / substeps;
   const stepY = moveY / substeps;
-  const wasMoving = player.isMoving;
   const walkableGrid = getWalkableGrid(dungeon);
 
   let movedX = 0;
@@ -363,42 +470,52 @@ export function updatePlayer(player, dungeon, dt) {
   const movedDistance = Math.hypot(movedX, movedY);
   if (movedDistance <= MOVE_EPSILON) {
     player.isMoving = false;
-    player.animTime = 0;
+    player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
     return;
   }
 
   player.isMoving = true;
   updateFacing(player, movedX, movedY);
-
-  if (!wasMoving) {
-    player.animTime = 0;
-  }
-
-  player.animTime += dt;
+  updateSpriteFacing(player, toTargetX);
+  player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
 }
 
-export function getPlayerFrame(player) {
-  const rowByFacing = {
-    down: 0,
-    left: 1,
-    right: 2,
-    up: 3,
-  };
-
-  const row = rowByFacing[player.facing] ?? 0;
-  if (!player.isMoving) {
-    return { row, col: PLAYER_IDLE_FRAME_COL };
+export function getPlayerFrame(player, playerAssets) {
+  if (!player) {
+    return {
+      row: 0,
+      col: 0,
+      animation: "idle",
+      flipX: false,
+    };
   }
 
-  const sequenceIndex = Math.floor(player.animTime * PLAYER_ANIM_FPS) % PLAYER_ANIM_SEQUENCE.length;
+  const dead = isPlayerDead(player);
+  const animation = dead ? "death" : player.isMoving ? "walk" : "idle";
+  const frameCount = getAnimationFrameCount(playerAssets, animation);
+  const fps = getAnimationFps(player, playerAssets);
+  const deathStopFrameIndex = Math.min(frameCount - 1, PLAYER_DEATH_STOP_FRAME_INDEX);
+  const col = dead
+    ? Math.min(deathStopFrameIndex, Math.floor(Math.max(0, Number(player.deathAnimTime) || 0) * fps))
+    : getLoopFrameIndex(player.animTime, fps, frameCount);
+
+  const defaultFacing = normalizeSpriteFacing(
+    playerAssets?.defaultFacing,
+    normalizeSpriteFacing(player.defaultSpriteFacing, PLAYER_DEFAULT_SPRITE_FACING)
+  );
+  const spriteFacing = normalizeSpriteFacing(player.spriteFacing, defaultFacing);
+
   return {
-    row,
-    col: PLAYER_ANIM_SEQUENCE[sequenceIndex],
+    row: 0,
+    col,
+    animation,
+    flipX: spriteFacing !== defaultFacing,
   };
 }
 
 export function getPlayerFeetHitbox(player) {
-  const rect = getFeetRect(player.x, player.y);
+  const dimensions = getPlayerDimensions(player);
+  const rect = getFeetRect(player.x, player.y, dimensions);
 
   return {
     x: round2(rect.x),
@@ -413,11 +530,12 @@ export function getPlayerCombatHitbox(player) {
     return null;
   }
 
+  const dimensions = getPlayerDimensions(player);
   return {
     x: player.x,
     y: player.y,
-    width: player.width ?? PLAYER_WIDTH,
-    height: player.height ?? PLAYER_HEIGHT,
+    width: dimensions.width,
+    height: dimensions.height,
   };
 }
 

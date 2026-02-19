@@ -1,10 +1,7 @@
 import {
   GAME_VIEW_SCALE,
   INITIAL_SEED,
-  PLAYER_FOOT_HITBOX_HEIGHT,
-  PLAYER_HEIGHT,
   PLAYER_SPEED_PX_PER_SEC,
-  PLAYER_WIDTH,
   TILE_SIZE,
 } from "./config/constants.js";
 import { deriveSeed } from "./core/rng.js";
@@ -86,6 +83,7 @@ import {
 import { createSystemHud } from "./ui/systemHud.js";
 import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
+import { loadDefaultPlayerDefinition } from "./player/playerDb.js";
 import { createFloatingTextPopup, spawnDamagePopupsFromEvents, updateDamagePopups } from "./combat/combatFeedbackSystem.js";
 import {
   applyHitFlashColorsFromDamageEvents,
@@ -125,6 +123,7 @@ const SE_KEY_GET_ITEM = "se_key_get_item";
 const SE_KEY_PUT_ITEM = "se_key_put_item";
 const SE_KEY_PLAYER_GET_DAMAGE = "se_key_player_get_damage";
 const SE_KEY_ENEMY_DEATH = "se_key_enemy_death";
+const PLAYER_RENDER_SCALE = 32 / 24;
 
 const appState = createAppState(INITIAL_SEED);
 const dungeonBgmPlayer = createDungeonBgmPlayer();
@@ -185,6 +184,22 @@ function clamp(value, min, max) {
 
 function round2(value) {
   return Math.round(value * 100) / 100;
+}
+
+function getPlayerDimensions(player) {
+  const width = Number.isFinite(player?.width) && player.width > 0 ? player.width : 24;
+  const height = Number.isFinite(player?.height) && player.height > 0 ? player.height : 24;
+  const requestedFootHitboxHeight =
+    Number.isFinite(player?.footHitboxHeight) && player.footHitboxHeight > 0
+      ? player.footHitboxHeight
+      : height;
+  const footHitboxHeight = clamp(requestedFootHitboxHeight, 1, height);
+
+  return {
+    width,
+    height,
+    footHitboxHeight,
+  };
 }
 
 function makeRandomSeed() {
@@ -731,8 +746,9 @@ function getPlayerFeetTile(player) {
     return null;
   }
 
-  const feetX = player.x + PLAYER_WIDTH / 2;
-  const feetY = player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
+  const dimensions = getPlayerDimensions(player);
+  const feetX = player.x + dimensions.width / 2;
+  const feetY = player.y + dimensions.height - dimensions.footHitboxHeight / 2;
   return {
     tileX: Math.floor(feetX / TILE_SIZE),
     tileY: Math.floor(feetY / TILE_SIZE),
@@ -764,11 +780,13 @@ function buildWeaponTextState(weapon) {
 }
 
 function buildPlayerTextState(player, weapons) {
+  const dimensions = getPlayerDimensions(player);
+
   return {
     x: round2(player.x),
     y: round2(player.y),
-    width: PLAYER_WIDTH,
-    height: PLAYER_HEIGHT,
+    width: dimensions.width,
+    height: dimensions.height,
     hp: round2(player.hp ?? 0),
     maxHp: round2(player.maxHp ?? 0),
     hitFlashAlpha: round2(getPlayerHitFlashAlpha(player)),
@@ -1015,8 +1033,9 @@ function followPlayerInView() {
     return;
   }
 
-  const feetCenterX = appState.player.x + PLAYER_WIDTH / 2;
-  const feetCenterY = appState.player.y + PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2;
+  const dimensions = getPlayerDimensions(appState.player);
+  const feetCenterX = appState.player.x + dimensions.width / 2;
+  const feetCenterY = appState.player.y + dimensions.height - dimensions.footHitboxHeight / 2;
   const nextScroll = computeCameraScroll({
     centerX: feetCenterX,
     centerY: feetCenterY,
@@ -1031,7 +1050,8 @@ function followPlayerInView() {
   canvasScroll.scrollTop = nextScroll.top;
 }
 
-const playerAsset = await loadPlayerAsset();
+const playerDefinition = await loadDefaultPlayerDefinition();
+const playerAssets = await loadPlayerAsset(playerDefinition);
 let enemyDefinitions = [];
 let enemyAssets = {};
 let enemyAiProfilesById = {};
@@ -1542,7 +1562,8 @@ function applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, consumedItemId) 
   appState.player.hp = nextHp;
 
   if (healedAmount > 0) {
-    pushFloatingHealPopup(healedAmount, appState.player.x + PLAYER_WIDTH / 2, appState.player.y - 16);
+    const dimensions = getPlayerDimensions(appState.player);
+    pushFloatingHealPopup(healedAmount, appState.player.x + dimensions.width / 2, appState.player.y - 16);
   }
 }
 
@@ -1688,9 +1709,10 @@ function syncGroundItemPickup() {
             ? itemDefinition.nameKey
             : "";
       if (pickupNameKey.length > 0) {
+        const dimensions = getPlayerDimensions(appState.player);
         pushFloatingPickupPopup(
           pickupNameKey,
-          appState.player.x + PLAYER_WIDTH / 2,
+          appState.player.x + dimensions.width / 2,
           appState.player.y - 10
         );
       }
@@ -2501,12 +2523,24 @@ function renderCurrentFrame() {
     label: getIconLabelForKey(groundItem?.runtimeItem?.iconKey ?? groundItem?.itemId ?? "empty"),
     drawSize: TILE_SIZE,
   }));
+  const basePlayerFrame = getPlayerFrame(appState.player, playerAssets);
+  const playerFrame = basePlayerFrame
+    ? {
+        ...basePlayerFrame,
+        drawScale: PLAYER_RENDER_SCALE,
+        anchorFeet: true,
+      }
+    : null;
+  const playerDrawableAsset =
+    playerFrame && playerAssets
+      ? playerAssets[playerFrame.animation] ?? playerAssets.idle ?? null
+      : null;
 
   renderFrame(
     canvas,
     appState.backdrop,
-    playerAsset,
-    getPlayerFrame(appState.player),
+    playerDrawableAsset,
+    playerFrame,
     appState.player,
     getPlayerHitFlashAlpha(appState.player),
     normalizeHitFlashColor(appState.player?.hitFlashColor),
@@ -2530,34 +2564,40 @@ function stepSimulation(dt) {
   updatePlayer(appState.player, appState.dungeon, dt);
   syncGroundItemPickup();
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
+
+  const isPlayerDead = Number.isFinite(appState.player.hp) && appState.player.hp <= 0;
   const weaponCombatSnapshot = createWeaponCombatSnapshot(appState.weapons);
   const enemyWeaponCombatSnapshot = createEnemyWeaponCombatSnapshot(appState.enemies);
   const aliveEnemyIdsBeforeCombat = createAliveEnemyIdSet(appState.enemies);
-  const playerCombatEvents = updateWeaponsAndCombat(
-    appState.weapons,
-    appState.player,
-    appState.enemies,
-    weaponDefinitionsById,
-    formationDefinitionsById,
-    dt
-  );
-  const weaponStartEvents = buildWeaponStartEvents(appState.weapons, weaponCombatSnapshot);
-  const weaponHitEvents = buildWeaponHitEvents(playerCombatEvents, appState.weapons);
-  const skillChainResult = updateSkillChainCombat({
-    dt,
-    dungeon: appState.dungeon,
-    player: appState.player,
-    enemies: appState.enemies,
-    effects: appState.effects,
-    weapons: appState.weapons,
-    weaponStartEvents,
-    weaponHitEvents,
-    weaponDefinitionsById,
-    skillDefinitionsById,
-    buildEffectRuntime,
-  });
+  const playerCombatEvents = isPlayerDead
+    ? []
+    : updateWeaponsAndCombat(
+        appState.weapons,
+        appState.player,
+        appState.enemies,
+        weaponDefinitionsById,
+        formationDefinitionsById,
+        dt
+      );
+  const skillChainResult = isPlayerDead
+    ? { events: [], effects: appState.effects }
+    : updateSkillChainCombat({
+        dt,
+        dungeon: appState.dungeon,
+        player: appState.player,
+        enemies: appState.enemies,
+        effects: appState.effects,
+        weapons: appState.weapons,
+        weaponStartEvents: buildWeaponStartEvents(appState.weapons, weaponCombatSnapshot),
+        weaponHitEvents: buildWeaponHitEvents(playerCombatEvents, appState.weapons),
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+      });
   appState.effects = skillChainResult.effects;
-  playWeaponCombatSe(appState.weapons, weaponCombatSnapshot);
+  if (!isPlayerDead) {
+    playWeaponCombatSe(appState.weapons, weaponCombatSnapshot);
+  }
   const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
   });
@@ -2660,7 +2700,7 @@ async function regenerate(seed) {
     });
     dungeon.floor = Math.max(1, Math.floor(Number(appState.playerState?.run?.floor) || 1));
 
-    const player = createPlayerState(dungeon);
+    const player = createPlayerState(dungeon, playerDefinition);
     const playerDerived = derivePlayerCombatStats(appState.playerState, PLAYER_SPEED_PX_PER_SEC);
     player.statTotals = playerDerived.statTotals;
     player.maxHp = playerDerived.maxHp;

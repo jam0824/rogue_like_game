@@ -29,10 +29,17 @@ function createDungeonMock(overrides = {}) {
   };
 }
 
-function createPlayerAtFeetTile(tileX, tileY) {
+function createPlayerAtFeetTile(
+  tileX,
+  tileY,
+  { width = 32, height = PLAYER_HEIGHT, footHitboxHeight = PLAYER_FOOT_HITBOX_HEIGHT } = {}
+) {
   return {
     x: tileX * TILE_SIZE,
-    y: tileY * TILE_SIZE - (PLAYER_HEIGHT - PLAYER_FOOT_HITBOX_HEIGHT / 2),
+    y: tileY * TILE_SIZE - (height - footHitboxHeight / 2),
+    width,
+    height,
+    footHitboxHeight,
   };
 }
 
@@ -325,6 +332,35 @@ describe("treasureSystem", () => {
 
     expect(result.opened).toBe(false);
     expect(result.groundItems).toHaveLength(0);
+  });
+
+  it("tryOpenChestByClick は player runtime 寸法(24x24)でも距離判定できる", () => {
+    const dungeon = createDungeonMock();
+    const chest = {
+      id: "chest_01",
+      tier: "common",
+      roomId: 2,
+      tileX: 8,
+      tileY: 8,
+      isOpened: false,
+    };
+    const player = createPlayerAtFeetTile(8, 7, {
+      width: 24,
+      height: 24,
+      footHitboxHeight: 24,
+    });
+
+    const result = tryOpenChestByClick(
+      [chest],
+      [],
+      player,
+      chest.tileX * TILE_SIZE + 16,
+      chest.tileY * TILE_SIZE + 16,
+      { dungeon }
+    );
+
+    expect(result.opened).toBe(true);
+    expect(result.treasureChests[0].isOpened).toBe(true);
   });
 
   it("buildBlockedTileSetFromChests は宝箱タイルを塞ぐ", () => {
