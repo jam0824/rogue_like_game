@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ENEMY_ANIM_FPS, TILE_SIZE } from "../src/config/constants.js";
+import { TILE_SIZE } from "../src/config/constants.js";
 import { generateDungeon } from "../src/generation/dungeonGenerator.js";
 import { resolveWallSymbols } from "../src/tiles/wallSymbolResolver.js";
 import { buildWalkableGrid } from "../src/tiles/walkableGrid.js";
@@ -21,6 +21,20 @@ function assert(condition, message) {
   }
 }
 
+function resolveImageMagnification(value) {
+  const magnification = Number(value);
+  if (!Number.isFinite(magnification) || magnification <= 0) {
+    return 1;
+  }
+  return magnification;
+}
+
+function assertClose(actual, expected, message) {
+  if (Math.abs(actual - expected) > 0.0001) {
+    throw new Error(`${message}: expected ${expected}, got ${actual}`);
+  }
+}
+
 function loadWalkEnemyDefinitionsFromFs() {
   const fileNames = fs
     .readdirSync(enemyDbDir)
@@ -33,9 +47,14 @@ function loadWalkEnemyDefinitionsFromFs() {
       return {
         id: fileName.replace(/\.json$/, ""),
         type: raw.type,
-        tipFileName: raw.tip_file_name,
+        walkPngFilePath: raw.walk_png_file_path,
+        idlePngFilePath: raw.idle_png_file_path,
+        deathPngFilePath: raw.death_png_file_path,
         width: raw.width,
         height: raw.height,
+        fps: raw.fps,
+        pngFacingDirection: raw.png_facing_direction,
+        imageMagnification: raw.image_magnification,
         noticeDistance: raw.notice_distance,
         giveupDistance: raw.giveup_distance,
       };
@@ -124,56 +143,79 @@ function checkMovementAndCollision(dungeon, enemies) {
     return Math.hypot(enemy.x - start.x, enemy.y - start.y) > 0.5;
   }).length;
 
-  assert(movedEnemyCount >= 2, `not enough enemies moved: ${movedEnemyCount}`);
+  const minimumMovedCount = Math.min(2, enemies.length);
+  assert(movedEnemyCount >= minimumMovedCount, `not enough enemies moved: ${movedEnemyCount}`);
 }
 
 function checkHeightCollisionBehavior(dungeon, walkEnemyDefinitions) {
-  const tallDefinition = walkEnemyDefinitions.find((enemy) => enemy.height >= 64);
-  const shortDefinition = walkEnemyDefinitions.find((enemy) => enemy.height <= 32);
+  assert(walkEnemyDefinitions.length > 0, "missing walk enemy definition");
 
-  assert(Boolean(tallDefinition), "missing tall walk enemy definition");
-  assert(Boolean(shortDefinition), "missing short walk enemy definition");
+  for (const definition of walkEnemyDefinitions) {
+    const enemies = createWalkEnemies(dungeon, [definition], `${CHECK_SEED}-${definition.id}`);
+    const enemy = enemies[0];
+    const hitbox = getEnemyWallHitbox(enemy);
 
-  const tallEnemies = createWalkEnemies(dungeon, [tallDefinition], `${CHECK_SEED}-tall`);
-  const shortEnemies = createWalkEnemies(dungeon, [shortDefinition], `${CHECK_SEED}-short`);
+    const magnification = resolveImageMagnification(definition.imageMagnification);
+    const baseWidth = definition.height >= 64 ? 32 : definition.width;
+    const baseHeight = definition.height >= 64 ? 32 : definition.height;
+    const expectedWidth = baseWidth * magnification;
+    const expectedHeight = baseHeight * magnification;
+    const expectedX = enemy.x + (enemy.width - expectedWidth) / 2;
+    const expectedY = enemy.y + (enemy.height - expectedHeight);
 
-  const tallEnemy = tallEnemies[0];
-  const shortEnemy = shortEnemies[0];
-  const tallHitbox = getEnemyWallHitbox(tallEnemy);
-  const shortHitbox = getEnemyWallHitbox(shortEnemy);
-
-  assert(tallHitbox.width === 32 && tallHitbox.height === 32, "tall enemy wall hitbox must be 32x32");
-  assert(shortHitbox.width === shortEnemy.width && shortHitbox.height === shortEnemy.height, "short enemy wall hitbox must be full body");
+    assertClose(hitbox.width, expectedWidth, "wall hitbox width mismatch");
+    assertClose(hitbox.height, expectedHeight, "wall hitbox height mismatch");
+    assertClose(hitbox.x, expectedX, "wall hitbox x mismatch");
+    assertClose(hitbox.y, expectedY, "wall hitbox y mismatch");
+  }
 }
 
 function checkAnimationSequence() {
+  const enemyAsset = {
+    walk: { frameCount: 6 },
+    idle: { frameCount: 4 },
+    death: { frameCount: 6 },
+    fps: 12,
+    defaultFacing: "right",
+  };
   const enemyBase = {
-    facing: "down",
+    isDead: false,
     isMoving: true,
     animTime: 0,
+    deathAnimTime: 0,
+    spriteFacing: "right",
+    defaultSpriteFacing: "right",
   };
 
-  const frameCols = [0, 1, 2, 3].map((index) => {
-    const time = index / ENEMY_ANIM_FPS;
-    return getEnemyFrame({ ...enemyBase, animTime: time }).col;
-  });
-
-  const expected = [0, 1, 2, 1];
-  assert(JSON.stringify(frameCols) === JSON.stringify(expected), `animation sequence mismatch: ${frameCols.join(",")}`);
-
-  const idleStepCols = [0, 1, 2, 3].map((index) => {
-    const time = index / ENEMY_ANIM_FPS;
-    return getEnemyFrame({ ...enemyBase, isMoving: false, animTime: time }).col;
+  const walkFrameCols = [0, 1, 2, 3].map((index) => {
+    const time = index / enemyAsset.fps;
+    return getEnemyFrame({ ...enemyBase, animTime: time, isMoving: true }, enemyAsset).col;
   });
   assert(
-    JSON.stringify(idleStepCols) === JSON.stringify(expected),
-    `idle-step sequence mismatch: ${idleStepCols.join(",")}`
+    JSON.stringify(walkFrameCols) === JSON.stringify([0, 1, 2, 3]),
+    `walk animation sequence mismatch: ${walkFrameCols.join(",")}`
   );
+
+  const idleFrameCols = [0, 1, 2, 3].map((index) => {
+    const time = index / enemyAsset.fps;
+    return getEnemyFrame({ ...enemyBase, animTime: time, isMoving: false }, enemyAsset).col;
+  });
+  assert(
+    JSON.stringify(idleFrameCols) === JSON.stringify([0, 1, 2, 3]),
+    `idle animation sequence mismatch: ${idleFrameCols.join(",")}`
+  );
+
+  const deathFrame = getEnemyFrame({ ...enemyBase, isDead: true, deathAnimTime: 99 }, enemyAsset);
+  assert(deathFrame.animation === "death", "dead enemy should use death animation");
+  assert(deathFrame.col === 5, `death frame should clamp to last frame: ${deathFrame.col}`);
+
+  const flipFrame = getEnemyFrame({ ...enemyBase, spriteFacing: "left" }, enemyAsset);
+  assert(flipFrame.flipX === true, "left spriteFacing should set flipX=true");
 }
 
 function main() {
   const walkEnemyDefinitions = loadWalkEnemyDefinitionsFromFs();
-  assert(walkEnemyDefinitions.length >= 2, "at least two walk enemies are required for this check");
+  assert(walkEnemyDefinitions.length >= 1, "at least one walk enemy is required for this check");
 
   const dungeon = generateDungeon({ seed: CHECK_SEED });
   dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);

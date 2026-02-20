@@ -50,9 +50,14 @@ function loadEnemyDefinitionsFromFs() {
     return {
       id: fileName.replace(/\.json$/, ""),
       type: raw.type,
-      tipFileName: raw.tip_file_name,
+      walkPngFilePath: raw.walk_png_file_path,
+      idlePngFilePath: raw.idle_png_file_path,
+      deathPngFilePath: raw.death_png_file_path,
       width: raw.width,
       height: raw.height,
+      fps: raw.fps,
+      pngFacingDirection: raw.png_facing_direction,
+      imageMagnification: raw.image_magnification,
       noticeDistance: raw.notice_distance,
       giveupDistance: raw.giveup_distance,
     };
@@ -237,25 +242,89 @@ function getMovementDistance(enemy, before) {
   return Math.hypot(enemy.x - before.x, enemy.y - before.y);
 }
 
+function findSpeedProbeScenario(dungeon, enemy, maxDistanceTiles) {
+  const height = dungeon.walkableGrid.length;
+  const width = dungeon.walkableGrid[0].length;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!isWalkableTile(dungeon, x, y)) {
+        continue;
+      }
+
+      for (const direction of CARDINAL_DIRECTIONS) {
+        for (let distance = 2; distance <= maxDistanceTiles; distance += 1) {
+          const endX = x + direction.dx * distance;
+          const endY = y + direction.dy * distance;
+
+          if (!isWalkableTile(dungeon, endX, endY)) {
+            continue;
+          }
+
+          resetEnemyToTile(enemy, x, y);
+          enemy.walkDirection = {
+            dx: direction.dx,
+            dy: direction.dy,
+            facing: direction.facing,
+          };
+          enemy.directionTimer = 10;
+
+          const randomBefore = { x: enemy.x, y: enemy.y };
+          updateEnemies([enemy], dungeon, DT, null);
+          const randomDistance = getMovementDistance(enemy, randomBefore);
+          if (randomDistance <= 0) {
+            continue;
+          }
+
+          resetEnemyToTile(enemy, x, y);
+          enemy.behaviorMode = BEHAVIOR_MODE.CHASE;
+          enemy.isChasing = true;
+
+          const chaseBefore = { x: enemy.x, y: enemy.y };
+          const player = createPlayerAtTile(endX, endY);
+          updateEnemies([enemy], dungeon, DT, player);
+          const chaseDistance = getMovementDistance(enemy, chaseBefore);
+
+          if (chaseDistance <= randomDistance) {
+            continue;
+          }
+
+          return {
+            start: { x, y },
+            end: { x: endX, y: endY },
+            direction,
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function main() {
   const enemyDefinitions = loadEnemyDefinitionsFromFs();
   const walkDefinition = enemyDefinitions.find((enemy) => enemy.type === "walk");
   const flyDefinition = enemyDefinitions.find((enemy) => enemy.type === "fly");
 
   assert(Boolean(walkDefinition), "missing walk enemy definition");
-  assert(Boolean(flyDefinition), "missing fly enemy definition");
 
   const dungeon = buildDungeon(CHECK_SEED);
   const walkEnemy = createEnemies(dungeon, [walkDefinition], `${CHECK_SEED}-walk`)[0];
-  const flyEnemy = createEnemies(dungeon, [flyDefinition], `${CHECK_SEED}-fly`)[0];
+  const flyEnemy = flyDefinition ? createEnemies(dungeon, [flyDefinition], `${CHECK_SEED}-fly`)[0] : null;
 
-  const noticeTileRange = Math.max(
-    2,
-    Math.floor(Math.min(walkDefinition.noticeDistance, flyDefinition.noticeDistance))
-  );
+  const noticeTileRange = Math.max(2, Math.floor(
+    flyDefinition
+      ? Math.min(walkDefinition.noticeDistance, flyDefinition.noticeDistance)
+      : walkDefinition.noticeDistance
+  ));
   const giveupTileRange = Math.max(
     noticeTileRange,
-    Math.floor(Math.max(walkDefinition.giveupDistance, flyDefinition.giveupDistance))
+    Math.floor(
+      flyDefinition
+        ? Math.max(walkDefinition.giveupDistance, flyDefinition.giveupDistance)
+        : walkDefinition.giveupDistance
+    )
   );
 
   const clearScenario = findClearLineScenario(dungeon, noticeTileRange);
@@ -278,9 +347,11 @@ function main() {
     "walk enemy should stay random_walk when blocked LOS even inside notice"
   );
 
-  resetEnemyToTile(flyEnemy, blockedScenario.start.x, blockedScenario.start.y);
-  updateEnemies([flyEnemy], dungeon, DT, playerBlocked);
-  assert(flyEnemy.behaviorMode === BEHAVIOR_MODE.CHASE, "fly enemy should chase by distance even through walls");
+  if (flyEnemy) {
+    resetEnemyToTile(flyEnemy, blockedScenario.start.x, blockedScenario.start.y);
+    updateEnemies([flyEnemy], dungeon, DT, playerBlocked);
+    assert(flyEnemy.behaviorMode === BEHAVIOR_MODE.CHASE, "fly enemy should chase by distance even through walls");
+  }
 
   resetEnemyToTile(walkEnemy, blockedScenario.start.x, blockedScenario.start.y);
   const playerSameTile = createPlayerAtTile(blockedScenario.start.x, blockedScenario.start.y);
@@ -297,46 +368,54 @@ function main() {
   const playerFar = createPlayerAtTile(farTile.x, farTile.y);
 
   resetEnemyToTile(walkEnemy, blockedScenario.start.x, blockedScenario.start.y);
-  resetEnemyToTile(flyEnemy, blockedScenario.start.x, blockedScenario.start.y);
   walkEnemy.behaviorMode = BEHAVIOR_MODE.CHASE;
   walkEnemy.isChasing = true;
-  flyEnemy.behaviorMode = BEHAVIOR_MODE.CHASE;
-  flyEnemy.isChasing = true;
-
-  updateEnemies([walkEnemy, flyEnemy], dungeon, DT, playerFar);
-  assert(walkEnemy.behaviorMode === BEHAVIOR_MODE.RANDOM_WALK, "walk enemy should give up when outside giveup radius");
-  assert(flyEnemy.behaviorMode === BEHAVIOR_MODE.RANDOM_WALK, "fly enemy should give up when outside giveup radius");
-
-  const flyPassableGrid = buildFlyPassableGrid(dungeon);
-  const speedScenario = clearScenario;
-
-  for (let step = 0; step <= speedScenario.distance; step += 1) {
-    const x = speedScenario.start.x + speedScenario.direction.dx * step;
-    const y = speedScenario.start.y + speedScenario.direction.dy * step;
-    assert(inBounds(flyPassableGrid, x, y) && flyPassableGrid[y][x], "speed scenario path must be fly-passable");
+  if (flyEnemy) {
+    resetEnemyToTile(flyEnemy, blockedScenario.start.x, blockedScenario.start.y);
+    flyEnemy.behaviorMode = BEHAVIOR_MODE.CHASE;
+    flyEnemy.isChasing = true;
+    updateEnemies([walkEnemy, flyEnemy], dungeon, DT, playerFar);
+    assert(walkEnemy.behaviorMode === BEHAVIOR_MODE.RANDOM_WALK, "walk enemy should give up when outside giveup radius");
+    assert(flyEnemy.behaviorMode === BEHAVIOR_MODE.RANDOM_WALK, "fly enemy should give up when outside giveup radius");
+  } else {
+    updateEnemies([walkEnemy], dungeon, DT, playerFar);
+    assert(walkEnemy.behaviorMode === BEHAVIOR_MODE.RANDOM_WALK, "walk enemy should give up when outside giveup radius");
   }
 
-  resetEnemyToTile(flyEnemy, speedScenario.start.x, speedScenario.start.y);
-  flyEnemy.walkDirection = {
+  const speedProbeEnemy = flyEnemy ?? walkEnemy;
+  const speedScenario = findSpeedProbeScenario(dungeon, speedProbeEnemy, noticeTileRange);
+  assert(Boolean(speedScenario), "failed to find speed probe scenario");
+
+  if (flyEnemy) {
+    const flyPassableGrid = buildFlyPassableGrid(dungeon);
+    for (let step = 0; step <= speedScenario.distance; step += 1) {
+      const x = speedScenario.start.x + speedScenario.direction.dx * step;
+      const y = speedScenario.start.y + speedScenario.direction.dy * step;
+      assert(inBounds(flyPassableGrid, x, y) && flyPassableGrid[y][x], "speed scenario path must be fly-passable");
+    }
+  }
+
+  resetEnemyToTile(speedProbeEnemy, speedScenario.start.x, speedScenario.start.y);
+  speedProbeEnemy.walkDirection = {
     dx: speedScenario.direction.dx,
     dy: speedScenario.direction.dy,
     facing: speedScenario.direction.facing,
   };
-  flyEnemy.directionTimer = 10;
+  speedProbeEnemy.directionTimer = 10;
 
-  const randomBefore = { x: flyEnemy.x, y: flyEnemy.y };
-  updateEnemies([flyEnemy], dungeon, DT, null);
-  const randomDistance = getMovementDistance(flyEnemy, randomBefore);
+  const randomBefore = { x: speedProbeEnemy.x, y: speedProbeEnemy.y };
+  updateEnemies([speedProbeEnemy], dungeon, DT, null);
+  const randomDistance = getMovementDistance(speedProbeEnemy, randomBefore);
   assert(randomDistance > 0, "random-walk speed probe must move");
 
-  resetEnemyToTile(flyEnemy, speedScenario.start.x, speedScenario.start.y);
-  flyEnemy.behaviorMode = BEHAVIOR_MODE.CHASE;
-  flyEnemy.isChasing = true;
+  resetEnemyToTile(speedProbeEnemy, speedScenario.start.x, speedScenario.start.y);
+  speedProbeEnemy.behaviorMode = BEHAVIOR_MODE.CHASE;
+  speedProbeEnemy.isChasing = true;
 
-  const chaseBefore = { x: flyEnemy.x, y: flyEnemy.y };
+  const chaseBefore = { x: speedProbeEnemy.x, y: speedProbeEnemy.y };
   const playerForSpeed = createPlayerAtTile(speedScenario.end.x, speedScenario.end.y);
-  updateEnemies([flyEnemy], dungeon, DT, playerForSpeed);
-  const chaseDistance = getMovementDistance(flyEnemy, chaseBefore);
+  updateEnemies([speedProbeEnemy], dungeon, DT, playerForSpeed);
+  const chaseDistance = getMovementDistance(speedProbeEnemy, chaseBefore);
   assert(chaseDistance > randomDistance, "chase speed should be faster than random-walk speed");
 
   const ratio = chaseDistance / randomDistance;

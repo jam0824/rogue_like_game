@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { rollHitDamage } from "../../src/combat/damageRoll.js";
-import { ENEMY_ANIM_FPS, ENEMY_ANIM_SEQUENCE, ENEMY_WALK_SPEED_PX_PER_SEC } from "../../src/config/constants.js";
+import { ENEMY_ANIM_FPS, ENEMY_WALK_SPEED_PX_PER_SEC } from "../../src/config/constants.js";
 import {
   createEnemies,
   getEnemyCombatHitbox,
+  getEnemyWallHitbox,
+  isEnemyDeathAnimationFinished,
   getEnemyFrame,
   getEnemyHitFlashAlpha,
   getEnemyTelegraphAlpha,
@@ -39,12 +41,27 @@ function createEnemyDefinition(overrides = {}) {
     type: "walk",
     width: 32,
     height: 64,
+    fps: 12,
+    pngFacingDirection: "right",
+    imageMagnification: 1,
     noticeDistance: 8,
     giveupDistance: 16,
     vit: 10,
     for: 10,
     agi: 10,
     pow: 10,
+    ...overrides,
+  };
+}
+
+function createEnemyAsset(overrides = {}) {
+  return {
+    walk: { frameCount: 6 },
+    idle: { frameCount: 4 },
+    death: { frameCount: 6 },
+    fps: 12,
+    defaultFacing: "right",
+    drawScale: 1,
     ...overrides,
   };
 }
@@ -123,12 +140,13 @@ describe("enemySystem", () => {
     expect(enemy.hitFlashColor).toBe("#ffffff");
   });
 
-  it("戦闘当たり判定は敵画像全体の AABB を返す", () => {
+  it("戦闘当たり判定は imageMagnification=1 では従来サイズを返す", () => {
     const enemy = {
       x: 12.5,
       y: 33.25,
       width: 32,
       height: 64,
+      imageMagnification: 1,
     };
 
     expect(getEnemyCombatHitbox(enemy)).toEqual({
@@ -137,6 +155,41 @@ describe("enemySystem", () => {
       width: 32,
       height: 64,
     });
+  });
+
+  it("戦闘当たり判定は imageMagnification を足元基準で拡大する", () => {
+    const enemy = {
+      x: 12.5,
+      y: 33.25,
+      width: 32,
+      height: 64,
+      imageMagnification: 1.5,
+    };
+
+    const hitbox = getEnemyCombatHitbox(enemy);
+    expect(hitbox.x).toBeCloseTo(4.5, 6);
+    expect(hitbox.y).toBeCloseTo(1.25, 6);
+    expect(hitbox.width).toBeCloseTo(48, 6);
+    expect(hitbox.height).toBeCloseTo(96, 6);
+  });
+
+  it("height>=64 の壁当たり判定は 32x32 基準に imageMagnification を適用する", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({
+      id: "enemy-wall-scale-01",
+      width: 32,
+      height: 64,
+      imageMagnification: 1.5,
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-wall-scale-seed");
+    const [enemy] = enemies;
+    const wallHitbox = getEnemyWallHitbox(enemy);
+
+    expect(wallHitbox).not.toBeNull();
+    expect(wallHitbox.width).toBeCloseTo(48, 6);
+    expect(wallHitbox.height).toBeCloseTo(48, 6);
+    expect(wallHitbox.x).toBeCloseTo(enemy.x - 8, 2);
+    expect(wallHitbox.y).toBeCloseTo(enemy.y + 16, 2);
   });
 
   it("hitFlashTimerSec が減衰し hitFlashAlpha が 0..1 で返る", () => {
@@ -159,11 +212,12 @@ describe("enemySystem", () => {
     expect(getEnemyHitFlashAlpha(enemy)).toBe(0);
   });
 
-  it("停止中でも animTime が進み、足踏みフレームが更新される", () => {
+  it("停止中でも idle フレームが進み、walk/death と flipX を切り替える", () => {
     const dungeon = createDungeon();
     const enemyDef = createEnemyDefinition({ id: "enemy-idle-step-01" });
     const enemies = createEnemies(dungeon, [enemyDef], "enemy-idle-step-seed");
     const [enemy] = enemies;
+    const enemyAsset = createEnemyAsset();
 
     enemy.baseSpeedPxPerSec = 0;
     enemy.chaseSpeedPxPerSec = 0;
@@ -171,14 +225,46 @@ describe("enemySystem", () => {
     enemy.isMoving = false;
     enemy.animTime = 0;
 
-    const beforeFrame = getEnemyFrame(enemy);
+    const beforeFrame = getEnemyFrame(enemy, enemyAsset);
     updateEnemies(enemies, dungeon, 1 / ENEMY_ANIM_FPS, null);
-    const afterFrame = getEnemyFrame(enemy);
+    const afterFrame = getEnemyFrame(enemy, enemyAsset);
 
     expect(enemy.isMoving).toBe(false);
     expect(enemy.animTime).toBeCloseTo(1 / ENEMY_ANIM_FPS, 6);
-    expect(beforeFrame.col).toBe(ENEMY_ANIM_SEQUENCE[0]);
-    expect(afterFrame.col).toBe(ENEMY_ANIM_SEQUENCE[1]);
+    expect(beforeFrame.animation).toBe("idle");
+    expect(afterFrame.animation).toBe("idle");
+    expect(afterFrame.col).toBe(1);
+
+    enemy.isMoving = true;
+    enemy.animTime = 2 / enemyAsset.fps;
+    const walkFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(walkFrame.animation).toBe("walk");
+    expect(walkFrame.col).toBe(2);
+
+    enemy.spriteFacing = "left";
+    const flippedFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(flippedFrame.flipX).toBe(true);
+
+    enemy.isDead = true;
+    enemy.deathAnimTime = 999;
+    const deathFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(deathFrame.animation).toBe("death");
+    expect(deathFrame.col).toBe(5);
+  });
+
+  it("死亡アニメの終了判定は deathAnimTime と death frameCount で決まる", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-death-finish-01" });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-death-finish-seed");
+    const [enemy] = enemies;
+    const enemyAsset = createEnemyAsset({ death: { frameCount: 6 }, fps: 12 });
+
+    enemy.isDead = true;
+    enemy.deathAnimTime = (6 - 0.01) / 12;
+    expect(isEnemyDeathAnimationFinished(enemy, enemyAsset)).toBe(false);
+
+    enemy.deathAnimTime = 6 / 12;
+    expect(isEnemyDeathAnimationFinished(enemy, enemyAsset)).toBe(true);
   });
 
   it("chase中は engage/retreat 距離帯で接近・停止・後退を切り替える", () => {

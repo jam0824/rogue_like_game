@@ -12,6 +12,7 @@ import { loadEnemyWeaponLoadouts } from "./enemy/enemyWeaponLoadoutDb.js";
 import {
   createEnemies,
   getEnemyTelegraphAlpha,
+  isEnemyDeathAnimationFinished,
   getEnemyFrame,
   getEnemyHitFlashAlpha,
   getEnemyWeaponRuntimes,
@@ -106,7 +107,6 @@ import { loadWeaponAssets } from "./weapon/weaponAsset.js";
 import {
   createPlayerWeapons,
   getWeaponHitbox,
-  removeDefeatedEnemies,
   updateWeaponsAndCombat,
 } from "./weapon/weaponSystem.js";
 import { buildSkillEditorLayout, flattenSkillEditorLayout, swapSkillSlots } from "./ui/weaponSkillLayout.js";
@@ -2536,6 +2536,25 @@ function countNewlyDefeatedEnemies(enemies, beforeAliveEnemyIds) {
   return defeatedCount;
 }
 
+function removeEnemiesAfterDeathAnimation(enemies, enemyAssetsByDbId) {
+  if (!Array.isArray(enemies) || enemies.length <= 0) {
+    return [];
+  }
+
+  return enemies.filter((enemy) => {
+    if (!enemy) {
+      return false;
+    }
+
+    if (enemy.isDead !== true) {
+      return true;
+    }
+
+    const enemyAsset = enemyAssetsByDbId?.[enemy.dbId] ?? null;
+    return !isEnemyDeathAnimationFinished(enemy, enemyAsset);
+  });
+}
+
 function countPlayerDamageEvents(events) {
   if (!Array.isArray(events) || events.length <= 0) {
     return 0;
@@ -2559,14 +2578,24 @@ function renderCurrentFrame() {
     return;
   }
 
-  const enemyDrawables = appState.enemies.map((enemy) => ({
-    enemy,
-    asset: enemyAssets[enemy.dbId] ?? null,
-    frame: getEnemyFrame(enemy),
-    flashAlpha: getEnemyHitFlashAlpha(enemy),
-    flashColor: normalizeHitFlashColor(enemy?.hitFlashColor),
-    telegraphAlpha: getEnemyTelegraphAlpha(enemy),
-  }));
+  const enemyDrawables = appState.enemies.map((enemy) => {
+    const enemyAssetPack = enemyAssets[enemy.dbId] ?? null;
+    const frame = getEnemyFrame(enemy, enemyAssetPack);
+    const asset = enemyAssetPack?.[frame.animation] ?? null;
+    const drawScale = Number(enemyAssetPack?.drawScale ?? enemy?.imageMagnification);
+
+    return {
+      enemy,
+      asset,
+      frame: {
+        ...frame,
+        drawScale: Number.isFinite(drawScale) && drawScale > 0 ? drawScale : 1,
+      },
+      flashAlpha: getEnemyHitFlashAlpha(enemy),
+      flashColor: normalizeHitFlashColor(enemy?.hitFlashColor),
+      telegraphAlpha: getEnemyTelegraphAlpha(enemy),
+    };
+  });
   const weaponDrawables = appState.weapons.map((weapon) => ({
     weapon,
     asset: weaponAssets[weapon.weaponDefId] ?? null,
@@ -2706,7 +2735,7 @@ function stepSimulation(dt) {
     [...appState.damagePopups, ...spawnedPopups],
     dt
   );
-  appState.enemies = removeDefeatedEnemies(appState.enemies);
+  appState.enemies = removeEnemiesAfterDeathAnimation(appState.enemies, enemyAssets);
   syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
   syncStatsPanel();
   syncPlayerStatsWindow();

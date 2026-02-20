@@ -1,11 +1,16 @@
-const ENEMY_DB_FALLBACK_FILE_NAMES = ["bat01.json", "rabbit01_white.json", "skeleton01.json"];
+const ENEMY_DB_FALLBACK_FILE_NAMES = ["BrownMushroom_01.json"];
 
 const REQUIRED_KEYS = [
   "name_key",
   "type",
-  "tip_file_name",
+  "walk_png_file_path",
+  "idle_png_file_path",
+  "death_png_file_path",
   "width",
   "height",
+  "fps",
+  "png_facing_direction",
+  "image_magnification",
   "notice_distance",
   "giveup_distance",
 ];
@@ -39,8 +44,54 @@ function assertEnemyShape(rawEnemy, fileName) {
     throw new Error(`Enemy DB ${fileName} has invalid type: ${rawEnemy.type}`);
   }
 
-  if (typeof rawEnemy.tip_file_name !== "string" || rawEnemy.tip_file_name.length === 0) {
-    throw new Error(`Enemy DB ${fileName} has invalid tip_file_name: ${rawEnemy.tip_file_name}`);
+  if (
+    typeof rawEnemy.walk_png_file_path !== "string" ||
+    rawEnemy.walk_png_file_path.trim().length === 0
+  ) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid walk_png_file_path: ${rawEnemy.walk_png_file_path}`
+    );
+  }
+
+  if (
+    typeof rawEnemy.idle_png_file_path !== "string" ||
+    rawEnemy.idle_png_file_path.trim().length === 0
+  ) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid idle_png_file_path: ${rawEnemy.idle_png_file_path}`
+    );
+  }
+
+  if (
+    typeof rawEnemy.death_png_file_path !== "string" ||
+    rawEnemy.death_png_file_path.trim().length === 0
+  ) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid death_png_file_path: ${rawEnemy.death_png_file_path}`
+    );
+  }
+
+  if (!Number.isFinite(rawEnemy.fps) || rawEnemy.fps <= 0) {
+    throw new Error(`Enemy DB ${fileName} has invalid fps: ${rawEnemy.fps}`);
+  }
+
+  if (typeof rawEnemy.png_facing_direction !== "string" || rawEnemy.png_facing_direction.trim().length <= 0) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid png_facing_direction: ${rawEnemy.png_facing_direction}`
+    );
+  }
+
+  const facingDirection = rawEnemy.png_facing_direction.trim().toLowerCase();
+  if (!facingDirection.includes("left") && !facingDirection.includes("right")) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid png_facing_direction: ${rawEnemy.png_facing_direction}`
+    );
+  }
+
+  if (!Number.isFinite(rawEnemy.image_magnification) || rawEnemy.image_magnification <= 0) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid image_magnification: ${rawEnemy.image_magnification}`
+    );
   }
 }
 
@@ -51,10 +102,18 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
   return {
     id: fileName.replace(/\.json$/, ""),
     nameKey: rawEnemy.name_key,
+    descriptionKey: rawEnemy.description_key,
     type: rawEnemy.type,
-    tipFileName: rawEnemy.tip_file_name,
+    walkPngFilePath: rawEnemy.walk_png_file_path.trim(),
+    idlePngFilePath: rawEnemy.idle_png_file_path.trim(),
+    deathPngFilePath: rawEnemy.death_png_file_path.trim(),
     width: rawEnemy.width,
     height: rawEnemy.height,
+    fps: rawEnemy.fps,
+    pngFacingDirection: rawEnemy.png_facing_direction.trim().toLowerCase().includes("left")
+      ? "left"
+      : "right",
+    imageMagnification: rawEnemy.image_magnification,
     noticeDistance: rawEnemy.notice_distance,
     giveupDistance: rawEnemy.giveup_distance,
     vit: Number.isFinite(rawEnemy.vit) ? rawEnemy.vit : 10,
@@ -107,7 +166,10 @@ function extractEnemyJsonFileNamesFromDirectoryHtml(html) {
     match = hrefPattern.exec(html);
   }
 
-  return Array.from(fileNames).sort();
+  return Array.from(fileNames)
+    .filter((fileName) => !fileName.includes("_template"))
+    .filter((fileName) => !fileName.includes("template"))
+    .sort();
 }
 
 async function discoverEnemyDbFileNames(cacheBustKey) {

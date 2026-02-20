@@ -22,6 +22,7 @@ const ENEMY_ATTACK_TELEGRAPH_BLINK_HZ = 6;
 const VECTOR_EPSILON = 0.0001;
 const BIAS_LERP_BASE = 6;
 const MIN_ATTACK_COOLDOWN_SEC = 0.05;
+const DEFAULT_SPRITE_FACING = "right";
 
 const BEHAVIOR_MODE = {
   RANDOM_WALK: "random_walk",
@@ -52,6 +53,78 @@ function clamp(value, min, max) {
 
 function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function resolveImageMagnification(rawMagnification, fallback = 1) {
+  const fallbackValue = Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
+  const value = Number(rawMagnification);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallbackValue;
+  }
+  return value;
+}
+
+function getScaledBodyHitboxAt(x, y, width, height, imageMagnification) {
+  const baseWidth = Math.max(1, toFiniteNumber(width, 1));
+  const baseHeight = Math.max(1, toFiniteNumber(height, 1));
+  const magnification = resolveImageMagnification(imageMagnification, 1);
+  const scaledWidth = baseWidth * magnification;
+  const scaledHeight = baseHeight * magnification;
+
+  return {
+    x: x + (baseWidth - scaledWidth) / 2,
+    y: y + (baseHeight - scaledHeight),
+    width: scaledWidth,
+    height: scaledHeight,
+  };
+}
+
+function normalizeSpriteFacing(rawFacing, fallbackFacing = DEFAULT_SPRITE_FACING) {
+  if (typeof rawFacing === "string") {
+    const normalized = rawFacing.trim().toLowerCase();
+    if (normalized.includes("left")) {
+      return "left";
+    }
+    if (normalized.includes("right")) {
+      return "right";
+    }
+  }
+
+  if (fallbackFacing === "left") {
+    return "left";
+  }
+
+  return "right";
+}
+
+function resolveAnimationFps(enemy, enemyAsset) {
+  const assetFps = Number(enemyAsset?.fps);
+  if (Number.isFinite(assetFps) && assetFps > 0) {
+    return assetFps;
+  }
+
+  const enemyFps = Number(enemy?.animFps);
+  if (Number.isFinite(enemyFps) && enemyFps > 0) {
+    return enemyFps;
+  }
+
+  return ENEMY_ANIM_FPS;
+}
+
+function resolveAnimationFrameCount(enemyAsset, animation) {
+  const frameCount = Number(enemyAsset?.[animation]?.frameCount);
+  if (!Number.isFinite(frameCount) || frameCount <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(frameCount));
+}
+
+function getLoopFrameIndex(animTime, fps, frameCount) {
+  if (frameCount <= 1) {
+    return 0;
+  }
+
+  return Math.floor(Math.max(0, Number(animTime) || 0) * fps) % frameCount;
 }
 
 function resolveEnemyRangeConfig(attackProfile) {
@@ -135,21 +208,19 @@ function getFlyPassableGrid(dungeon) {
   return dungeon.flyPassableGrid;
 }
 
-function buildCollisionProfileForWalk(width, height) {
-  if (height >= 64) {
-    return {
-      offsetX: (width - TALL_ENEMY_COLLISION_SIZE) / 2,
-      offsetY: height - TALL_ENEMY_COLLISION_SIZE,
-      width: TALL_ENEMY_COLLISION_SIZE,
-      height: TALL_ENEMY_COLLISION_SIZE,
-    };
-  }
+function buildCollisionProfileForWalk(width, height, imageMagnification = 1) {
+  const magnification = resolveImageMagnification(imageMagnification, 1);
+  const useTallCollision = height >= 64;
+  const baseWidth = useTallCollision ? TALL_ENEMY_COLLISION_SIZE : width;
+  const baseHeight = useTallCollision ? TALL_ENEMY_COLLISION_SIZE : height;
+  const collisionWidth = baseWidth * magnification;
+  const collisionHeight = baseHeight * magnification;
 
   return {
-    offsetX: 0,
-    offsetY: 0,
-    width,
-    height,
+    offsetX: (width - collisionWidth) / 2,
+    offsetY: height - collisionHeight,
+    width: collisionWidth,
+    height: collisionHeight,
   };
 }
 
@@ -394,6 +465,14 @@ function updateFacing(enemy, dx, dy) {
   }
 
   enemy.facing = dy >= 0 ? "down" : "up";
+}
+
+function updateSpriteFacing(enemy, dx) {
+  if (Math.abs(dx) <= MOVE_EPSILON) {
+    return;
+  }
+
+  enemy.spriteFacing = dx >= 0 ? "right" : "left";
 }
 
 function resolveWalkChaseStep(enemy, dungeon, desiredDx, desiredDy) {
@@ -697,6 +776,9 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
   const maxHp = Math.max(1, toFiniteNumber(derived.maxHp, 1));
   const attackDamage = Math.max(1, Math.round(ENEMY_ATTACK_BASE + pow * ENEMY_ATTACK_PER_POW));
   const moveSpeed = Math.max(0, toFiniteNumber(derived.moveSpeedPxPerSec, ENEMY_WALK_SPEED_PX_PER_SEC));
+  const defaultSpriteFacing = normalizeSpriteFacing(definition.pngFacingDirection, DEFAULT_SPRITE_FACING);
+  const animFps = Math.max(1, toFiniteNumber(definition.fps, ENEMY_ANIM_FPS));
+  const imageMagnification = resolveImageMagnification(definition.imageMagnification, 1);
 
   return {
     id: enemyId,
@@ -712,8 +794,13 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     width: definition.width,
     height: definition.height,
     facing: "down",
+    spriteFacing: defaultSpriteFacing,
+    defaultSpriteFacing,
     isMoving: false,
     animTime: 0,
+    deathAnimTime: 0,
+    animFps,
+    imageMagnification,
     walkDirection: null,
     directionTimer: 0,
     collision,
@@ -753,7 +840,9 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
 }
 
 function findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys = null) {
-  const collision = definition.type === "walk" ? buildCollisionProfileForWalk(definition.width, definition.height) : null;
+  const collision = definition.type === "walk"
+    ? buildCollisionProfileForWalk(definition.width, definition.height, definition.imageMagnification)
+    : null;
   const roomTiles = [];
 
   for (let tileY = room.y; tileY < room.y + room.h; tileY += 1) {
@@ -876,6 +965,12 @@ export function createWalkEnemies(
   return createEnemies(dungeon, onlyWalkDefinitions, seed, enemyAttackProfilesByDbId, blockedTiles);
 }
 
+function updateDeadEnemy(enemy, dt) {
+  enemy.hitFlashTimerSec = Math.max(0, toFiniteNumber(enemy.hitFlashTimerSec, 0) - dt);
+  enemy.isMoving = false;
+  enemy.deathAnimTime = Math.max(0, toFiniteNumber(enemy.deathAnimTime, 0) + dt);
+}
+
 function updateEnemy(enemy, dungeon, dt, player) {
   enemy.hitFlashTimerSec = Math.max(0, toFiniteNumber(enemy.hitFlashTimerSec, 0) - dt);
   updateBehaviorMode(enemy, dungeon, player);
@@ -918,6 +1013,7 @@ function updateEnemy(enemy, dungeon, dt, player) {
   enemy.lastMoveDx = movedX;
   enemy.lastMoveDy = movedY;
   updateFacing(enemy, movedX, movedY);
+  updateSpriteFacing(enemy, movedX);
   enemy.animTime += dt;
 }
 
@@ -932,6 +1028,7 @@ export function updateEnemies(enemies, dungeon, dt, player = null) {
 
   for (const enemy of enemies) {
     if (enemy.isDead === true) {
+      updateDeadEnemy(enemy, dt);
       continue;
     }
     updateEnemy(enemy, dungeon, dt, player);
@@ -1260,21 +1357,64 @@ export function updateEnemyAttacks(enemies, player, dungeon, dt, options = {}) {
   return events;
 }
 
-export function getEnemyFrame(enemy) {
-  const rowByFacing = {
-    down: 0,
-    left: 1,
-    right: 2,
-    up: 3,
-  };
+function resolveEnemyAnimation(enemy) {
+  if (enemy?.isDead === true) {
+    return "death";
+  }
+  return enemy?.isMoving === true ? "walk" : "idle";
+}
 
-  const row = rowByFacing[enemy.facing] ?? 0;
-  const animTime = Math.max(0, toFiniteNumber(enemy.animTime, 0));
-  const sequenceIndex = Math.floor(animTime * ENEMY_ANIM_FPS) % ENEMY_ANIM_SEQUENCE.length;
+export function getEnemyFrame(enemy, enemyAsset = null) {
+  if (!enemy) {
+    return {
+      row: 0,
+      col: 0,
+      animation: "idle",
+      flipX: false,
+    };
+  }
+
+  const animation = resolveEnemyAnimation(enemy);
+  const fps = resolveAnimationFps(enemy, enemyAsset);
+  const frameCount = resolveAnimationFrameCount(enemyAsset, animation);
+  const usesAssetFrameCount = Number.isFinite(enemyAsset?.[animation]?.frameCount);
+  const animTime = animation === "death"
+    ? Math.max(0, toFiniteNumber(enemy.deathAnimTime, 0))
+    : Math.max(0, toFiniteNumber(enemy.animTime, 0));
+
+  let col = 0;
+  if (animation === "death") {
+    col = Math.min(frameCount - 1, Math.floor(animTime * fps));
+  } else if (usesAssetFrameCount) {
+    col = getLoopFrameIndex(animTime, fps, frameCount);
+  } else {
+    const sequenceIndex = Math.floor(animTime * fps) % ENEMY_ANIM_SEQUENCE.length;
+    col = ENEMY_ANIM_SEQUENCE[sequenceIndex];
+  }
+
+  const defaultFacing = normalizeSpriteFacing(
+    enemyAsset?.defaultFacing,
+    normalizeSpriteFacing(enemy.defaultSpriteFacing, DEFAULT_SPRITE_FACING)
+  );
+  const spriteFacing = normalizeSpriteFacing(enemy.spriteFacing, defaultFacing);
+
   return {
-    row,
-    col: ENEMY_ANIM_SEQUENCE[sequenceIndex],
+    row: 0,
+    col,
+    animation,
+    flipX: spriteFacing !== defaultFacing,
   };
+}
+
+export function isEnemyDeathAnimationFinished(enemy, enemyAsset = null) {
+  if (!enemy || enemy.isDead !== true) {
+    return false;
+  }
+
+  const fps = resolveAnimationFps(enemy, enemyAsset);
+  const frameCount = resolveAnimationFrameCount(enemyAsset, "death");
+  const elapsedFrames = Math.max(0, toFiniteNumber(enemy.deathAnimTime, 0)) * fps;
+  return elapsedFrames >= frameCount;
 }
 
 export function getEnemyCombatHitbox(enemy) {
@@ -1282,12 +1422,7 @@ export function getEnemyCombatHitbox(enemy) {
     return null;
   }
 
-  return {
-    x: enemy.x,
-    y: enemy.y,
-    width: enemy.width,
-    height: enemy.height,
-  };
+  return getScaledBodyHitboxAt(enemy.x, enemy.y, enemy.width, enemy.height, enemy.imageMagnification);
 }
 
 export function getEnemyHitFlashAlpha(enemy) {

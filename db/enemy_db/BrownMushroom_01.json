@@ -10,7 +10,7 @@
   "height": 32,
   "fps": 12,
   "png_facing_direction": "right",
-  "image_magnification": 1.0,
+  "image_magnification": 1.5,
   "notice_distance": 8,
   "giveup_distance": 16,
 
@@ -19,11 +19,11 @@
   "spawn": { "min": 1, "max": 5 },
 
   "vit": 10,
-  "for": 10,
-  "agi": 10,
-  "pow": 10,
-  "tec": 10,
-  "arc": 10,
+  "for": 1,
+  "agi": 1,
+  "pow": 1,
+  "tec": 1,
+  "arc": 1,
 
   "tags": ["minion"],
 

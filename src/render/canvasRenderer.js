@@ -525,7 +525,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {{x:number,y:number}|null} player
  * @param {number} playerFlashAlpha
  * @param {string} playerFlashColor
- * @param {Array<{enemy:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,flashAlpha?:number,flashColor?:string,telegraphAlpha?:number}>} enemyDrawables
+ * @param {Array<{enemy:{x:number,y:number,width:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number,flipX?:boolean,drawScale?:number,anchorFeet?:boolean}|null,flashAlpha?:number,flashColor?:string,telegraphAlpha?:number}>} enemyDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
  * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\"),rotationRad?:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
@@ -573,6 +573,9 @@ export function renderFrame(
       feetY: drawable.enemy.y + drawable.enemy.height,
       draw() {
         drawSprite(ctx, drawable.asset, drawable.frame, drawable.enemy, {
+          flipX: drawable.frame.flipX === true,
+          drawScale: Number(drawable.frame.drawScale) || 1,
+          anchorFeet: true,
           flashAlpha: drawable.flashAlpha ?? 0,
           flashColor: drawable.flashColor ?? "#ffffff",
           telegraphAlpha: drawable.telegraphAlpha ?? 0,
