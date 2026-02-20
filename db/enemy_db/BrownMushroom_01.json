@@ -16,7 +16,7 @@
 
   "rank": "normal",
   "role": "chaser",
-  "spawn": { "min": 1, "max": 1 },
+  "spawn": { "min": 1, "max": 5 },
 
   "vit": 10,
   "for": 10,

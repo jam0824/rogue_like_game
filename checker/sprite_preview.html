@@ -3,19 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pixel Art Sprite Preview (No Server)</title>
+  <title>Pixel Art Sprite Preview + Offset Editor (No Server)</title>
   <style>
     :root { color-scheme: dark; }
     body {
-      margin: 0;
-      padding: 16px;
+      margin: 0; padding: 16px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
-      background: #0f1115;
-      color: #e8e8ea;
+      background: #0f1115; color: #e8e8ea;
     }
-    .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 12px; }
-    h1 { margin: 0 0 6px; font-size: 18px; font-weight: 700; }
-    .row { display: grid; gap: 12px; }
+    .wrap { max-width: 1200px; margin: 0 auto; display: grid; gap: 12px; }
+    h1 { margin: 0 0 6px; font-size: 18px; font-weight: 800; }
+    .muted { color: #b8b9c0; font-size: 12px; }
+
     .card {
       background: #141824;
       border: 1px solid #2a3144;
@@ -23,6 +22,7 @@
       padding: 12px;
       box-shadow: 0 6px 24px rgba(0,0,0,.25);
     }
+
     .drop {
       border: 2px dashed #3a4462;
       border-radius: 14px;
@@ -38,16 +38,17 @@
       background: rgba(122,162,247,.08);
       transform: translateY(-1px);
     }
-    .muted { color: #b8b9c0; font-size: 12px; }
+
     .controls {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 10px 12px;
       align-items: end;
     }
     label { display: grid; gap: 6px; font-size: 12px; color: #cfd3df; }
-    input[type="number"], select {
+    input[type="number"], input[type="range"], select {
       width: 100%;
+      box-sizing: border-box;
       padding: 10px 10px;
       border-radius: 10px;
       border: 1px solid #2a3144;
@@ -55,7 +56,10 @@
       color: #e8e8ea;
       outline: none;
     }
+    input[type="range"] { padding: 10px 0; }
     input[type="number"]:focus, select:focus { border-color: #7aa2f7; }
+
+    .row { display:flex; gap:8px; flex-wrap: wrap; align-items: center; }
     .btns { display: flex; gap: 8px; flex-wrap: wrap; }
     button {
       padding: 10px 12px;
@@ -65,20 +69,21 @@
       color: #e8e8ea;
       cursor: pointer;
       transition: .12s ease;
-      font-weight: 650;
+      font-weight: 750;
     }
+    button.secondary { background: #0f1320; }
     button:hover { transform: translateY(-1px); border-color: #7aa2f7; }
     button:active { transform: translateY(0px); }
-    button.secondary { background: #0f1320; }
     button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 
     .stage {
       display: grid;
       place-items: center;
-      min-height: 240px;
+      min-height: 260px;
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid #2a3144;
+      position: relative;
     }
     .bg-checker {
       background:
@@ -101,32 +106,45 @@
       border-radius: 10px;
       box-shadow: 0 12px 40px rgba(0,0,0,.35);
       background: transparent;
+      touch-action: none;
     }
 
-    .info {
-      display: grid;
-      gap: 6px;
-      font-size: 12px;
-      color: #cfd3df;
-      line-height: 1.5;
-    }
+    .info { display: grid; gap: 6px; font-size: 12px; color: #cfd3df; line-height: 1.5; }
     .warn { color: #ffcf7a; }
     .err  { color: #ff7a7a; }
     .ok   { color: #a6e3a1; }
-    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 6px; border: 1px solid #2a3144; border-radius: 8px; background: #0f1320; }
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      padding: 1px 6px; border: 1px solid #2a3144;
+      border-radius: 8px; background: #0f1320;
+    }
+    .pill {
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 6px 10px; border: 1px solid #2a3144;
+      border-radius: 999px; background: #0f1320;
+      font-size: 12px; color:#cfd3df;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div>
-      <h1>Pixel Art スプライトシート プレビュー（サーバー不要）</h1>
-      <div class="muted">横一列にコマが並んだ画像を読み込み、FPS/倍率/1コマサイズを指定してループ再生します。</div>
+      <h1>Pixel Art スプライトシート プレビュー＋位置調整（サーバー不要）</h1>
+      <div class="muted">
+        画像は「横一列にコマが並んだスプライトシート」想定。編集モードで各コマを (dx,dy) でずらし、PNG/ZIP で書き出せます。
+      </div>
     </div>
 
     <div id="dropZone" class="card drop" tabindex="0" role="button" aria-label="画像をドロップまたは選択">
-      <div style="font-size:14px;font-weight:750;">ここに画像をドラッグ＆ドロップ</div>
+      <div style="font-size:14px;font-weight:850;">ここに画像をドラッグ＆ドロップ</div>
       <div class="muted">またはクリックしてファイル選択（PNG/GIF/JPGなど）</div>
-      <div class="muted" style="margin-top:6px;">ショートカット: <span class="kbd">Space</span> 再生/停止、<span class="kbd">←</span><span class="kbd">→</span> コマ送り</div>
+      <div class="muted" style="margin-top:6px;">
+        <span class="kbd">Space</span> 再生/停止（編集モード中は停止固定） /
+        <span class="kbd">←</span><span class="kbd">→</span> コマ送り /
+        編集中: <span class="kbd">Shift</span>+矢印で 5px ずつ移動
+      </div>
     </div>
 
     <div class="card">
@@ -167,6 +185,58 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="controls">
+        <label>
+          <span class="row">
+            <span>編集モード</span>
+            <span class="pill"><input id="editMode" type="checkbox" /> <span>ONにするとドラッグ/オフセット編集</span></span>
+          </span>
+        </label>
+
+        <label>
+          現在コマ（1始まり）
+          <input id="frameNo" type="number" min="1" step="1" value="1" />
+        </label>
+
+        <label>
+          コマスライダー
+          <input id="frameSlider" type="range" min="1" max="1" step="1" value="1" />
+        </label>
+
+        <label>
+          オフセット dx (px)（右＋ / 左−）
+          <input id="offX" type="number" step="1" value="0" />
+        </label>
+
+        <label>
+          オフセット dy (px)（下＋ / 上−）
+          <input id="offY" type="number" step="1" value="0" />
+        </label>
+
+        <label>
+          ガイド（中心線）
+          <select id="guide">
+            <option value="off">OFF</option>
+            <option value="on">ON</option>
+          </select>
+        </label>
+
+        <div class="btns">
+          <button id="zeroThis" class="secondary">このコマを 0,0</button>
+          <button id="zeroAll" class="secondary">全コマを 0,0</button>
+          <button id="copyToAll" class="secondary">このオフセットを全コマへ</button>
+          <button id="exportSheet">💾 修正済みスプライトシートPNG</button>
+          <button id="exportZip">📦 コマ別PNGをZIPで保存</button>
+          <button id="exportJson" class="secondary">🧾 オフセットJSON保存</button>
+          <button id="importJson" class="secondary">📥 オフセットJSON読込</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px;">
+        編集操作: キャンバスをドラッグで移動 / 編集中は <span class="kbd">↑↓←→</span> で 1px、<span class="kbd">Shift</span>+矢印で 5px。
+      </div>
+    </div>
+
     <div id="stage" class="stage bg-checker">
       <canvas id="cv"></canvas>
     </div>
@@ -174,17 +244,22 @@
     <div class="card info">
       <div id="infoLine">画像未読み込み</div>
       <div id="msgLine" class="muted"></div>
+      <div class="muted mono" id="dbgLine"></div>
     </div>
 
     <input id="fileInput" type="file" accept="image/*" hidden />
+    <input id="jsonInput" type="file" accept="application/json,.json" hidden />
   </div>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
 
+  // --- elements ---
   const dropZone = $("dropZone");
   const fileInput = $("fileInput");
+  const jsonInput = $("jsonInput");
+
   const pickBtn = $("pickBtn");
 
   const frameWEl = $("frameW");
@@ -198,29 +273,68 @@
   const prevBtn = $("prevBtn");
   const nextBtn = $("nextBtn");
 
+  const editModeEl = $("editMode");
+  const frameNoEl = $("frameNo");
+  const frameSliderEl = $("frameSlider");
+  const offXEl = $("offX");
+  const offYEl = $("offY");
+  const guideEl = $("guide");
+
+  const zeroThisBtn = $("zeroThis");
+  const zeroAllBtn = $("zeroAll");
+  const copyToAllBtn = $("copyToAll");
+  const exportSheetBtn = $("exportSheet");
+  const exportZipBtn = $("exportZip");
+  const exportJsonBtn = $("exportJson");
+  const importJsonBtn = $("importJson");
+
   const stage = $("stage");
   const canvas = $("cv");
   const ctx = canvas.getContext("2d");
 
   const infoLine = $("infoLine");
   const msgLine = $("msgLine");
+  const dbgLine = $("dbgLine");
 
+  // --- state ---
   let img = null;
+  let imgName = "";
   let frameW = 32;
   let frameH = 32;
   let fps = 12;
   let scale = 6;
 
   let frameCount = 0;
-  let frameIndex = 0;
+  let frameIndex = 0; // 0-based
 
   let playing = true;
   let lastTick = 0;
 
+  let isEdit = false;
+  let showGuide = false;
+
+  // per-frame offsets (px)
+  let offsX = [];
+  let offsY = [];
+
+  // dragging
+  let dragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragBaseOffX = 0;
+  let dragBaseOffY = 0;
+
+  // --- utils ---
   function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
   function readNumber(el, fallback) {
     const v = Number(el.value);
     return Number.isFinite(v) ? v : fallback;
+  }
+  function pad3(n) { return String(n).padStart(3, "0"); }
+
+  function setStatus(text, cls = "muted") {
+    msgLine.textContent = text;
+    msgLine.className = cls;
   }
 
   function setBg(value) {
@@ -232,7 +346,6 @@
   }
 
   function resizeCanvas() {
-    // CSSピクセル基準で表示しつつ、内部はDPRでシャープに
     const dpr = window.devicePixelRatio || 1;
 
     const cssW = Math.max(1, frameW * scale);
@@ -244,19 +357,142 @@
     canvas.width = Math.max(1, Math.round(cssW * dpr));
     canvas.height = Math.max(1, Math.round(cssH * dpr));
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 以降の描画座標はCSSピクセル
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS px units
     ctx.imageSmoothingEnabled = false;
   }
 
-  function computeFrames() {
-    if (!img) {
-      frameCount = 0;
-      return;
+  function ensureOffsetsLength() {
+    const oldX = offsX.slice();
+    const oldY = offsY.slice();
+    offsX = new Array(frameCount).fill(0);
+    offsY = new Array(frameCount).fill(0);
+    for (let i = 0; i < Math.min(frameCount, oldX.length); i++) {
+      offsX[i] = oldX[i] | 0;
+      offsY[i] = oldY[i] | 0;
     }
+  }
+
+  function computeFrames() {
+    if (!img) { frameCount = 0; return; }
     frameCount = Math.floor(img.width / frameW);
     frameCount = Math.max(0, frameCount);
-    if (frameCount > 0) frameIndex = frameIndex % frameCount;
-    else frameIndex = 0;
+    frameIndex = frameCount ? (frameIndex % frameCount) : 0;
+    ensureOffsetsLength();
+    syncFrameControlsBounds();
+  }
+
+  function syncFrameControlsBounds() {
+    const max = Math.max(1, frameCount);
+    frameNoEl.min = 1; frameNoEl.max = max;
+    frameSliderEl.min = 1; frameSliderEl.max = max;
+    if (frameCount <= 0) {
+      frameNoEl.value = 1;
+      frameSliderEl.value = 1;
+    } else {
+      frameNoEl.value = frameIndex + 1;
+      frameSliderEl.value = frameIndex + 1;
+    }
+  }
+
+  function syncOffsetControls() {
+    const dx = (offsX[frameIndex] ?? 0) | 0;
+    const dy = (offsY[frameIndex] ?? 0) | 0;
+    offXEl.value = dx;
+    offYEl.value = dy;
+  }
+
+  function setFrameIndex(nextIdx) {
+    if (frameCount <= 0) { frameIndex = 0; return; }
+    frameIndex = ((nextIdx % frameCount) + frameCount) % frameCount;
+    frameNoEl.value = frameIndex + 1;
+    frameSliderEl.value = frameIndex + 1;
+    syncOffsetControls();
+    updateInfo();
+    render();
+  }
+
+  function updateButtons() {
+    const hasFrames = !!img && frameCount > 0;
+
+    // playback controls
+    playBtn.disabled = !hasFrames || isEdit;
+    resetBtn.disabled = !hasFrames;
+    prevBtn.disabled = !hasFrames;
+    nextBtn.disabled = !hasFrames;
+
+    // edit controls
+    frameNoEl.disabled = !hasFrames;
+    frameSliderEl.disabled = !hasFrames;
+    offXEl.disabled = !hasFrames;
+    offYEl.disabled = !hasFrames;
+    zeroThisBtn.disabled = !hasFrames;
+    zeroAllBtn.disabled = !hasFrames;
+    copyToAllBtn.disabled = !hasFrames;
+
+    exportSheetBtn.disabled = !hasFrames;
+    exportZipBtn.disabled = !hasFrames;
+    exportJsonBtn.disabled = !hasFrames;
+
+    playBtn.textContent = isEdit ? "（編集モード中）" : (playing ? "⏸ 停止" : "▶ 再生");
+  }
+
+  function applyFromControls() {
+    frameW = Math.max(1, Math.floor(readNumber(frameWEl, frameW)));
+    frameH = Math.max(1, Math.floor(readNumber(frameHEl, frameH)));
+    fps = clamp(readNumber(fpsEl, fps), 0.1, 240);
+    scale = clamp(readNumber(scaleEl, scale), 0.1, 64);
+
+    frameWEl.value = frameW;
+    frameHEl.value = frameH;
+    fpsEl.value = fps;
+    scaleEl.value = scale;
+
+    setBg(bgEl.value);
+
+    isEdit = !!editModeEl.checked;
+    showGuide = (guideEl.value === "on");
+
+    if (isEdit) {
+      playing = false;
+      lastTick = 0;
+    }
+
+    computeFrames();
+    syncFrameControlsBounds();
+    syncOffsetControls();
+    updateButtons();
+    updateInfo();
+    render();
+  }
+
+  function updateInfo() {
+    if (!img) {
+      infoLine.textContent = "画像未読み込み";
+      dbgLine.textContent = "";
+      setStatus("", "muted");
+      return;
+    }
+
+    const remainder = img.width % frameW;
+    const dx = (offsX[frameIndex] ?? 0) | 0;
+    const dy = (offsY[frameIndex] ?? 0) | 0;
+
+    infoLine.textContent =
+      `画像: ${img.width}×${img.height}px / 1コマ: ${frameW}×${frameH}px / コマ数: ${frameCount} / 現在: ${frameCount ? (frameIndex + 1) : 0}/${frameCount}`;
+
+    dbgLine.textContent = `offset(${frameIndex+1}): dx=${dx}, dy=${dy}  |  mode=${isEdit ? "edit" : "play"}`;
+
+    if (frameW > img.width) {
+      setStatus("⚠ コマ幅が画像幅より大きいです。frameW を下げてください。", "err");
+    } else if (frameH > img.height) {
+      setStatus("⚠ コマ高さが画像高さより大きいです（上側だけ表示されます）。", "warn");
+    } else if (remainder !== 0) {
+      setStatus(`⚠ 画像幅(${img.width}) がコマ幅(${frameW})で割り切れません。余り: ${remainder}px（最後は切り捨て）`, "warn");
+    } else {
+      // OK表示は不要なら消してもOK
+      // setStatus("OK", "ok");
+      setStatus("", "muted");
+    }
   }
 
   function renderPlaceholder() {
@@ -276,7 +512,6 @@
     resizeCanvas();
     const w = frameW * scale;
     const h = frameH * scale;
-
     ctx.clearRect(0, 0, w, h);
 
     if (!img || frameCount <= 0) {
@@ -287,89 +522,51 @@
     const sx = frameIndex * frameW;
     const sy = 0;
 
-    // 画像の範囲チェック（安全側）
     const sw = Math.min(frameW, img.width - sx);
     const sh = Math.min(frameH, img.height - sy);
-
     if (sw <= 0 || sh <= 0) return;
 
+    const dx = (offsX[frameIndex] ?? 0) | 0;
+    const dy = (offsY[frameIndex] ?? 0) | 0;
+
+    // 位置補正（平行移動）して描画
     ctx.drawImage(
       img,
       sx, sy, sw, sh,
-      0, 0, frameW * scale, frameH * scale
+      dx * scale, dy * scale, frameW * scale, frameH * scale
     );
-  }
 
-  function updateInfo() {
-    if (!img) {
-      infoLine.textContent = "画像未読み込み";
-      msgLine.textContent = "";
-      return;
+    // ガイド（中心線）
+    if (showGuide) {
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#ffffff";
+      const cx = (frameW * scale) / 2;
+      const cy = (frameH * scale) / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, 0); ctx.lineTo(cx, frameH * scale);
+      ctx.moveTo(0, cy); ctx.lineTo(frameW * scale, cy);
+      ctx.stroke();
+      ctx.restore();
     }
-
-    const remainder = img.width % frameW;
-    const lines = [];
-
-    lines.push(`画像: ${img.width}×${img.height}px`);
-    lines.push(`1コマ: ${frameW}×${frameH}px / コマ数: ${frameCount} / 現在: ${frameCount ? (frameIndex + 1) : 0}/${frameCount}`);
-
-    let msg = "";
-    let cls = "muted";
-
-    if (frameW > img.width) {
-      msg = "⚠ コマ幅が画像幅より大きいです。frameW を下げてください。";
-      cls = "err";
-    } else if (frameH > img.height) {
-      msg = "⚠ コマ高さが画像高さより大きいです（上側だけ表示されます）。";
-      cls = "warn";
-    } else if (remainder !== 0) {
-      msg = `⚠ 画像幅(${img.width}) がコマ幅(${frameW})で割り切れません。余り: ${remainder}px（最後が切り捨てになります）`;
-      cls = "warn";
-    } else {
-      msg = "OK";
-      cls = "ok";
-    }
-
-    infoLine.textContent = lines.join(" / ");
-    msgLine.textContent = msg;
-    msgLine.className = cls;
-  }
-
-  function applyFromControls() {
-    frameW = Math.max(1, Math.floor(readNumber(frameWEl, frameW)));
-    frameH = Math.max(1, Math.floor(readNumber(frameHEl, frameH)));
-    fps = clamp(readNumber(fpsEl, fps), 0.1, 240);
-    scale = clamp(readNumber(scaleEl, scale), 0.1, 64);
-
-    frameWEl.value = frameW;
-    frameHEl.value = frameH;
-    fpsEl.value = fps;
-    scaleEl.value = scale;
-
-    setBg(bgEl.value);
-
-    computeFrames();
-    updateInfo();
-    render();
   }
 
   function setPlaying(next) {
+    if (isEdit) return; // 編集モード中は再生固定OFF
     playing = next;
-    playBtn.textContent = playing ? "⏸ 停止" : "▶ 再生";
+    updateButtons();
     lastTick = 0;
   }
 
   function step(delta) {
     if (!img || frameCount <= 0) return;
-    frameIndex = (frameIndex + delta) % frameCount;
-    if (frameIndex < 0) frameIndex += frameCount;
-    updateInfo();
-    render();
+    setFrameIndex(frameIndex + delta);
   }
 
   function animate(t) {
     requestAnimationFrame(animate);
-    if (!playing || !img || frameCount <= 0) return;
+    if (!playing || !img || frameCount <= 0 || isEdit) return;
 
     const interval = 1000 / fps;
     if (!lastTick) lastTick = t;
@@ -377,20 +574,19 @@
     const elapsed = t - lastTick;
     if (elapsed >= interval) {
       const steps = Math.floor(elapsed / interval);
-      frameIndex = (frameIndex + steps) % frameCount;
+      setFrameIndex(frameIndex + steps);
       lastTick += steps * interval;
-      updateInfo();
-      render();
     }
   }
 
   function loadFile(file) {
     if (!file) return;
     if (!file.type || !file.type.startsWith("image/")) {
-      msgLine.textContent = "画像ファイルを選択してください。";
-      msgLine.className = "err";
+      setStatus("画像ファイルを選択してください。", "err");
       return;
     }
+
+    imgName = file.name || "";
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -401,16 +597,299 @@
         lastTick = 0;
         applyFromControls();
       };
-      im.onerror = () => {
-        msgLine.textContent = "画像の読み込みに失敗しました。";
-        msgLine.className = "err";
-      };
+      im.onerror = () => setStatus("画像の読み込みに失敗しました。", "err");
       im.src = reader.result;
     };
     reader.readAsDataURL(file);
   }
 
-  // --- UI events ---
+  // --- editing ---
+  function setOffsetForCurrent(dx, dy) {
+    if (!img || frameCount <= 0) return;
+    offsX[frameIndex] = dx | 0;
+    offsY[frameIndex] = dy | 0;
+    syncOffsetControls();
+    updateInfo();
+    render();
+  }
+
+  function nudge(dx, dy) {
+    const curX = (offsX[frameIndex] ?? 0) | 0;
+    const curY = (offsY[frameIndex] ?? 0) | 0;
+    setOffsetForCurrent(curX + dx, curY + dy);
+  }
+
+  // drag on canvas to move
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!isEdit || !img || frameCount <= 0) return;
+    dragging = true;
+    canvas.setPointerCapture(e.pointerId);
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragBaseOffX = (offsX[frameIndex] ?? 0) | 0;
+    dragBaseOffY = (offsY[frameIndex] ?? 0) | 0;
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = Math.round((e.clientX - dragStartX) / scale);
+    const dy = Math.round((e.clientY - dragStartY) / scale);
+    setOffsetForCurrent(dragBaseOffX + dx, dragBaseOffY + dy);
+  });
+  canvas.addEventListener("pointerup", () => { dragging = false; });
+  canvas.addEventListener("pointercancel", () => { dragging = false; });
+
+  // --- export helpers ---
+  function canvasToBlob(cnv, type = "image/png") {
+    return new Promise((resolve) => cnv.toBlob((b) => resolve(b), type));
+  }
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function buildOffsetsJson() {
+    return {
+      version: 1,
+      sourceImageName: imgName,
+      frameW, frameH,
+      frameCount,
+      offsets: offsX.map((x, i) => ({ dx: x | 0, dy: (offsY[i] ?? 0) | 0 })),
+    };
+  }
+
+  async function exportOffsetsJson() {
+    if (!img || frameCount <= 0) return;
+    const obj = buildOffsetsJson();
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    const base = (imgName ? imgName.replace(/\.[^.]+$/, "") : "sprite");
+    downloadBlob(blob, `${base}_offsets.json`);
+  }
+
+  async function importOffsetsJson(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const obj = JSON.parse(text);
+
+      // frameW/frameH が入ってれば反映（任意）
+      if (obj.frameW && obj.frameH) {
+        frameWEl.value = String(Math.max(1, Math.floor(obj.frameW)));
+        frameHEl.value = String(Math.max(1, Math.floor(obj.frameH)));
+      }
+
+      applyFromControls();
+
+      // offsets を反映
+      if (Array.isArray(obj.offsets)) {
+        for (let i = 0; i < Math.min(frameCount, obj.offsets.length); i++) {
+          const dx = Number(obj.offsets[i]?.dx ?? 0);
+          const dy = Number(obj.offsets[i]?.dy ?? 0);
+          offsX[i] = Number.isFinite(dx) ? (dx | 0) : 0;
+          offsY[i] = Number.isFinite(dy) ? (dy | 0) : 0;
+        }
+        syncOffsetControls();
+        updateInfo();
+        render();
+        setStatus("オフセットJSONを読み込みました。", "ok");
+      } else {
+        setStatus("JSON内に offsets が見つかりませんでした。", "warn");
+      }
+    } catch (e) {
+      setStatus("JSONの読み込みに失敗しました。形式を確認してください。", "err");
+    }
+  }
+
+  function drawCorrectedFrameTo(tmpCtx, i) {
+    // tmp canvas is frameW x frameH
+    tmpCtx.clearRect(0, 0, frameW, frameH);
+    tmpCtx.imageSmoothingEnabled = false;
+
+    const sx = i * frameW;
+    const sy = 0;
+
+    const sw = Math.min(frameW, img.width - sx);
+    const sh = Math.min(frameH, img.height - sy);
+    if (sw <= 0 || sh <= 0) return;
+
+    const dx = (offsX[i] ?? 0) | 0;
+    const dy = (offsY[i] ?? 0) | 0;
+
+    // ここでクリップされるので、隣コマへはみ出さない
+    tmpCtx.drawImage(
+      img,
+      sx, sy, sw, sh,
+      dx, dy, frameW, frameH
+    );
+  }
+
+  async function exportCorrectedSheetPng() {
+    if (!img || frameCount <= 0) return;
+
+    setStatus("スプライトシートを書き出し中...", "muted");
+
+    const out = document.createElement("canvas");
+    out.width = frameW * frameCount;
+    out.height = frameH;
+    const outCtx = out.getContext("2d");
+    outCtx.imageSmoothingEnabled = false;
+
+    const tmp = document.createElement("canvas");
+    tmp.width = frameW;
+    tmp.height = frameH;
+    const tmpCtx = tmp.getContext("2d");
+
+    for (let i = 0; i < frameCount; i++) {
+      drawCorrectedFrameTo(tmpCtx, i);
+      outCtx.drawImage(tmp, i * frameW, 0);
+    }
+
+    const blob = await canvasToBlob(out, "image/png");
+    const base = (imgName ? imgName.replace(/\.[^.]+$/, "") : "sprite");
+    downloadBlob(blob, `${base}_corrected.png`);
+    setStatus("スプライトシートPNGを保存しました。", "ok");
+  }
+
+  // --- ZIP (no library) ---
+  function makeCrc32Table() {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      table[i] = c >>> 0;
+    }
+    return table;
+  }
+  const CRC32_TABLE = makeCrc32Table();
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) {
+      c = CRC32_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function concatChunks(chunks) {
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    return out;
+  }
+
+  function u16(n) { return new Uint8Array([n & 255, (n >>> 8) & 255]); }
+  function u32(n) { return new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]); }
+
+  async function exportFramesZip() {
+    if (!img || frameCount <= 0) return;
+
+    setStatus("ZIPを書き出し中...（コマ数が多いと少し時間がかかります）", "muted");
+
+    const encoder = new TextEncoder();
+
+    const localChunks = [];
+    const centralChunks = [];
+    let offset = 0;
+
+    // temp frame canvas
+    const tmp = document.createElement("canvas");
+    tmp.width = frameW;
+    tmp.height = frameH;
+    const tmpCtx = tmp.getContext("2d");
+
+    async function addFileToZip(path, dataU8) {
+      const nameU8 = encoder.encode(path);
+      const crc = crc32(dataU8);
+      const size = dataU8.length;
+
+      // local file header
+      const localHeader = concatChunks([
+        u32(0x04034b50),
+        u16(20),        // ver needed
+        u16(0),         // flags
+        u16(0),         // compression = store
+        u16(0), u16(0), // time/date
+        u32(crc),
+        u32(size),
+        u32(size),
+        u16(nameU8.length),
+        u16(0),
+        nameU8
+      ]);
+      localChunks.push(localHeader, dataU8);
+
+      const localHeaderOffset = offset;
+      offset += localHeader.length + size;
+
+      // central directory header
+      const centralHeader = concatChunks([
+        u32(0x02014b50),
+        u16(20),        // ver made by
+        u16(20),        // ver needed
+        u16(0),         // flags
+        u16(0),         // compression
+        u16(0), u16(0), // time/date
+        u32(crc),
+        u32(size),
+        u32(size),
+        u16(nameU8.length),
+        u16(0),         // extra len
+        u16(0),         // comment len
+        u16(0),         // disk start
+        u16(0),         // int attr
+        u32(0),         // ext attr
+        u32(localHeaderOffset),
+        nameU8
+      ]);
+      centralChunks.push(centralHeader);
+    }
+
+    // add PNG frames
+    for (let i = 0; i < frameCount; i++) {
+      drawCorrectedFrameTo(tmpCtx, i);
+      const blob = await canvasToBlob(tmp, "image/png");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const filename = `frames/frame_${pad3(i + 1)}.png`;
+      await addFileToZip(filename, bytes);
+
+      if ((i + 1) % 10 === 0 || i === frameCount - 1) {
+        setStatus(`ZIPを書き出し中... ${i + 1}/${frameCount}`, "muted");
+      }
+    }
+
+    // add offsets.json inside zip (便利なので同梱)
+    const offsetsObj = buildOffsetsJson();
+    const offsetsBytes = encoder.encode(JSON.stringify(offsetsObj, null, 2));
+    await addFileToZip("offsets.json", offsetsBytes);
+
+    const centralStart = offset;
+    const centralData = concatChunks(centralChunks);
+    offset += centralData.length;
+
+    const end = concatChunks([
+      u32(0x06054b50),
+      u16(0), u16(0),
+      u16(centralChunks.length),
+      u16(centralChunks.length),
+      u32(centralData.length),
+      u32(centralStart),
+      u16(0)
+    ]);
+
+    const zipU8 = concatChunks([...localChunks, centralData, end]);
+    const zipBlob = new Blob([zipU8], { type: "application/zip" });
+
+    const base = (imgName ? imgName.replace(/\.[^.]+$/, "") : "sprite");
+    downloadBlob(zipBlob, `${base}_frames_corrected.zip`);
+    setStatus("ZIPを保存しました。", "ok");
+  }
+
+  // --- events ---
   pickBtn.addEventListener("click", () => fileInput.click());
   dropZone.addEventListener("click", () => fileInput.click());
 
@@ -426,12 +905,58 @@
     fpsEl.addEventListener(evt, applyFromControls);
     scaleEl.addEventListener(evt, applyFromControls);
     bgEl.addEventListener(evt, applyFromControls);
+    editModeEl.addEventListener(evt, applyFromControls);
+    guideEl.addEventListener(evt, applyFromControls);
   });
 
   playBtn.addEventListener("click", () => setPlaying(!playing));
-  resetBtn.addEventListener("click", () => { frameIndex = 0; updateInfo(); render(); });
+  resetBtn.addEventListener("click", () => setFrameIndex(0));
   prevBtn.addEventListener("click", () => { setPlaying(false); step(-1); });
   nextBtn.addEventListener("click", () => { setPlaying(false); step(+1); });
+
+  // frame selection controls
+  frameNoEl.addEventListener("change", () => {
+    const v = Math.floor(readNumber(frameNoEl, 1));
+    setFrameIndex(clamp(v - 1, 0, Math.max(0, frameCount - 1)));
+  });
+  frameSliderEl.addEventListener("input", () => {
+    const v = Math.floor(readNumber(frameSliderEl, 1));
+    setFrameIndex(clamp(v - 1, 0, Math.max(0, frameCount - 1)));
+  });
+
+  // offset controls
+  offXEl.addEventListener("change", () => {
+    const dx = Math.floor(readNumber(offXEl, 0));
+    setOffsetForCurrent(dx, (offsY[frameIndex] ?? 0) | 0);
+  });
+  offYEl.addEventListener("change", () => {
+    const dy = Math.floor(readNumber(offYEl, 0));
+    setOffsetForCurrent((offsX[frameIndex] ?? 0) | 0, dy);
+  });
+
+  // edit buttons
+  zeroThisBtn.addEventListener("click", () => setOffsetForCurrent(0, 0));
+  zeroAllBtn.addEventListener("click", () => {
+    for (let i = 0; i < frameCount; i++) { offsX[i] = 0; offsY[i] = 0; }
+    syncOffsetControls(); updateInfo(); render();
+  });
+  copyToAllBtn.addEventListener("click", () => {
+    const dx = (offsX[frameIndex] ?? 0) | 0;
+    const dy = (offsY[frameIndex] ?? 0) | 0;
+    for (let i = 0; i < frameCount; i++) { offsX[i] = dx; offsY[i] = dy; }
+    syncOffsetControls(); updateInfo(); render();
+  });
+
+  exportSheetBtn.addEventListener("click", exportCorrectedSheetPng);
+  exportZipBtn.addEventListener("click", exportFramesZip);
+  exportJsonBtn.addEventListener("click", exportOffsetsJson);
+
+  importJsonBtn.addEventListener("click", () => jsonInput.click());
+  jsonInput.addEventListener("change", async () => {
+    const f = jsonInput.files && jsonInput.files[0];
+    await importOffsetsJson(f);
+    jsonInput.value = "";
+  });
 
   // Drag & Drop
   dropZone.addEventListener("dragover", (e) => {
@@ -448,9 +973,27 @@
 
   // Keyboard shortcuts
   window.addEventListener("keydown", (e) => {
-    if (e.code === "Space") { e.preventDefault(); setPlaying(!playing); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setPlaying(false); step(-1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); setPlaying(false); step(+1); }
+    if (e.code === "Space") {
+      e.preventDefault();
+      setPlaying(!playing);
+      return;
+    }
+
+    const hasFrames = !!img && frameCount > 0;
+    if (!hasFrames) return;
+
+    if (!isEdit) {
+      if (e.key === "ArrowLeft") { e.preventDefault(); setPlaying(false); step(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); setPlaying(false); step(+1); }
+      return;
+    }
+
+    // edit mode: nudge offsets
+    const stepPx = e.shiftKey ? 5 : 1;
+    if (e.key === "ArrowLeft")  { e.preventDefault(); nudge(-stepPx, 0); }
+    if (e.key === "ArrowRight") { e.preventDefault(); nudge(+stepPx, 0); }
+    if (e.key === "ArrowUp")    { e.preventDefault(); nudge(0, -stepPx); }
+    if (e.key === "ArrowDown")  { e.preventDefault(); nudge(0, +stepPx); }
   });
 
   window.addEventListener("resize", () => render());
