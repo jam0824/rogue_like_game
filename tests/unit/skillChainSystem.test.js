@@ -187,6 +187,79 @@ function createBuildEffectRuntime() {
   };
 }
 
+function runEnemySingleSkillDamage({ attackScale = 1, damageMult = 1 }) {
+  const dungeon = createDungeon();
+  const player = {
+    ...createPlayer(),
+    id: "player-main",
+    x: 192,
+    y: 96,
+    hp: 999,
+    maxHp: 999,
+    hitFlashTimerSec: 0,
+    hitFlashDurationSec: 0.12,
+    ailmentTakenMult: 1,
+  };
+  const skillDefinitionsById = {
+    skill_id_enemy_power_test: {
+      id: "skill_id_enemy_power_test",
+      skillType: "attack",
+      params: {
+        attackKind: "aoe",
+        baseDamage: 100,
+        damageElement: "fire",
+        startSpawnTiming: "hit",
+        chainTrigger: "on_hit",
+        hit: { hitNum: 1, pierceCount: 0 },
+        aoe: {
+          spriteEffectId: "effect_id_explosion_01",
+          hitIntervalSec: 0,
+        },
+      },
+    },
+  };
+  const weaponDefinition = createWeaponDefinition([{ id: "skill_id_enemy_power_test", plus: 0 }]);
+  const weaponDefinitionsById = {
+    weapon_sword_01: weaponDefinition,
+  };
+  const enemy = createEnemyCaster("enemy-power-test", 96, 96, weaponDefinition.skills);
+  enemy.damageSeed = "enemy-power-test-fixed-seed";
+  enemy.critChance = 0;
+  enemy.damageMult = damageMult;
+  enemy.attackScale = attackScale;
+  const weapon = enemy.attack.weapons[0];
+
+  const result = updateEnemySkillChainCombat({
+    dt: 1 / 60,
+    dungeon,
+    player,
+    enemies: [enemy],
+    effects: [],
+    weaponStartEvents: [],
+    weaponHitEvents: [{
+      weaponId: weapon.id,
+      attackSeq: 1,
+      targetId: player.id,
+      worldX: player.x + player.width / 2,
+      worldY: player.y + player.height / 2,
+    }],
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    buildEffectRuntime: createBuildEffectRuntime(),
+    applyPlayerHpDamage: true,
+  });
+
+  const damageEvent = result.events.find(
+    (event) =>
+      event?.kind === "damage" &&
+      event?.targetType === "player" &&
+      event?.sourceType === "skill" &&
+      event?.skillId === "skill_id_enemy_power_test"
+  );
+  expect(damageEvent).toBeTruthy();
+  return Math.max(0, Math.round(damageEvent?.damage ?? 0));
+}
+
 describe("skillChainSystem", () => {
   it("resolveWeaponSkillPlan は projectile には毒を乗せず explosion に毒を乗せる", () => {
     const skillDefinitionsById = createSkillDefinitions();
@@ -624,6 +697,22 @@ describe("skillChainSystem", () => {
       )
     ).toBe(true);
     expect(player.hp).toBeLessThan(200);
+  });
+
+  it("敵スキルダメージは enemy.attackScale を反映して増加する", () => {
+    const lowDamage = runEnemySingleSkillDamage({ attackScale: 1, damageMult: 1 });
+    const highDamage = runEnemySingleSkillDamage({ attackScale: 2, damageMult: 1 });
+
+    expect(highDamage).toBeGreaterThan(lowDamage);
+    expect(highDamage / lowDamage).toBeCloseTo(2, 1);
+  });
+
+  it("敵スキルダメージは enemy.damageMult を反映して増加する", () => {
+    const lowDamage = runEnemySingleSkillDamage({ attackScale: 1, damageMult: 1 });
+    const highDamage = runEnemySingleSkillDamage({ attackScale: 1, damageMult: 2 });
+
+    expect(highDamage).toBeGreaterThan(lowDamage);
+    expect(highDamage / lowDamage).toBeCloseTo(2, 1);
   });
 
   it("敵チェーン start_spawn_timing=hit は targetId と legacy enemyId を受理し、重複を抑止する", () => {

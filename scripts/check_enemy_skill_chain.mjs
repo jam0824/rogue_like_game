@@ -306,8 +306,92 @@ function runPreviewScenario() {
 function main() {
   runPrimaryScenario();
   runPreviewScenario();
+  runEnemyPowerScalingScenario();
   runNonLoopEffectDespawnScenario();
   console.log("[check_enemy_skill_chain] PASS");
+}
+
+function runEnemyPowerScalingScenario() {
+  const dungeon = createDungeon();
+  const skillDefinitionsById = {
+    skill_id_enemy_power_test: {
+      id: "skill_id_enemy_power_test",
+      skillType: "attack",
+      params: {
+        attackKind: "aoe",
+        baseDamage: 100,
+        damageElement: "fire",
+        startSpawnTiming: "hit",
+        chainTrigger: "on_hit",
+        hit: { hitNum: 1, pierceCount: 0 },
+        aoe: {
+          spriteEffectId: "effect_id_explosion_01",
+          hitIntervalSec: 0,
+        },
+      },
+    },
+  };
+  const weaponDefinitionsById = {
+    weapon_sword_01: {
+      id: "weapon_sword_01",
+      skills: [{ id: "skill_id_enemy_power_test", plus: 0 }],
+    },
+  };
+
+  function runSingleDamage({ damageMult, attackScale }) {
+    const player = createPlayer({
+      id: "player-power-scaling",
+      x: 192,
+      y: 96,
+      hp: 999,
+      maxHp: 999,
+    });
+    const { enemy, weapon } = createEnemyWithWeapon(weaponDefinitionsById.weapon_sword_01.skills);
+    enemy.damageSeed = "enemy-power-scaling-seed";
+    enemy.critChance = 0;
+    enemy.damageMult = damageMult;
+    enemy.attackScale = attackScale;
+
+    const result = updateEnemySkillChainCombat({
+      dt: DT,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [],
+      weaponHitEvents: [{
+        weaponId: weapon.id,
+        attackSeq: 1,
+        targetId: player.id,
+        worldX: player.x + player.width / 2,
+        worldY: player.y + player.height / 2,
+      }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const damageEvent = result.events.find(
+      (event) =>
+        event?.kind === "damage" &&
+        event?.targetType === "player" &&
+        event?.sourceType === "skill" &&
+        event?.skillId === "skill_id_enemy_power_test"
+    );
+    assert(damageEvent, "power-scaling scenario did not emit skill damage event");
+    return Math.max(0, Math.round(damageEvent.damage));
+  }
+
+  const lowScaleDamage = runSingleDamage({ damageMult: 1, attackScale: 1 });
+  const highScaleDamage = runSingleDamage({ damageMult: 1, attackScale: 2 });
+  assert(highScaleDamage > lowScaleDamage, "enemy skill damage did not increase with enemy.attackScale");
+  assert(highScaleDamage / lowScaleDamage > 1.8, "enemy.attackScale multiplier did not affect skill damage enough");
+
+  const lowMultDamage = runSingleDamage({ damageMult: 1, attackScale: 1 });
+  const highMultDamage = runSingleDamage({ damageMult: 2, attackScale: 1 });
+  assert(highMultDamage > lowMultDamage, "enemy skill damage did not increase with enemy.damageMult");
+  assert(highMultDamage / lowMultDamage > 1.8, "enemy.damageMult multiplier did not affect skill damage enough");
 }
 
 function runNonLoopEffectDespawnScenario() {

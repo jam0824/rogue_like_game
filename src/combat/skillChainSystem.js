@@ -457,17 +457,23 @@ function buildPoisonDotEvent(enemy, damage) {
   };
 }
 
-function resolveAttackRoll(player, weaponRuntime, attack, enemyId, attackSeq, hitSeedSuffix = "") {
+function resolveAttackRoll(attacker, weaponRuntime, attack, enemyId, attackSeq, hitSeedSuffix = "") {
   const canUseDerivedRoll =
-    typeof player?.damageSeed === "string" &&
-    Number.isFinite(player?.damageMult) &&
-    Number.isFinite(player?.critChance) &&
-    Number.isFinite(player?.critMult);
+    typeof attacker?.damageSeed === "string" &&
+    Number.isFinite(attacker?.damageMult) &&
+    Number.isFinite(attacker?.critChance) &&
+    Number.isFinite(attacker?.critMult);
 
-  const attackScale = Math.max(0, toFiniteNumber(attack.attackScale, 1));
+  const skillAttackScale = Math.max(0, toFiniteNumber(attack.attackScale, 1));
+  const attackerAttackScale = Math.max(0, toFiniteNumber(attacker?.attackScale, 1));
+  const totalAttackScale = skillAttackScale * attackerAttackScale;
+  const damageMult = Math.max(0, toFiniteNumber(attacker?.damageMult, 1));
 
   if (!canUseDerivedRoll) {
-    const fallbackDamage = Math.max(MIN_DAMAGE, Math.round(Math.max(0, attack.baseDamage) * attackScale));
+    const fallbackDamage = Math.max(
+      MIN_DAMAGE,
+      Math.round(Math.max(0, attack.baseDamage) * damageMult * totalAttackScale)
+    );
     return {
       damagePerHit: fallbackDamage,
       isCritical: false,
@@ -475,13 +481,13 @@ function resolveAttackRoll(player, weaponRuntime, attack, enemyId, attackSeq, hi
     };
   }
 
-  const seedKey = `${player.damageSeed}::skill::${weaponRuntime?.id ?? "weapon"}::${attackSeq}::${attack.skillId}::${enemyId}::${hitSeedSuffix}`;
+  const seedKey = `${attacker.damageSeed}::skill::${weaponRuntime?.id ?? "weapon"}::${attackSeq}::${attack.skillId}::${enemyId}::${hitSeedSuffix}`;
   const damageRoll = rollHitDamage({
     baseDamage: Math.max(0, attack.baseDamage),
-    damageMult: Math.max(0, toFiniteNumber(player.damageMult, 1)),
-    attackScale,
-    critChance: clamp(toFiniteNumber(player.critChance, 0), 0, 1),
-    critMult: Math.max(1, toFiniteNumber(player.critMult, 1)),
+    damageMult,
+    attackScale: totalAttackScale,
+    critChance: clamp(toFiniteNumber(attacker.critChance, 0), 0, 1),
+    critMult: Math.max(1, toFiniteNumber(attacker.critMult, 1)),
     seedKey,
   });
 
@@ -489,8 +495,8 @@ function resolveAttackRoll(player, weaponRuntime, attack, enemyId, attackSeq, hi
     MIN_DAMAGE,
     Math.round(
       Math.max(0, attack.baseDamage) *
-        Math.max(0, toFiniteNumber(player.damageMult, 1)) *
-        attackScale
+        damageMult *
+        totalAttackScale
     )
   );
 
