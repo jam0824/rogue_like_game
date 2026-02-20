@@ -1,4 +1,5 @@
 import { updateEnemySkillChainCombat } from "../src/combat/skillChainSystem.js";
+import { updateEffects } from "../src/effect/effectSystem.js";
 
 const DT = 1 / 60;
 
@@ -305,7 +306,98 @@ function runPreviewScenario() {
 function main() {
   runPrimaryScenario();
   runPreviewScenario();
+  runNonLoopEffectDespawnScenario();
   console.log("[check_enemy_skill_chain] PASS");
+}
+
+function runNonLoopEffectDespawnScenario() {
+  const dungeon = createDungeon();
+  const player = createPlayer({
+    id: "player-non-loop",
+    x: 192,
+    y: 96,
+    hp: 150,
+    maxHp: 150,
+  });
+  const skillDefinitionsById = {
+    skill_id_projectile_non_loop: {
+      id: "skill_id_projectile_non_loop",
+      skillType: "attack",
+      params: {
+        attackKind: "projectile",
+        baseDamage: 10,
+        damageElement: "physical",
+        startSpawnTiming: "start",
+        chainTrigger: "on_hit",
+        hit: { hitNum: 1, pierceCount: 0 },
+        projectile: {
+          speedTilePerSec: 8,
+          lifeSec: 5,
+          moveDirection: "to_target",
+          spriteEffectId: "effect_id_explosion_01",
+          disappearHitWall: false,
+        },
+      },
+    },
+  };
+  const weaponDefinitionsById = {
+    weapon_sword_01: {
+      id: "weapon_sword_01",
+      skills: [{ id: "skill_id_projectile_non_loop", plus: 0 }],
+    },
+  };
+  const { enemy, weapon } = createEnemyWithWeapon(weaponDefinitionsById.weapon_sword_01.skills);
+  const enemies = [enemy];
+  const buildEffectRuntime = createBuildEffectRuntime();
+
+  let effects = [];
+  const first = updateEnemySkillChainCombat({
+    dt: DT,
+    dungeon,
+    player,
+    enemies,
+    effects,
+    weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+    weaponHitEvents: [],
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    buildEffectRuntime,
+    applyPlayerHpDamage: true,
+  });
+  effects = first.effects;
+  assert((weapon?.skillChainRuntime?.projectiles?.length ?? 0) === 1, "non-loop enemy projectile was not spawned");
+
+  effects = updateEffects(effects, 2);
+  assert(
+    !effects.some((effect) => effect?.effectId === "effect_id_explosion_01"),
+    "non-loop enemy projectile effect should disappear before linkage check"
+  );
+
+  const hpBefore = player.hp;
+  const second = updateEnemySkillChainCombat({
+    dt: DT,
+    dungeon,
+    player,
+    enemies,
+    effects,
+    weaponStartEvents: [],
+    weaponHitEvents: [],
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    buildEffectRuntime,
+    applyPlayerHpDamage: true,
+  });
+
+  const hasProjectileDamage = second.events.some(
+    (event) =>
+      event?.kind === "damage" &&
+      event?.targetType === "player" &&
+      event?.sourceType === "skill" &&
+      event?.skillId === "skill_id_projectile_non_loop"
+  );
+  assert(!hasProjectileDamage, "enemy projectile should not deal damage after linked non-loop effect ended");
+  assert((weapon?.skillChainRuntime?.projectiles?.length ?? 0) === 0, "enemy projectile hitbox was not despawned immediately");
+  assert(player.hp === hpBefore, "player HP changed even though projectile should have despawned");
 }
 
 main();

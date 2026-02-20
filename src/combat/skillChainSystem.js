@@ -550,6 +550,10 @@ function findEffectIndexById(effects, effectRuntimeId) {
   return -1;
 }
 
+function hasEffectRuntime(effects, effectRuntimeId) {
+  return findEffectIndexById(effects, effectRuntimeId) >= 0;
+}
+
 function calcRotationRadFromDirection(dirX, dirY) {
   return Math.atan2(toFiniteNumber(dirY, 0), toFiniteNumber(dirX, 0));
 }
@@ -753,6 +757,7 @@ function spawnProjectile({
     hitboxWidth: hitbox.width,
     hitboxHeight: hitbox.height,
     effectRuntimeId: projectileEffectRuntime?.id ?? "",
+    despawnOnEffectEnd: projectileEffectRuntime ? projectileEffectRuntime.loop !== true : false,
   });
 }
 
@@ -918,6 +923,19 @@ function updateProjectiles({
       continue;
     }
 
+    let shouldDespawn =
+      projectile.despawnOnEffectEnd === true &&
+      typeof projectile.effectRuntimeId === "string" &&
+      projectile.effectRuntimeId.length > 0 &&
+      !hasEffectRuntime(effects, projectile.effectRuntimeId);
+
+    if (shouldDespawn) {
+      if (projectile.effectRuntimeId) {
+        effectIdsToRemove.add(projectile.effectRuntimeId);
+      }
+      continue;
+    }
+
     const speed = Math.max(0, toFiniteNumber(projectile.speedPxPerSec, 0));
     const stepDt = Math.max(0, toFiniteNumber(dt, 0));
     projectile.remainingLifeSec = Math.max(0, toFiniteNumber(projectile.remainingLifeSec, 0) - stepDt);
@@ -930,7 +948,7 @@ function updateProjectiles({
       syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
     }
 
-    let shouldDespawn = projectile.remainingLifeSec <= 0;
+    shouldDespawn = projectile.remainingLifeSec <= 0;
 
     if (!shouldDespawn && projectile.disappearHitWall === true && !isPointWalkable(dungeon, projectile.x, projectile.y)) {
       shouldDespawn = true;
@@ -1471,6 +1489,7 @@ function spawnEnemySkillProjectile({
     hitboxWidth: hitbox.width,
     hitboxHeight: hitbox.height,
     effectRuntimeId: projectileEffectRuntime?.id ?? "",
+    despawnOnEffectEnd: projectileEffectRuntime ? projectileEffectRuntime.loop !== true : false,
     applyPlayerHpDamage: applyPlayerHpDamage !== false,
   });
 }
@@ -1614,6 +1633,19 @@ function updateEnemySkillProjectiles({
       continue;
     }
 
+    let shouldDespawn =
+      projectile.despawnOnEffectEnd === true &&
+      typeof projectile.effectRuntimeId === "string" &&
+      projectile.effectRuntimeId.length > 0 &&
+      !hasEffectRuntime(effects, projectile.effectRuntimeId);
+
+    if (shouldDespawn) {
+      if (projectile.effectRuntimeId) {
+        effectIdsToRemove.add(projectile.effectRuntimeId);
+      }
+      continue;
+    }
+
     const speed = Math.max(0, toFiniteNumber(projectile.speedPxPerSec, 0));
     const stepDt = Math.max(0, toFiniteNumber(dt, 0));
     projectile.remainingLifeSec = Math.max(0, toFiniteNumber(projectile.remainingLifeSec, 0) - stepDt);
@@ -1625,7 +1657,7 @@ function updateEnemySkillProjectiles({
       syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
     }
 
-    let shouldDespawn = projectile.remainingLifeSec <= 0;
+    shouldDespawn = projectile.remainingLifeSec <= 0;
     if (!shouldDespawn && projectile.disappearHitWall === true && !isPointWalkable(dungeon, projectile.x, projectile.y)) {
       shouldDespawn = true;
     }

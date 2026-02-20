@@ -5,6 +5,7 @@ import {
   updateEnemySkillChainCombat,
   updateSkillChainCombat,
 } from "../../src/combat/skillChainSystem.js";
+import { updateEffects } from "../../src/effect/effectSystem.js";
 
 function createDungeon() {
   const width = 64;
@@ -790,5 +791,147 @@ describe("skillChainSystem", () => {
     ).toBe(true);
     expect(player.hp).toBe(180);
     expect((player?.ailments?.poison?.stacks ?? 0)).toBe(0);
+  });
+
+  it("非loop effect が消えたフレームで player チェーン projectile の当たり判定も消える", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.spriteEffectId = "effect_id_explosion_01";
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.lifeSec = 10;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const weaponRuntime = {
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    };
+    const enemies = [createEnemy("enemy-far", 768, 768, 220)];
+
+    let effects = [];
+    const buildEffectRuntime = createBuildEffectRuntime();
+    const first = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies,
+      effects,
+      weapons: [weaponRuntime],
+      weaponStartEvents: [{ weaponId: "weapon-0", weaponDefId: "weapon_sword_01", attackSeq: 1, worldX: 116, worldY: 116 }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+    });
+
+    effects = first.effects;
+    expect((weaponRuntime?.skillChainRuntime?.projectiles ?? [])).toHaveLength(1);
+    expect(effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(true);
+
+    effects = updateEffects(effects, 2);
+    expect(effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(false);
+
+    const second = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies,
+      effects,
+      weapons: [weaponRuntime],
+      weaponStartEvents: [],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+    });
+
+    expect((weaponRuntime?.skillChainRuntime?.projectiles ?? [])).toHaveLength(0);
+    expect(
+      second.events.some(
+        (event) => event?.kind === "damage" && event?.sourceType === "skill" && event?.skillId === "skill_id_projectile_01"
+      )
+    ).toBe(false);
+  });
+
+  it("非loop effect が消えたフレームで enemy チェーン projectile の当たり判定も消える", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.spriteEffectId = "effect_id_explosion_01";
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.lifeSec = 10;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 180,
+      maxHp: 180,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-despawn", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+
+    let effects = [];
+    const buildEffectRuntime = createBuildEffectRuntime();
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+
+    effects = first.effects;
+    expect((weapon?.skillChainRuntime?.projectiles ?? [])).toHaveLength(1);
+    expect(effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(true);
+
+    effects = updateEffects(effects, 2);
+    expect(effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(false);
+
+    const hpBefore = player.hp;
+    const second = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+
+    expect((weapon?.skillChainRuntime?.projectiles ?? [])).toHaveLength(0);
+    expect(
+      second.events.some(
+        (event) =>
+          event?.kind === "damage" &&
+          event?.targetType === "player" &&
+          event?.sourceType === "skill" &&
+          event?.skillId === "skill_id_projectile_01"
+      )
+    ).toBe(false);
+    expect(player.hp).toBe(hpBefore);
   });
 });
