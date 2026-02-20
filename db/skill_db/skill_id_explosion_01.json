@@ -15,7 +15,7 @@
       "start_spawn_timing": "hit",
       "chain_trigger": "on_hit",
       "aoe": {
-        "sprite_effect_id": "effect_id_explosion_02",
+        "sprite_effect_id": "effect_id_bite_01",
         "hit_interval_sec": 0.0
       }
     },
