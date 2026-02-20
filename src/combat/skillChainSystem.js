@@ -1,5 +1,6 @@
 import { TILE_SIZE } from "../config/constants.js";
 import { getEnemyCombatHitbox } from "../enemy/enemySystem.js";
+import { getPlayerCombatHitbox } from "../player/playerSystem.js";
 import { rollHitDamage } from "./damageRoll.js";
 
 export const MAX_CHAIN_SPAWN = 16;
@@ -70,6 +71,24 @@ function getPlayerCenter(player) {
     x: toFiniteNumber(player?.x, 0) + width / 2,
     y: toFiniteNumber(player?.y, 0) + height / 2,
   };
+}
+
+function isPlayerDead(player) {
+  return player?.isDead === true || (Number.isFinite(player?.hp) && player.hp <= 0);
+}
+
+function resolveHitEventTargetId(hitEvent) {
+  const targetId = typeof hitEvent?.targetId === "string" ? hitEvent.targetId : "";
+  if (targetId.length > 0) {
+    return targetId;
+  }
+
+  const legacyEnemyId = typeof hitEvent?.enemyId === "string" ? hitEvent.enemyId : "";
+  if (legacyEnemyId.length > 0) {
+    return legacyEnemyId;
+  }
+
+  return "";
 }
 
 function buildAabbFromCenter(x, y, width, height) {
@@ -658,6 +677,7 @@ function enqueueNextAttack({
   skillPlan,
   spawnX,
   spawnY,
+  extraTaskProps = null,
 }) {
   if (!Number.isFinite(nextAttackStepIndex) || nextAttackStepIndex < 0 || nextAttackStepIndex >= skillPlan.attackSteps.length) {
     return;
@@ -675,6 +695,7 @@ function enqueueNextAttack({
     skillPlan,
     spawnX,
     spawnY,
+    ...(extraTaskProps && typeof extraTaskProps === "object" ? extraTaskProps : {}),
   });
 }
 
@@ -1116,8 +1137,8 @@ export function updateSkillChainCombat({
   const hitEntrySpawnKeys = new Set();
   for (const hitEvent of Array.isArray(weaponHitEvents) ? weaponHitEvents : []) {
     const weaponId = typeof hitEvent?.weaponId === "string" ? hitEvent.weaponId : "";
-    const enemyId = typeof hitEvent?.enemyId === "string" ? hitEvent.enemyId : "";
-    if (weaponId.length <= 0 || enemyId.length <= 0) {
+    const targetId = resolveHitEventTargetId(hitEvent);
+    if (weaponId.length <= 0 || targetId.length <= 0) {
       continue;
     }
 
@@ -1134,7 +1155,7 @@ export function updateSkillChainCombat({
 
     const fallbackAttackSeq = Math.max(0, toNonNegativeInt(weaponRuntime.attackSeq, 0));
     const attackSeq = Math.max(0, toNonNegativeInt(hitEvent.attackSeq, fallbackAttackSeq));
-    const spawnKey = `${weaponId}:${attackSeq}:${enemyId}`;
+    const spawnKey = `${weaponId}:${attackSeq}:${targetId}`;
     if (hitEntrySpawnKeys.has(spawnKey)) {
       continue;
     }
@@ -1186,6 +1207,712 @@ export function updateSkillChainCombat({
   });
 
   updatePoisonDots(enemies, Math.max(0, toFiniteNumber(dt, 0)), events);
+
+  return {
+    events,
+    effects: nextEffects,
+  };
+}
+
+function getPlayerSkillTargetId(player) {
+  if (typeof player?.id === "string" && player.id.length > 0) {
+    return player.id;
+  }
+  return "player";
+}
+
+function ensurePlayerPoisonRuntime(player) {
+  if (!player || typeof player !== "object") {
+    return null;
+  }
+
+  if (!player.ailments || typeof player.ailments !== "object") {
+    player.ailments = {};
+  }
+
+  if (!player.ailments.poison || typeof player.ailments.poison !== "object") {
+    player.ailments.poison = {
+      stacks: 0,
+      applyRemainder: 0,
+      decayTimerSec: 0,
+      dotTimerSec: 0,
+      dotPerStack: 0,
+    };
+  }
+
+  const poison = player.ailments.poison;
+  poison.stacks = Math.max(0, toNonNegativeInt(poison.stacks, 0));
+  poison.applyRemainder = Math.max(0, toFiniteNumber(poison.applyRemainder, 0));
+  poison.decayTimerSec = Math.max(0, toFiniteNumber(poison.decayTimerSec, 0));
+  poison.dotTimerSec = Math.max(0, toFiniteNumber(poison.dotTimerSec, 0));
+  poison.dotPerStack = Math.max(0, toFiniteNumber(poison.dotPerStack, 0));
+
+  return poison;
+}
+
+function applyPoisonOnHitToPlayer(player, ailment, attacker, baseHitNonCrit) {
+  if (!player || ailment?.ailmentId !== "poison") {
+    return;
+  }
+
+  const poison = ensurePlayerPoisonRuntime(player);
+  if (!poison) {
+    return;
+  }
+
+  const applyBase = Math.max(0, toFiniteNumber(ailment.applyBase, 0));
+  const applyMult = calcPoisonApplyMult(ailment.plus);
+  const ailmentTakenMult = Math.max(0, toFiniteNumber(player.ailmentTakenMult, 1));
+  const apply = applyBase * applyMult * ailmentTakenMult;
+
+  poison.applyRemainder += apply;
+  const addStacksRaw = Math.floor(poison.applyRemainder);
+  const addStacks = Math.max(0, addStacksRaw);
+  poison.applyRemainder = Math.max(0, poison.applyRemainder - addStacks);
+
+  if (addStacks <= 0) {
+    return;
+  }
+
+  const previousStacks = poison.stacks;
+  const nextStacks = clamp(previousStacks + addStacks, 0, POISON_MAX_STACKS);
+  const addedStacks = Math.max(0, nextStacks - previousStacks);
+  if (addedStacks <= 0) {
+    return;
+  }
+
+  poison.stacks = nextStacks;
+  poison.decayTimerSec = POISON_DURATION_SEC;
+
+  const arc = Math.max(0, toFiniteNumber(attacker?.statTotals?.arc, 0));
+  const addedDotPerStack = Math.max(0, baseHitNonCrit) * POISON_DOT_COEF * (1 + arc * 0);
+  const weightedTotal = poison.dotPerStack * previousStacks + addedDotPerStack * addedStacks;
+  poison.dotPerStack = weightedTotal / nextStacks;
+}
+
+function applyDamageToPlayer(player, damage, applyPlayerHpDamage = true) {
+  if (!player || isPlayerDead(player)) {
+    return false;
+  }
+
+  const resolvedDamage = Math.max(0, Math.round(toFiniteNumber(damage, 0)));
+  if (resolvedDamage <= 0) {
+    return false;
+  }
+
+  const flashDurationSec = Math.max(0.0001, toFiniteNumber(player.hitFlashDurationSec, 0.12));
+  player.hitFlashTimerSec = flashDurationSec;
+
+  if (applyPlayerHpDamage !== false) {
+    player.hp = toFiniteNumber(player.hp, toFiniteNumber(player.maxHp, 100)) - resolvedDamage;
+    if (Number.isFinite(player.maxHp)) {
+      player.hp = clamp(player.hp, 0, player.maxHp);
+    } else {
+      player.hp = Math.max(0, player.hp);
+    }
+  }
+
+  return true;
+}
+
+function buildSkillDamageEventToPlayer({
+  weaponRuntime,
+  player,
+  damage,
+  isCritical,
+  skillId,
+}) {
+  const playerHitbox = getPlayerCombatHitbox(player);
+  const centerX = playerHitbox ? playerHitbox.x + playerHitbox.width / 2 : toFiniteNumber(player?.x, 0);
+  const centerY = playerHitbox ? playerHitbox.y + playerHitbox.height / 2 : toFiniteNumber(player?.y, 0);
+  return {
+    kind: "damage",
+    targetType: "player",
+    targetId: getPlayerSkillTargetId(player),
+    sourceType: "skill",
+    skillId,
+    weaponId: weaponRuntime?.id ?? "",
+    weaponDefId: weaponRuntime?.weaponDefId ?? "",
+    damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
+    isCritical: isCritical === true,
+    worldX: centerX,
+    worldY: centerY,
+    suppressWeaponHitEffect: true,
+  };
+}
+
+function buildPoisonDotEventToPlayer(player, damage) {
+  const playerHitbox = getPlayerCombatHitbox(player);
+  const centerX = playerHitbox ? playerHitbox.x + playerHitbox.width / 2 : toFiniteNumber(player?.x, 0);
+  const centerY = playerHitbox ? playerHitbox.y + playerHitbox.height / 2 : toFiniteNumber(player?.y, 0);
+  return {
+    kind: "damage",
+    targetType: "player",
+    targetId: getPlayerSkillTargetId(player),
+    sourceType: "ailment",
+    ailmentId: "poison",
+    weaponId: "",
+    weaponDefId: "",
+    damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
+    isCritical: false,
+    worldX: centerX,
+    worldY: centerY,
+    suppressWeaponHitEffect: true,
+  };
+}
+
+function applyAttackHitToPlayer({
+  player,
+  attack,
+  attackerEnemy,
+  weaponRuntime,
+  attackSeq,
+  events,
+  hitSeedSuffix,
+  applyPlayerHpDamage = true,
+}) {
+  const playerTargetId = getPlayerSkillTargetId(player);
+  const roll = resolveAttackRoll(
+    attackerEnemy,
+    weaponRuntime,
+    attack,
+    playerTargetId,
+    attackSeq,
+    hitSeedSuffix
+  );
+  const totalDamage = Math.max(MIN_DAMAGE, roll.damagePerHit * Math.max(1, toNonNegativeInt(attack.hitNum, 1)));
+
+  if (!applyDamageToPlayer(player, totalDamage, applyPlayerHpDamage)) {
+    return false;
+  }
+
+  events.push(
+    buildSkillDamageEventToPlayer({
+      weaponRuntime,
+      player,
+      damage: totalDamage,
+      isCritical: roll.isCritical,
+      skillId: attack.skillId,
+    })
+  );
+
+  if (applyPlayerHpDamage !== false && Array.isArray(attack.applyAilments) && attack.applyAilments.length > 0) {
+    for (const ailment of attack.applyAilments) {
+      applyPoisonOnHitToPlayer(player, ailment, attackerEnemy, roll.baseHitNonCrit);
+    }
+  }
+
+  return true;
+}
+
+function resolveProjectileDirectionToPlayer(projectileConfig, enemy, player, spawnX, spawnY) {
+  if (projectileConfig.moveDirection === "to_target" && player && !isPlayerDead(player)) {
+    const playerCenter = getPlayerCenter(player);
+    return normalizeVector(playerCenter.x - spawnX, playerCenter.y - spawnY, 1, 0);
+  }
+
+  const facing = getFacingVector(enemy?.facing);
+  return normalizeVector(facing.x, facing.y, 1, 0);
+}
+
+function spawnEnemySkillProjectile({
+  runtime,
+  weaponRuntime,
+  skillPlan,
+  attack,
+  attackStepIndex,
+  attackSeq,
+  spawnX,
+  spawnY,
+  enemy,
+  player,
+  effects,
+  buildEffectRuntime,
+  applyPlayerHpDamage = true,
+}) {
+  const projectileConfig = attack.projectile;
+  if (!projectileConfig) {
+    return;
+  }
+
+  const direction = resolveProjectileDirectionToPlayer(projectileConfig, enemy, player, spawnX, spawnY);
+  const projectileId = `${weaponRuntime.id}-skill-projectile-${runtime.projectileSeq}`;
+  runtime.projectileSeq += 1;
+
+  let projectileEffectRuntime = null;
+  if (typeof projectileConfig.spriteEffectId === "string" && projectileConfig.spriteEffectId.length > 0) {
+    const projectileRotationRad = calcRotationRadFromDirection(direction.x, direction.y);
+    projectileEffectRuntime = buildEffectRuntime?.(projectileConfig.spriteEffectId, spawnX, spawnY) ?? null;
+    if (projectileEffectRuntime) {
+      projectileEffectRuntime.rotationRad = projectileRotationRad;
+      effects.push(projectileEffectRuntime);
+    }
+  }
+
+  const hitbox = resolveHitboxSizeFromEffectRuntime(projectileEffectRuntime, TILE_SIZE);
+  runtime.projectiles.push({
+    id: projectileId,
+    attackSeq,
+    attackStepIndex,
+    weaponRuntime,
+    skillPlan,
+    enemy,
+    player,
+    x: spawnX,
+    y: spawnY,
+    dirX: direction.x,
+    dirY: direction.y,
+    speedPxPerSec: Math.max(0, toFiniteNumber(projectileConfig.speedTilePerSec, 0) * TILE_SIZE),
+    remainingLifeSec: Math.max(0.0001, toFiniteNumber(projectileConfig.lifeSec, 0.0001)),
+    disappearHitWall: projectileConfig.disappearHitWall !== false,
+    maxTargets: Math.max(1, 1 + Math.max(0, toNonNegativeInt(attack.pierceCount, 0))),
+    hitTargetCount: 0,
+    hitPlayer: false,
+    hitboxWidth: hitbox.width,
+    hitboxHeight: hitbox.height,
+    effectRuntimeId: projectileEffectRuntime?.id ?? "",
+    applyPlayerHpDamage: applyPlayerHpDamage !== false,
+  });
+}
+
+function processEnemyAoeAttack({
+  queue,
+  runtime,
+  weaponRuntime,
+  skillPlan,
+  attack,
+  attackSeq,
+  spawnX,
+  spawnY,
+  enemy,
+  player,
+  events,
+  effects,
+  buildEffectRuntime,
+  applyPlayerHpDamage = true,
+}) {
+  const { aabb } = resolveAoeHitbox(attack, spawnX, spawnY, effects, buildEffectRuntime);
+  const playerHitbox = getPlayerCombatHitbox(player);
+  if (!playerHitbox || isPlayerDead(player) || !intersectsAabb(aabb, playerHitbox)) {
+    return;
+  }
+
+  const hitApplied = applyAttackHitToPlayer({
+    player,
+    attack,
+    attackerEnemy: enemy,
+    weaponRuntime,
+    attackSeq,
+    events,
+    hitSeedSuffix: `${attack.skillId}::aoe::${getPlayerSkillTargetId(player)}`,
+    applyPlayerHpDamage,
+  });
+
+  if (!hitApplied || attack.chainTrigger !== "on_hit") {
+    return;
+  }
+
+  enqueueNextAttack({
+    queue,
+    runtime,
+    attackSeq,
+    nextAttackStepIndex: skillPlan.attackSteps.indexOf(attack) + 1,
+    weaponRuntime,
+    skillPlan,
+    spawnX: playerHitbox.x + playerHitbox.width / 2,
+    spawnY: playerHitbox.y + playerHitbox.height / 2,
+    extraTaskProps: {
+      enemy,
+      player,
+      applyPlayerHpDamage,
+    },
+  });
+}
+
+function processEnemyAttackSpawnQueue({
+  queue,
+  events,
+  effects,
+  buildEffectRuntime,
+}) {
+  let guard = 0;
+
+  while (queue.length > 0 && guard < 2048) {
+    guard += 1;
+    const task = queue.shift();
+    if (!task || task.type !== "attack_spawn") {
+      continue;
+    }
+
+    const attack = task.skillPlan.attackSteps[task.attackStepIndex];
+    if (!attack) {
+      continue;
+    }
+
+    const runtime = ensureWeaponSkillRuntime(task.weaponRuntime);
+    if (attack.attackKind === "projectile") {
+      spawnEnemySkillProjectile({
+        runtime,
+        weaponRuntime: task.weaponRuntime,
+        skillPlan: task.skillPlan,
+        attack,
+        attackStepIndex: task.attackStepIndex,
+        attackSeq: task.attackSeq,
+        spawnX: task.spawnX,
+        spawnY: task.spawnY,
+        enemy: task.enemy,
+        player: task.player,
+        effects,
+        buildEffectRuntime,
+        applyPlayerHpDamage: task.applyPlayerHpDamage,
+      });
+      continue;
+    }
+
+    if (attack.attackKind === "aoe") {
+      processEnemyAoeAttack({
+        queue,
+        runtime,
+        weaponRuntime: task.weaponRuntime,
+        skillPlan: task.skillPlan,
+        attack,
+        attackSeq: task.attackSeq,
+        spawnX: task.spawnX,
+        spawnY: task.spawnY,
+        enemy: task.enemy,
+        player: task.player,
+        events,
+        effects,
+        buildEffectRuntime,
+        applyPlayerHpDamage: task.applyPlayerHpDamage,
+      });
+    }
+  }
+}
+
+function updateEnemySkillProjectiles({
+  queue,
+  dt,
+  dungeon,
+  player,
+  events,
+  effects,
+  weaponRuntime,
+  enemy,
+  applyPlayerHpDamage = true,
+}) {
+  const runtime = ensureWeaponSkillRuntime(weaponRuntime);
+  if (!Array.isArray(runtime.projectiles) || runtime.projectiles.length <= 0) {
+    return effects;
+  }
+
+  const nextProjectiles = [];
+  const effectIdsToRemove = new Set();
+
+  for (const projectile of runtime.projectiles) {
+    if (!projectile) {
+      continue;
+    }
+
+    const speed = Math.max(0, toFiniteNumber(projectile.speedPxPerSec, 0));
+    const stepDt = Math.max(0, toFiniteNumber(dt, 0));
+    projectile.remainingLifeSec = Math.max(0, toFiniteNumber(projectile.remainingLifeSec, 0) - stepDt);
+    projectile.x += toFiniteNumber(projectile.dirX, 0) * speed * stepDt;
+    projectile.y += toFiniteNumber(projectile.dirY, 0) * speed * stepDt;
+
+    if (projectile.effectRuntimeId) {
+      const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
+      syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
+    }
+
+    let shouldDespawn = projectile.remainingLifeSec <= 0;
+    if (!shouldDespawn && projectile.disappearHitWall === true && !isPointWalkable(dungeon, projectile.x, projectile.y)) {
+      shouldDespawn = true;
+    }
+
+    if (!shouldDespawn && !projectile.hitPlayer && player && !isPlayerDead(player)) {
+      const projectileAabb = buildAabbFromCenter(
+        projectile.x,
+        projectile.y,
+        Math.max(1, toFiniteNumber(projectile.hitboxWidth, TILE_SIZE)),
+        Math.max(1, toFiniteNumber(projectile.hitboxHeight, TILE_SIZE))
+      );
+      const playerHitbox = getPlayerCombatHitbox(player);
+      if (playerHitbox && intersectsAabb(projectileAabb, playerHitbox)) {
+        projectile.hitPlayer = true;
+        projectile.hitTargetCount = Math.max(0, toNonNegativeInt(projectile.hitTargetCount, 0)) + 1;
+
+        const attack = projectile.skillPlan.attackSteps[projectile.attackStepIndex];
+        if (attack) {
+          const hitApplied = applyAttackHitToPlayer({
+            player,
+            attack,
+            attackerEnemy: projectile.enemy ?? enemy,
+            weaponRuntime: projectile.weaponRuntime,
+            attackSeq: projectile.attackSeq,
+            events,
+            hitSeedSuffix: `${projectile.id}::${getPlayerSkillTargetId(player)}`,
+            applyPlayerHpDamage: projectile.applyPlayerHpDamage !== false && applyPlayerHpDamage !== false,
+          });
+
+          if (hitApplied && attack.chainTrigger === "on_hit") {
+            enqueueNextAttack({
+              queue,
+              runtime,
+              attackSeq: projectile.attackSeq,
+              nextAttackStepIndex: projectile.attackStepIndex + 1,
+              weaponRuntime: projectile.weaponRuntime,
+              skillPlan: projectile.skillPlan,
+              spawnX: playerHitbox.x + playerHitbox.width / 2,
+              spawnY: playerHitbox.y + playerHitbox.height / 2,
+              extraTaskProps: {
+                enemy: projectile.enemy ?? enemy,
+                player,
+                applyPlayerHpDamage: projectile.applyPlayerHpDamage !== false && applyPlayerHpDamage !== false,
+              },
+            });
+          }
+        }
+
+        if (projectile.hitTargetCount >= Math.max(1, toNonNegativeInt(projectile.maxTargets, 1))) {
+          shouldDespawn = true;
+        }
+      }
+    }
+
+    if (shouldDespawn) {
+      if (projectile.effectRuntimeId) {
+        effectIdsToRemove.add(projectile.effectRuntimeId);
+      }
+      continue;
+    }
+
+    nextProjectiles.push(projectile);
+  }
+
+  runtime.projectiles = nextProjectiles;
+  return removeEffectsById(effects, effectIdsToRemove);
+}
+
+function updatePoisonDotsOnPlayer(player, dt, events, applyPlayerHpDamage = true) {
+  if (!player || !Number.isFinite(dt) || dt <= 0 || applyPlayerHpDamage === false) {
+    return;
+  }
+
+  const poison = ensurePlayerPoisonRuntime(player);
+  if (!poison || poison.stacks <= 0 || isPlayerDead(player)) {
+    if (poison) {
+      poison.decayTimerSec = 0;
+      poison.dotTimerSec = 0;
+    }
+    return;
+  }
+
+  poison.decayTimerSec -= dt;
+  while (poison.decayTimerSec <= 0 && poison.stacks > 0) {
+    poison.stacks -= 1;
+    if (poison.stacks > 0) {
+      poison.decayTimerSec += POISON_DURATION_SEC;
+    } else {
+      poison.stacks = 0;
+      poison.decayTimerSec = 0;
+      poison.dotTimerSec = 0;
+      poison.dotPerStack = 0;
+      break;
+    }
+  }
+
+  if (poison.stacks <= 0 || isPlayerDead(player)) {
+    return;
+  }
+
+  poison.dotTimerSec += dt;
+  while (poison.dotTimerSec >= 1 && poison.stacks > 0 && !isPlayerDead(player)) {
+    poison.dotTimerSec -= 1;
+    const dotDamage = Math.max(MIN_DAMAGE, Math.round(Math.max(0, poison.dotPerStack) * poison.stacks));
+    if (!applyDamageToPlayer(player, dotDamage, true)) {
+      continue;
+    }
+    events.push(buildPoisonDotEventToPlayer(player, dotDamage));
+  }
+}
+
+function collectEnemyWeaponSkillContexts(enemies, player, weaponDefinitionsById, skillDefinitionsById, applyPlayerHpDamage) {
+  const contextsByWeaponId = new Map();
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    const attackSeq = Math.max(0, toNonNegativeInt(enemy?.attack?.attackCycle, 0));
+    for (const weaponRuntime of Array.isArray(enemy?.attack?.weapons) ? enemy.attack.weapons : []) {
+      if (!weaponRuntime || typeof weaponRuntime.id !== "string") {
+        continue;
+      }
+
+      const weaponDefinition = weaponDefinitionsById?.[weaponRuntime.weaponDefId] ?? null;
+      const skillPlan = resolveWeaponSkillPlan({
+        weaponRuntime,
+        weaponDefinition,
+        baseWeaponDefinition: weaponDefinitionsById?.[weaponRuntime.weaponDefId] ?? null,
+        skillDefinitionsById,
+      });
+
+      const runtime = ensureWeaponSkillRuntime(weaponRuntime);
+      pruneChainSpawnCounters(runtime, attackSeq);
+
+      contextsByWeaponId.set(weaponRuntime.id, {
+        weaponRuntime,
+        enemy,
+        player,
+        skillPlan,
+        attackSeq,
+        applyPlayerHpDamage: applyPlayerHpDamage !== false,
+      });
+    }
+  }
+
+  return contextsByWeaponId;
+}
+
+export function updateEnemySkillChainCombat({
+  dt,
+  dungeon,
+  player,
+  enemies,
+  effects,
+  weaponStartEvents,
+  weaponHitEvents,
+  weaponDefinitionsById,
+  skillDefinitionsById,
+  buildEffectRuntime,
+  applyPlayerHpDamage = true,
+}) {
+  const events = [];
+  let nextEffects = Array.isArray(effects) ? effects.slice() : [];
+  const queue = [];
+
+  const contextsByWeaponId = collectEnemyWeaponSkillContexts(
+    enemies,
+    player,
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    applyPlayerHpDamage
+  );
+
+  for (const startEvent of Array.isArray(weaponStartEvents) ? weaponStartEvents : []) {
+    const weaponId = typeof startEvent?.weaponId === "string" ? startEvent.weaponId : "";
+    if (weaponId.length <= 0) {
+      continue;
+    }
+
+    const context = contextsByWeaponId.get(weaponId);
+    if (!context || !Array.isArray(context.skillPlan.attackSteps) || context.skillPlan.attackSteps.length <= 0) {
+      continue;
+    }
+
+    const entryAttack = context.skillPlan.attackSteps[0];
+    if (!entryAttack || entryAttack.startSpawnTiming !== "start") {
+      continue;
+    }
+
+    const runtime = ensureWeaponSkillRuntime(context.weaponRuntime);
+    const fallbackAttackSeq = Math.max(0, toNonNegativeInt(context.attackSeq, 0));
+    const attackSeq = Math.max(0, toNonNegativeInt(startEvent.attackSeq, fallbackAttackSeq));
+    ensureChainSpawnCounterInitialized(runtime, attackSeq);
+
+    queue.push({
+      type: "attack_spawn",
+      attackSeq,
+      attackStepIndex: 0,
+      weaponRuntime: context.weaponRuntime,
+      skillPlan: context.skillPlan,
+      enemy: context.enemy,
+      player: context.player,
+      applyPlayerHpDamage: context.applyPlayerHpDamage,
+      spawnX: toFiniteNumber(startEvent.worldX, getWeaponCenter(context.weaponRuntime).x),
+      spawnY: toFiniteNumber(startEvent.worldY, getWeaponCenter(context.weaponRuntime).y),
+    });
+  }
+
+  const hitEntrySpawnKeys = new Set();
+  for (const hitEvent of Array.isArray(weaponHitEvents) ? weaponHitEvents : []) {
+    const weaponId = typeof hitEvent?.weaponId === "string" ? hitEvent.weaponId : "";
+    const targetId = resolveHitEventTargetId(hitEvent);
+    if (weaponId.length <= 0 || targetId.length <= 0) {
+      continue;
+    }
+
+    const context = contextsByWeaponId.get(weaponId);
+    if (!context || !Array.isArray(context.skillPlan.attackSteps) || context.skillPlan.attackSteps.length <= 0) {
+      continue;
+    }
+
+    const entryAttack = context.skillPlan.attackSteps[0];
+    if (!entryAttack || entryAttack.startSpawnTiming !== "hit") {
+      continue;
+    }
+
+    const fallbackAttackSeq = Math.max(0, toNonNegativeInt(context.attackSeq, 0));
+    const attackSeq = Math.max(0, toNonNegativeInt(hitEvent.attackSeq, fallbackAttackSeq));
+    const spawnKey = `${weaponId}:${attackSeq}:${targetId}`;
+    if (hitEntrySpawnKeys.has(spawnKey)) {
+      continue;
+    }
+    hitEntrySpawnKeys.add(spawnKey);
+
+    const runtime = ensureWeaponSkillRuntime(context.weaponRuntime);
+    ensureChainSpawnCounterInitialized(runtime, attackSeq);
+
+    queue.push({
+      type: "attack_spawn",
+      attackSeq,
+      attackStepIndex: 0,
+      weaponRuntime: context.weaponRuntime,
+      skillPlan: context.skillPlan,
+      enemy: context.enemy,
+      player: context.player,
+      applyPlayerHpDamage: context.applyPlayerHpDamage,
+      spawnX: toFiniteNumber(hitEvent.worldX, getWeaponCenter(context.weaponRuntime).x),
+      spawnY: toFiniteNumber(hitEvent.worldY, getWeaponCenter(context.weaponRuntime).y),
+    });
+  }
+
+  processEnemyAttackSpawnQueue({
+    queue,
+    events,
+    effects: nextEffects,
+    buildEffectRuntime,
+  });
+
+  for (const context of contextsByWeaponId.values()) {
+    nextEffects = updateEnemySkillProjectiles({
+      queue,
+      dt: Math.max(0, toFiniteNumber(dt, 0)),
+      dungeon,
+      player,
+      events,
+      effects: nextEffects,
+      weaponRuntime: context.weaponRuntime,
+      enemy: context.enemy,
+      applyPlayerHpDamage: context.applyPlayerHpDamage,
+    });
+  }
+
+  processEnemyAttackSpawnQueue({
+    queue,
+    events,
+    effects: nextEffects,
+    buildEffectRuntime,
+  });
+
+  updatePoisonDotsOnPlayer(
+    player,
+    Math.max(0, toFiniteNumber(dt, 0)),
+    events,
+    applyPlayerHpDamage
+  );
 
   return {
     events,

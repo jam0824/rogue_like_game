@@ -8,7 +8,9 @@
         "weapon_plus": 0,
         "formation_id": "formation_id_circle01",
         "skills": [
-          { "id": "skill_id_fire01", "plus": 0 }
+          {"id": "skill_id_projectile_01", "plus": 0},
+          {"id": "skill_id_poison_01", "plus": 0},
+          {"id": "skill_id_explosion_01", "plus": 0}
         ]
       }
     ]

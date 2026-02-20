@@ -96,7 +96,7 @@ import {
   applyHitFlashColorsFromDamageEvents,
   normalizeHitFlashColor,
 } from "./combat/hitFlashSystem.js";
-import { updateSkillChainCombat } from "./combat/skillChainSystem.js";
+import { updateEnemySkillChainCombat, updateSkillChainCombat } from "./combat/skillChainSystem.js";
 import { loadEffectDefinitions } from "./effect/effectDb.js";
 import { loadEffectAssets } from "./effect/effectAsset.js";
 import { createEffectRuntime, updateEffects } from "./effect/effectSystem.js";
@@ -845,6 +845,7 @@ function buildWeaponTextState(weapon) {
 
 function buildPlayerTextState(player, weapons) {
   const dimensions = getPlayerDimensions(player);
+  const poison = player?.ailments?.poison;
 
   return {
     x: round2(player.x),
@@ -864,6 +865,14 @@ function buildPlayerTextState(player, weapons) {
           y: round2(player.target.y),
         }
       : null,
+    ailments: {
+      poison: {
+        stacks: Math.max(0, Math.floor(Number(poison?.stacks) || 0)),
+        decayTimerSec: round2(poison?.decayTimerSec ?? 0),
+        dotTimerSec: round2(poison?.dotTimerSec ?? 0),
+        dotPerStack: round2(poison?.dotPerStack ?? 0),
+      },
+    },
     weapons: (weapons ?? []).map((weapon) => buildWeaponTextState(weapon)),
   };
 }
@@ -1247,6 +1256,14 @@ function buildEnemyAttackProfilesByDbId() {
         weaponDefId: weaponDefinition.id,
         formationId,
         baseDamage: Number(weaponDefinition.baseDamage) || 0,
+        skills: Array.isArray(weaponInstance.skills)
+          ? weaponInstance.skills
+              .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+              .map((skill) => ({
+                id: skill.id,
+                plus: Number.isFinite(skill.plus) ? Math.max(0, Math.floor(Number(skill.plus))) : 0,
+              }))
+          : [],
         width: weaponDefinition.width,
         height: weaponDefinition.height,
         radiusPx: (Number(formationDefinition.radiusBase) || 0) * TILE_SIZE,
@@ -2406,6 +2423,95 @@ function buildWeaponHitEvents(events, weapons) {
   return hitEvents;
 }
 
+function getPlayerSkillTargetId(player) {
+  if (typeof player?.id === "string" && player.id.length > 0) {
+    return player.id;
+  }
+  return "player";
+}
+
+function buildEnemyWeaponStartEvents(enemies, beforeSnapshot) {
+  const events = [];
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
+    for (const weapon of getEnemyWeaponRuntimes(enemy)) {
+      if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+
+      const before = beforeSnapshot.get(weapon.id) ?? { attackCycle: 0 };
+      const beforeAttackCycle = Math.max(0, Math.floor(Number(before.attackCycle) || 0));
+      if (attackCycle <= beforeAttackCycle) {
+        continue;
+      }
+
+      const center = getWeaponCenter(weapon);
+      for (let cycle = beforeAttackCycle + 1; cycle <= attackCycle; cycle += 1) {
+        events.push({
+          weaponId: weapon.id,
+          weaponDefId: weapon.weaponDefId,
+          attackSeq: cycle,
+          worldX: center.x,
+          worldY: center.y,
+        });
+      }
+    }
+  }
+
+  return events;
+}
+
+function buildEnemyWeaponHitEvents(events, enemies, player) {
+  const weaponAttackSeqById = new Map();
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+
+    const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
+    for (const weapon of getEnemyWeaponRuntimes(enemy)) {
+      if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+      weaponAttackSeqById.set(weapon.id, attackCycle);
+    }
+  }
+
+  const hitEvents = [];
+  const playerTargetId = getPlayerSkillTargetId(player);
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.kind !== "damage" || event?.targetType !== "player") {
+      continue;
+    }
+
+    const weaponId = typeof event.weaponId === "string" ? event.weaponId : "";
+    if (weaponId.length <= 0) {
+      continue;
+    }
+
+    const runtimeAttackSeq = weaponAttackSeqById.get(weaponId);
+    const resolvedAttackSeq = Number.isFinite(runtimeAttackSeq)
+      ? Math.max(0, Math.floor(Number(runtimeAttackSeq) || 0))
+      : Math.max(0, Math.floor(Number(event.attackSeq) || 0));
+
+    hitEvents.push({
+      weaponId,
+      attackSeq: resolvedAttackSeq,
+      targetId: playerTargetId,
+      worldX: Number(event.worldX) || 0,
+      worldY: Number(event.worldY) || 0,
+    });
+  }
+
+  return hitEvents;
+}
+
 function spawnWeaponStartEffects(weapons, beforeSnapshot) {
   const spawned = [];
 
@@ -2707,7 +2813,24 @@ function stepSimulation(dt) {
   const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
   });
-  const playerDamageEventCount = countPlayerDamageEvents(enemyCombatEvents);
+  const enemySkillChainResult = updateEnemySkillChainCombat({
+    dt,
+    dungeon: appState.dungeon,
+    player: appState.player,
+    enemies: appState.enemies,
+    effects: appState.effects,
+    weaponStartEvents: buildEnemyWeaponStartEvents(appState.enemies, enemyWeaponCombatSnapshot),
+    weaponHitEvents: buildEnemyWeaponHitEvents(enemyCombatEvents, appState.enemies, appState.player),
+    weaponDefinitionsById,
+    skillDefinitionsById,
+    buildEffectRuntime,
+    applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
+  });
+  appState.effects = enemySkillChainResult.effects;
+  const playerDamageEventCount = countPlayerDamageEvents([
+    ...enemyCombatEvents,
+    ...enemySkillChainResult.events,
+  ]);
   if (playerDamageEventCount > 0) {
     playSeByKey(SE_KEY_PLAYER_GET_DAMAGE, playerDamageEventCount);
   }
@@ -2715,7 +2838,12 @@ function stepSimulation(dt) {
   if (defeatedEnemyCount > 0) {
     playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
   }
-  const combatEvents = [...playerCombatEvents, ...skillChainResult.events, ...enemyCombatEvents];
+  const combatEvents = [
+    ...playerCombatEvents,
+    ...skillChainResult.events,
+    ...enemyCombatEvents,
+    ...enemySkillChainResult.events,
+  ];
   applyHitFlashColorsFromDamageEvents({
     events: combatEvents,
     player: appState.player,

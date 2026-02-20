@@ -696,6 +696,14 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       id: `${enemyId}-weapon-${index}`,
       weaponDefId: weapon?.weaponDefId ?? null,
       formationId: weapon?.formationId ?? null,
+      skillInstances: Array.isArray(weapon?.skills)
+        ? weapon.skills
+            .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+            .map((skill) => ({
+              id: skill.id,
+              plus: Number.isFinite(skill.plus) ? Math.max(0, Math.floor(Number(skill.plus))) : 0,
+            }))
+        : [],
       baseDamage: toFiniteNumber(weapon?.baseDamage, Number.NaN),
       x: enemyCenterX - width / 2,
       y: enemyCenterY - height / 2,

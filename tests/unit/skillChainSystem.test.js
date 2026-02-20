@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CHAIN_SPAWN,
   resolveWeaponSkillPlan,
+  updateEnemySkillChainCombat,
   updateSkillChainCombat,
 } from "../../src/combat/skillChainSystem.js";
 
@@ -51,6 +52,40 @@ function createEnemy(id, x, y, hp = 100) {
     hitFlashTimerSec: 0,
     hitFlashDurationSec: 0.12,
     ailmentTakenMult: 1,
+  };
+}
+
+function createEnemyCaster(id, x, y, skills) {
+  return {
+    id,
+    x,
+    y,
+    width: 32,
+    height: 32,
+    facing: "right",
+    isDead: false,
+    damageSeed: `${id}-skill-seed`,
+    damageMult: 1,
+    critChance: 0,
+    critMult: 1.5,
+    attackScale: 1,
+    statTotals: {
+      arc: 0,
+    },
+    attack: {
+      attackCycle: 1,
+      weapons: [
+        {
+          id: `${id}-weapon-0`,
+          weaponDefId: "weapon_sword_01",
+          x: x + 16,
+          y: y + 16,
+          width: 32,
+          height: 32,
+          skillInstances: Array.isArray(skills) ? skills.map((skill) => ({ ...skill })) : [],
+        },
+      ],
+    },
   };
 }
 
@@ -510,5 +545,250 @@ describe("skillChainSystem", () => {
     expect(result.events.length).toBeGreaterThan(0);
     const chainCount = weaponRuntime.skillChainRuntime?.chainSpawnCountByAttackSeq?.["1"] ?? 0;
     expect(chainCount).toBe(MAX_CHAIN_SPAWN);
+  });
+
+  it("敵チェーンの projectile(to_target) は player を狙って命中する", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = createSkillDefinitions();
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-caster", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    let effects = [];
+    const allEvents = [];
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+
+    effects = first.effects;
+    allEvents.push(...first.events);
+
+    const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
+    expect(projectileEffect).toBeTruthy();
+    const playerCenterX = player.x + player.width / 2;
+    const playerCenterY = player.y + player.height / 2;
+    const expectedRotation = Math.atan2(playerCenterY - 128, playerCenterX - 128);
+    expect(projectileEffect.rotationRad).toBeCloseTo(expectedRotation, 5);
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const result = updateEnemySkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies: [enemy],
+        effects,
+        weaponStartEvents: [],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+        applyPlayerHpDamage: true,
+      });
+      effects = result.effects;
+      allEvents.push(...result.events);
+    }
+
+    expect(
+      allEvents.some(
+        (event) =>
+          event?.kind === "damage" &&
+          event?.targetType === "player" &&
+          event?.sourceType === "skill" &&
+          event?.skillId === "skill_id_projectile_01"
+      )
+    ).toBe(true);
+    expect(player.hp).toBeLessThan(200);
+  });
+
+  it("敵チェーン start_spawn_timing=hit は targetId と legacy enemyId を受理し、重複を抑止する", () => {
+    const dungeon = createDungeon();
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const skillDefinitionsById = {
+      skill_id_explosion_01: createSkillDefinitions().skill_id_explosion_01,
+    };
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_explosion_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const enemy = createEnemyCaster("enemy-hit", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [],
+      weaponHitEvents: [
+        { weaponId: weapon.id, attackSeq: 1, targetId: player.id, worldX: 208, worldY: 128 },
+        { weaponId: weapon.id, attackSeq: 1, targetId: player.id, worldX: 208, worldY: 128 },
+        { weaponId: weapon.id, attackSeq: 2, enemyId: player.id, worldX: 208, worldY: 128 },
+      ],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+
+    const explosionEvents = result.events.filter(
+      (event) => event?.sourceType === "skill" && event?.skillId === "skill_id_explosion_01"
+    );
+    expect(explosionEvents).toHaveLength(2);
+  });
+
+  it("敵チェーンで poison が player に適用され DoT ダメージイベントが出る", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = createSkillDefinitions();
+    const weaponDefinition = createWeaponDefinition([
+      { id: "skill_id_projectile_01", plus: 0 },
+      { id: "skill_id_poison_01", plus: 99 },
+      { id: "skill_id_explosion_01", plus: 0 },
+    ]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 240,
+      maxHp: 240,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-poison", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    let effects = [];
+    const allEvents = [];
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+    effects = first.effects;
+    allEvents.push(...first.events);
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const result = updateEnemySkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies: [enemy],
+        effects,
+        weaponStartEvents: [],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+        applyPlayerHpDamage: true,
+      });
+      effects = result.effects;
+      allEvents.push(...result.events);
+    }
+
+    expect((player?.ailments?.poison?.stacks ?? 0)).toBeGreaterThan(0);
+    expect(
+      allEvents.some(
+        (event) =>
+          event?.kind === "damage" &&
+          event?.targetType === "player" &&
+          event?.sourceType === "ailment" &&
+          event?.ailmentId === "poison"
+      )
+    ).toBe(true);
+  });
+
+  it("敵チェーン applyPlayerHpDamage=false では HP と poison 状態を変えない", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = {
+      skill_id_explosion_01: createSkillDefinitions().skill_id_explosion_01,
+    };
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_explosion_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 180,
+      maxHp: 180,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-preview", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [],
+      weaponHitEvents: [{ weaponId: weapon.id, attackSeq: 1, targetId: player.id, worldX: 208, worldY: 128 }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: false,
+    });
+
+    expect(
+      result.events.some((event) => event?.kind === "damage" && event?.targetType === "player")
+    ).toBe(true);
+    expect(player.hp).toBe(180);
+    expect((player?.ailments?.poison?.stacks ?? 0)).toBe(0);
   });
 });
