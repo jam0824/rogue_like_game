@@ -59,6 +59,22 @@ describe("effectSystem", () => {
     expect(removed).toEqual([]);
   });
 
+  it("frameCount=10 の loop=false は最終コマ到達後にのみ消える", () => {
+    const runtime = createEffectRuntime(createEffectDefinition({ animationFps: 10, loop: false }), {
+      id: "effect-1b",
+      x: 0,
+      y: 0,
+      frameCount: 10,
+    });
+
+    const nearEnd = updateEffects([runtime], 0.95);
+    expect(nearEnd).toHaveLength(1);
+    expect(nearEnd[0].frameIndex).toBe(9);
+
+    const removed = updateEffects(nearEnd, 0.06);
+    expect(removed).toEqual([]);
+  });
+
   it("loop=true はフレームが循環する", () => {
     const runtime = createEffectRuntime(createEffectDefinition({ animationFps: 10, loop: true }), {
       id: "effect-2",
