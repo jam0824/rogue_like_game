@@ -60,6 +60,12 @@ import { loadDungeonDefinitions } from "./tiles/dungeonTileDb.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
+import {
+  createDebugPerfMetricsTracker,
+  getDebugPerfSnapshot,
+  recordDebugPerfSample,
+  resetDebugPerfMetricsTracker,
+} from "./ui/debugPerfMetrics.js";
 import { buildPlayerStatusDigest, buildPlayerStatusRows } from "./ui/debugPlayerStatsViewModel.js";
 import {
   clearToastMessage,
@@ -128,6 +134,11 @@ const PLAYER_RENDER_SCALE = 32 / 24;
 const appState = createAppState(INITIAL_SEED);
 const dungeonBgmPlayer = createDungeonBgmPlayer();
 const soundEffectPlayer = createSoundEffectPlayer();
+const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
+  windowMs: 1000,
+  publishIntervalMs: 250,
+  slowFrameThresholdMs: FRAME_MS,
+});
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const debugPanelRoot = document.querySelector("#debug-panel");
@@ -184,6 +195,53 @@ function clamp(value, min, max) {
 
 function round2(value) {
   return Math.round(value * 100) / 100;
+}
+
+function round1(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function hasPerfSamples(perfSnapshot) {
+  return Number(perfSnapshot?.sampleCount) > 0;
+}
+
+function formatPerfFps(perfSnapshot) {
+  if (!hasPerfSamples(perfSnapshot)) {
+    return "-";
+  }
+
+  const fps = Number(perfSnapshot.fps);
+  if (!Number.isFinite(fps)) {
+    return "-";
+  }
+
+  return fps.toFixed(1);
+}
+
+function formatPerfAvgMs(perfSnapshot, key) {
+  if (!hasPerfSamples(perfSnapshot)) {
+    return "-";
+  }
+
+  const value = Number(perfSnapshot?.[key]);
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+
+  return value.toFixed(2);
+}
+
+function formatSlowFrameCount(perfSnapshot) {
+  if (!hasPerfSamples(perfSnapshot)) {
+    return "-";
+  }
+
+  const slowFrames = Number(perfSnapshot.slowFrames);
+  if (!Number.isFinite(slowFrames)) {
+    return "-";
+  }
+
+  return String(Math.max(0, Math.round(slowFrames)));
 }
 
 function getPlayerDimensions(player) {
@@ -260,12 +318,13 @@ function findRoomById(dungeon, roomId) {
   return dungeon.rooms.find((room) => room.id === roomId) ?? null;
 }
 
-function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = false) {
+function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = false, perfSnapshot = null) {
   const hpValue =
     player && Number.isFinite(player.hp) && Number.isFinite(player.maxHp)
       ? `${Math.max(0, Math.round(player.hp))} / ${Math.max(0, Math.round(player.maxHp))}`
       : "-";
   const damageMode = debugPlayerDamagePreviewOnly ? "演出のみ（HP減少なし）" : "通常";
+  const perf = hasPerfSamples(perfSnapshot) ? perfSnapshot : null;
 
   return [
     { label: "seed", value: dungeon.seed },
@@ -273,6 +332,11 @@ function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = f
     { label: "wall_height", value: dungeon.wallHeightTiles ?? "-" },
     { label: "HP", value: hpValue },
     { label: "被ダメ設定", value: damageMode },
+    { label: "fps(avg1s)", value: formatPerfFps(perf) },
+    { label: "frame_ms(avg1s)", value: formatPerfAvgMs(perf, "frameMsAvg") },
+    { label: "update_ms(avg1s)", value: formatPerfAvgMs(perf, "updateMsAvg") },
+    { label: "render_ms(avg1s)", value: formatPerfAvgMs(perf, "renderMsAvg") },
+    { label: "slow_frames(>16.7ms/1s)", value: formatSlowFrameCount(perf) },
   ];
 }
 
@@ -2056,10 +2120,17 @@ syncDamagePreviewUi();
 syncPlayerStatsWindowVisibility();
 syncSystemHud();
 
-function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
+function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly, perfSnapshot = null) {
   if (!dungeon) {
     return "";
   }
+
+  const hasPerf = hasPerfSamples(perfSnapshot);
+  const perfFpsDigest = hasPerf ? round1(Number(perfSnapshot.fps) || 0) : "-";
+  const perfFrameMsDigest = hasPerf ? round2(Number(perfSnapshot.frameMsAvg) || 0) : "-";
+  const perfUpdateMsDigest = hasPerf ? round2(Number(perfSnapshot.updateMsAvg) || 0) : "-";
+  const perfRenderMsDigest = hasPerf ? round2(Number(perfSnapshot.renderMsAvg) || 0) : "-";
+  const perfSlowFramesDigest = hasPerf ? Math.max(0, Math.round(Number(perfSnapshot.slowFrames) || 0)) : "-";
 
   return [
     dungeon.seed,
@@ -2068,6 +2139,11 @@ function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly) {
     Math.round(Number(player?.hp) || 0),
     Math.round(Number(player?.maxHp) || 0),
     debugPlayerDamagePreviewOnly ? 1 : 0,
+    perfFpsDigest,
+    perfFrameMsDigest,
+    perfUpdateMsDigest,
+    perfRenderMsDigest,
+    perfSlowFramesDigest,
   ].join("|");
 }
 
@@ -2076,12 +2152,13 @@ function syncStatsPanel() {
     return;
   }
 
-  const digest = buildStatsDigest(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly);
+  const perfSnapshot = getDebugPerfSnapshot(debugPerfMetricsTracker);
+  const digest = buildStatsDigest(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly, perfSnapshot);
   if (digest === lastStatsDigest) {
     return;
   }
 
-  debugPanel.setStats(buildStatsRows(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly));
+  debugPanel.setStats(buildStatsRows(appState.dungeon, appState.player, appState.debugPlayerDamagePreviewOnly, perfSnapshot));
   lastStatsDigest = digest;
 }
 
@@ -2646,16 +2723,35 @@ function resetLoopClock() {
 }
 
 function runFrame(timestamp) {
-  const elapsed = Math.min(0.25, (timestamp - lastTimestamp) / 1000);
+  const frameMs = Math.max(0, timestamp - lastTimestamp);
+  const elapsed = Math.min(0.25, frameMs / 1000);
   lastTimestamp = timestamp;
   accumulator += elapsed;
 
-  while (accumulator >= FIXED_DT) {
-    stepSimulation(FIXED_DT);
-    accumulator -= FIXED_DT;
+  let updateMs = 0;
+  if (accumulator >= FIXED_DT) {
+    const updateStartMs = performance.now();
+    while (accumulator >= FIXED_DT) {
+      stepSimulation(FIXED_DT);
+      accumulator -= FIXED_DT;
+    }
+    updateMs = Math.max(0, performance.now() - updateStartMs);
   }
 
+  const renderStartMs = performance.now();
   renderCurrentFrame();
+  const renderMs = Math.max(0, performance.now() - renderStartMs);
+
+  const didPublishPerfSnapshot = recordDebugPerfSample(debugPerfMetricsTracker, {
+    nowMs: timestamp,
+    frameMs,
+    updateMs,
+    renderMs,
+  });
+  if (didPublishPerfSnapshot) {
+    syncStatsPanel();
+  }
+
   requestAnimationFrame(runFrame);
 }
 
@@ -2807,6 +2903,7 @@ async function regenerate(seed) {
     });
 
     debugPanel.setSeed(normalizedSeed);
+    resetDebugPerfMetricsTracker(debugPerfMetricsTracker);
     lastStatsDigest = "";
     lastPlayerStatsDigest = "";
     lastSystemUiDigest = "";
@@ -2834,6 +2931,7 @@ async function regenerate(seed) {
     dungeonBgmPlayer.stop();
     setErrorState(appState, normalizedSeed, error);
     debugPanel.setSeed(normalizedSeed);
+    resetDebugPerfMetricsTracker(debugPerfMetricsTracker);
     lastStatsDigest = "";
     lastPlayerStatsDigest = "";
     lastSystemUiDigest = "";
