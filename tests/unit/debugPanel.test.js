@@ -81,6 +81,7 @@ function createDebugRoot() {
 
   return {
     root,
+    statsList,
     dungeonIdSelect,
     pauseToggleButton,
     showStorageButton,
@@ -258,6 +259,26 @@ describe("debugPanel", () => {
       expect(playerStatsList.children).toHaveLength(2);
       expect(playerStatsList.children[0].textContent).toBe("[基本] VIT: 2");
       expect(playerStatsList.children[1].textContent).toBe("与ダメ倍率: 1.140");
+    });
+  });
+
+  it("setStats でパフォーマンス行が描画される", () => {
+    withMockDocument(() => {
+      const { root, statsList } = createDebugRoot();
+      const panel = createDebugPanel(root, createHandlers());
+
+      panel.setStats([
+        { label: "fps(avg1s)", value: "58.8" },
+        { label: "frame_ms(avg1s)", value: "17.01" },
+        { label: "update_ms(avg1s)", value: "4.32" },
+        { label: "render_ms(avg1s)", value: "2.41" },
+        { label: "slow_frames(>16.7ms/1s)", value: "6" },
+      ]);
+
+      expect(Array.isArray(statsList.children)).toBe(true);
+      expect(statsList.children).toHaveLength(5);
+      expect(statsList.children[0].textContent).toBe("fps(avg1s): 58.8");
+      expect(statsList.children[4].textContent).toBe("slow_frames(>16.7ms/1s): 6");
     });
   });
 
