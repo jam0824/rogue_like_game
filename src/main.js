@@ -28,7 +28,7 @@ import { loadItemDefinitions } from "./item/itemDb.js";
 import {
   applyChestBlockingToWalkableGrid,
   buildBlockedTileSetFromChests,
-  createCommonTreasureChest,
+  createTreasureChests,
   loadTreasureChestAssets,
   TREASURE_CHEST_RENDER_FRAME_SIZE,
   tryOpenChestByClick,
@@ -2992,8 +2992,7 @@ async function regenerate(seed) {
     if (!herbDefinition) {
       throw new Error(`Item DB is missing required herb item: ${HERB_ITEM_ID}`);
     }
-    const commonTreasureChest = createCommonTreasureChest(dungeon, normalizedSeed);
-    const treasureChests = commonTreasureChest ? [commonTreasureChest] : [];
+    const treasureChests = createTreasureChests(dungeon, normalizedSeed);
     dungeon.walkableGrid = applyChestBlockingToWalkableGrid(dungeon.walkableGrid, treasureChests);
     const blockedEnemyTiles = buildBlockedTileSetFromChests(treasureChests);
     const enemies = createEnemies(

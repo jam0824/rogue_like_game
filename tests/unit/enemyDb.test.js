@@ -119,6 +119,7 @@ describe("enemyDb", () => {
     expect(warnSpy).toHaveBeenCalled();
     expect(definitions.map((definition) => definition.id)).toEqual(["Bee_01", "BrownMushroom_01"]);
     expect(definitions.find((definition) => definition.id === "Bee_01")?.type).toBe("fly");
+    expect(definitions.every((definition) => definition.spawn?.min === 1 && definition.spawn?.max === 1)).toBe(true);
   });
 
   it("loadWalkEnemyDefinitions はフォールバック時も walk のみ返す", async () => {
@@ -142,6 +143,25 @@ describe("enemyDb", () => {
     expect(walkDefinitions).toHaveLength(1);
     expect(walkDefinitions[0].id).toBe("BrownMushroom_01");
     expect(walkDefinitions[0].type).toBe("walk");
+    expect(walkDefinitions[0].spawn).toEqual({ min: 1, max: 1 });
+  });
+
+  it("spawn は未指定時 fallback され、不正値は補正される", async () => {
+    setupFetchMock({
+      fileNames: ["spawn_default.json", "spawn_invalid.json"],
+      recordsByFileName: {
+        "spawn_default.json": createEnemyRecord(),
+        "spawn_invalid.json": createEnemyRecord({
+          spawn: { min: 5, max: -2 },
+        }),
+      },
+    });
+
+    const definitions = await loadEnemyDefinitions();
+    const byId = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+
+    expect(byId.spawn_default.spawn).toEqual({ min: 1, max: 1 });
+    expect(byId.spawn_invalid.spawn).toEqual({ min: 1, max: 5 });
   });
 
   it("必須キー検証を維持する", async () => {

@@ -8,6 +8,63 @@ import { createRng, deriveSeed } from "../core/rng.js";
 
 const TREASURE_CHEST_FRAME_SIZE = 32;
 const COMMON_DROP_ITEM_ID = "item_herb_01";
+const TREASURE_CHEST_COUNT_ROLLS = [
+  { value: 0, weight: 0.05 },
+  { value: 1, weight: 0.85 },
+  { value: 2, weight: 0.1 },
+];
+const TREASURE_CHEST_DROP_COUNT_BY_TIER = {
+  common: 1,
+  rare: 2,
+  legendary: 3,
+};
+const TREASURE_CHEST_TIER_ROLLS_BY_FLOOR = [
+  {
+    minFloor: 1,
+    maxFloor: 10,
+    rolls: [
+      { value: "common", weight: 0.85 },
+      { value: "rare", weight: 0.14 },
+      { value: "legendary", weight: 0.01 },
+    ],
+  },
+  {
+    minFloor: 11,
+    maxFloor: 30,
+    rolls: [
+      { value: "common", weight: 0.75 },
+      { value: "rare", weight: 0.22 },
+      { value: "legendary", weight: 0.03 },
+    ],
+  },
+  {
+    minFloor: 31,
+    maxFloor: 60,
+    rolls: [
+      { value: "common", weight: 0.65 },
+      { value: "rare", weight: 0.3 },
+      { value: "legendary", weight: 0.05 },
+    ],
+  },
+  {
+    minFloor: 61,
+    maxFloor: 90,
+    rolls: [
+      { value: "common", weight: 0.55 },
+      { value: "rare", weight: 0.37 },
+      { value: "legendary", weight: 0.08 },
+    ],
+  },
+  {
+    minFloor: 91,
+    maxFloor: Number.POSITIVE_INFINITY,
+    rolls: [
+      { value: "common", weight: 0.45 },
+      { value: "rare", weight: 0.43 },
+      { value: "legendary", weight: 0.12 },
+    ],
+  },
+];
 
 const TREASURE_CHEST_SRC_BY_TIER = {
   common: new URL("../../map_tip/treasure_box/common_treasure_box.png", import.meta.url).href,
@@ -239,9 +296,18 @@ function iterateRingCandidates(centerX, centerY, radius) {
 }
 
 function findNearestWalkableDropTileAroundChest(chest, groundItems, dungeon) {
+  const dropTiles = findNearestWalkableDropTilesAroundChest(chest, groundItems, dungeon, 1);
+  if (!dropTiles) {
+    return null;
+  }
+  return dropTiles[0] ?? null;
+}
+
+function findNearestWalkableDropTilesAroundChest(chest, groundItems, dungeon, requiredCount = 1) {
   if (!chest || !Number.isFinite(chest.tileX) || !Number.isFinite(chest.tileY)) {
     return null;
   }
+  const normalizedRequiredCount = Math.max(1, Math.floor(Number(requiredCount) || 1));
 
   const walkableGrid = getWalkableGrid(dungeon);
   if (!walkableGrid || walkableGrid.length <= 0 || !Array.isArray(walkableGrid[0]) || walkableGrid[0].length <= 0) {
@@ -254,6 +320,7 @@ function findNearestWalkableDropTileAroundChest(chest, groundItems, dungeon) {
   const centerTileX = Math.floor(chest.tileX);
   const centerTileY = Math.floor(chest.tileY);
   const maxRadius = width + height;
+  const resolvedTiles = [];
 
   for (let radius = 1; radius <= maxRadius; radius += 1) {
     const candidates = iterateRingCandidates(centerTileX, centerTileY, radius);
@@ -265,19 +332,27 @@ function findNearestWalkableDropTileAroundChest(chest, groundItems, dungeon) {
       if (occupiedTiles.has(key)) {
         continue;
       }
-      return candidate;
+      occupiedTiles.add(key);
+      resolvedTiles.push(candidate);
+      if (resolvedTiles.length >= normalizedRequiredCount) {
+        return resolvedTiles;
+      }
     }
   }
 
   return null;
 }
 
-function createChestFromRoom(room, tileX, tileY) {
+function createChestFromRoom(room, tileX, tileY, tier = "common", chestIndex = 0) {
   const normalizedTileX = Math.floor(tileX);
   const normalizedTileY = Math.floor(tileY);
+  const normalizedTier =
+    tier === "rare" || tier === "legendary"
+      ? tier
+      : "common";
   return {
-    id: `chest_common_room_${room.id}`,
-    tier: "common",
+    id: `chest_${normalizedTier}_room_${room.id}_${Math.max(0, Math.floor(Number(chestIndex) || 0))}`,
+    tier: normalizedTier,
     roomId: room.id,
     tileX: normalizedTileX,
     tileY: normalizedTileY,
@@ -285,6 +360,53 @@ function createChestFromRoom(room, tileX, tileY) {
     yPx: normalizedTileY * TILE_SIZE,
     isOpened: false,
   };
+}
+
+function getCandidateTreasureRooms(dungeon) {
+  if (!dungeon || !Array.isArray(dungeon.rooms) || dungeon.rooms.length <= 0) {
+    return [];
+  }
+
+  return dungeon.rooms.filter((room) => room.id !== dungeon.startRoomId && room.id !== dungeon.stairsRoomId);
+}
+
+function resolveDungeonFloor(dungeon) {
+  const floor = Math.floor(Number(dungeon?.floor) || 1);
+  return Math.max(1, floor);
+}
+
+function resolveTreasureChestCount(rng) {
+  const rolled = Number(rng.weighted(TREASURE_CHEST_COUNT_ROLLS));
+  if (!Number.isFinite(rolled)) {
+    return 1;
+  }
+  return Math.max(0, Math.floor(rolled));
+}
+
+function resolveTreasureChestTierRolls(floor) {
+  const normalizedFloor = Math.max(1, Math.floor(Number(floor) || 1));
+  for (const entry of TREASURE_CHEST_TIER_ROLLS_BY_FLOOR) {
+    if (normalizedFloor >= entry.minFloor && normalizedFloor <= entry.maxFloor) {
+      return entry.rolls;
+    }
+  }
+  return TREASURE_CHEST_TIER_ROLLS_BY_FLOOR[0].rolls;
+}
+
+function rollTreasureChestTier(rng, floor) {
+  const tier = rng.weighted(resolveTreasureChestTierRolls(floor));
+  if (tier === "rare" || tier === "legendary") {
+    return tier;
+  }
+  return "common";
+}
+
+function resolveChestDropCountByTier(tier) {
+  if (typeof tier !== "string") {
+    return TREASURE_CHEST_DROP_COUNT_BY_TIER.common;
+  }
+
+  return TREASURE_CHEST_DROP_COUNT_BY_TIER[tier] ?? TREASURE_CHEST_DROP_COUNT_BY_TIER.common;
 }
 
 export async function loadTreasureChestAssets() {
@@ -306,15 +428,42 @@ export async function loadTreasureChestAssets() {
   return Object.fromEntries(entries);
 }
 
-export function createCommonTreasureChest(dungeon, seed) {
-  if (!dungeon || !Array.isArray(dungeon.rooms) || dungeon.rooms.length <= 0) {
-    return null;
+export function createTreasureChests(dungeon, seed) {
+  const candidateRooms = getCandidateTreasureRooms(dungeon);
+  if (candidateRooms.length <= 0) {
+    return [];
   }
 
-  const candidateRooms = dungeon.rooms.filter(
-    (room) => room.id !== dungeon.startRoomId && room.id !== dungeon.stairsRoomId
-  );
+  const rng = createRng(deriveSeed(seed ?? dungeon.seed, "treasure-chests"));
+  const requestedCount = resolveTreasureChestCount(rng);
+  const targetCount = Math.min(candidateRooms.length, requestedCount);
+  if (targetCount <= 0) {
+    return [];
+  }
 
+  const floor = resolveDungeonFloor(dungeon);
+  const orderedRooms = rng.shuffle(candidateRooms);
+  const chests = [];
+
+  for (const room of orderedRooms) {
+    if (chests.length >= targetCount) {
+      break;
+    }
+
+    const chestTile = findNearestWalkableTileInRoom(room, dungeon);
+    if (!chestTile) {
+      continue;
+    }
+
+    const tier = rollTreasureChestTier(rng, floor);
+    chests.push(createChestFromRoom(room, chestTile.tileX, chestTile.tileY, tier, chests.length));
+  }
+
+  return chests;
+}
+
+export function createCommonTreasureChest(dungeon, seed) {
+  const candidateRooms = getCandidateTreasureRooms(dungeon);
   if (candidateRooms.length <= 0) {
     return null;
   }
@@ -326,7 +475,7 @@ export function createCommonTreasureChest(dungeon, seed) {
     if (!chestTile) {
       continue;
     }
-    return createChestFromRoom(room, chestTile.tileX, chestTile.tileY);
+    return createChestFromRoom(room, chestTile.tileX, chestTile.tileY, "common");
   }
 
   return null;
@@ -425,8 +574,9 @@ export function tryOpenChestByClick(
     };
   }
 
-  const dropTile = findNearestWalkableDropTileAroundChest(chest, currentGroundItems, options.dungeon);
-  if (!dropTile) {
+  const dropCount = resolveChestDropCountByTier(chest?.tier);
+  const dropTiles = findNearestWalkableDropTilesAroundChest(chest, currentGroundItems, options.dungeon, dropCount);
+  if (!dropTiles || dropTiles.length < dropCount) {
     return {
       opened: false,
       treasureChests: chests,
@@ -449,19 +599,20 @@ export function tryOpenChestByClick(
   const dropItemId = typeof options.dropItemId === "string" && options.dropItemId.length > 0
     ? options.dropItemId
     : COMMON_DROP_ITEM_ID;
+  const nextDroppedItems = dropTiles.map((dropTile, index) => ({
+    id: `ground_${chest.id}_${index}`,
+    sourceType: "chest_drop",
+    sourceChestId: chest.id,
+    itemId: dropItemId,
+    count: 1,
+    tileX: Math.floor(dropTile.tileX),
+    tileY: Math.floor(dropTile.tileY),
+    xPx: Math.floor(dropTile.tileX) * TILE_SIZE + TILE_SIZE / 2,
+    yPx: Math.floor(dropTile.tileY) * TILE_SIZE + TILE_SIZE / 2,
+  }));
   const nextGroundItems = [
     ...currentGroundItems,
-    {
-      id: `ground_${chest.id}`,
-      sourceType: "chest_drop",
-      sourceChestId: chest.id,
-      itemId: dropItemId,
-      count: 1,
-      tileX: Math.floor(dropTile.tileX),
-      tileY: Math.floor(dropTile.tileY),
-      xPx: Math.floor(dropTile.tileX) * TILE_SIZE + TILE_SIZE / 2,
-      yPx: Math.floor(dropTile.tileY) * TILE_SIZE + TILE_SIZE / 2,
-    },
+    ...nextDroppedItems,
   ];
 
   return {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyChestBlockingToWalkableGrid,
   buildBlockedTileSetFromChests,
+  createTreasureChests,
   createCommonTreasureChest,
   tryOpenChestByClick,
 } from "../../src/item/treasureSystem.js";
@@ -115,6 +116,32 @@ describe("treasureSystem", () => {
     const chest = createCommonTreasureChest(dungeon, "fixed-seed");
 
     expect(chest).toBeNull();
+  });
+
+  it("createTreasureChests は 0〜2 個を開始/階段以外の部屋に配置し、tier は許可値のみになる", () => {
+    const dungeon = createDungeonMock();
+    const allowedTiers = new Set(["common", "rare", "legendary"]);
+    const observedCounts = new Set();
+
+    for (let index = 0; index < 500; index += 1) {
+      const chests = createTreasureChests(dungeon, `seed-${index}`);
+      observedCounts.add(chests.length);
+
+      expect(chests.length).toBeGreaterThanOrEqual(0);
+      expect(chests.length).toBeLessThanOrEqual(2);
+      expect(new Set(chests.map((chest) => chest.roomId)).size).toBe(chests.length);
+
+      for (const chest of chests) {
+        expect([dungeon.startRoomId, dungeon.stairsRoomId]).not.toContain(chest.roomId);
+        expect(dungeon.walkableGrid[chest.tileY][chest.tileX]).toBe(true);
+        expect(allowedTiers.has(chest.tier)).toBe(true);
+        expect(chest.isOpened).toBe(false);
+      }
+    }
+
+    expect(observedCounts.has(0)).toBe(true);
+    expect(observedCounts.has(1)).toBe(true);
+    expect(observedCounts.has(2)).toBe(true);
   });
 
   it("tryOpenChestByClick は playerFeetTileOverride が距離2なら開封しない", () => {
@@ -249,6 +276,60 @@ describe("treasureSystem", () => {
     });
   });
 
+  it("tryOpenChestByClick は rare 宝箱で薬草を2個落とす", () => {
+    const dungeon = createDungeonMock();
+    const chest = {
+      id: "chest_rare_01",
+      tier: "rare",
+      roomId: 2,
+      tileX: 8,
+      tileY: 8,
+      isOpened: false,
+    };
+    const player = createPlayerAtFeetTile(8, 7);
+
+    const result = tryOpenChestByClick(
+      [chest],
+      [],
+      player,
+      chest.tileX * TILE_SIZE + 16,
+      chest.tileY * TILE_SIZE + 16,
+      { dungeon }
+    );
+
+    expect(result.opened).toBe(true);
+    expect(result.groundItems).toHaveLength(2);
+    expect(result.groundItems.every((item) => item.itemId === "item_herb_01")).toBe(true);
+    expect(new Set(result.groundItems.map((item) => `${item.tileX}:${item.tileY}`)).size).toBe(2);
+  });
+
+  it("tryOpenChestByClick は legendary 宝箱で薬草を3個落とす", () => {
+    const dungeon = createDungeonMock();
+    const chest = {
+      id: "chest_legendary_01",
+      tier: "legendary",
+      roomId: 2,
+      tileX: 8,
+      tileY: 8,
+      isOpened: false,
+    };
+    const player = createPlayerAtFeetTile(8, 7);
+
+    const result = tryOpenChestByClick(
+      [chest],
+      [],
+      player,
+      chest.tileX * TILE_SIZE + 16,
+      chest.tileY * TILE_SIZE + 16,
+      { dungeon }
+    );
+
+    expect(result.opened).toBe(true);
+    expect(result.groundItems).toHaveLength(3);
+    expect(result.groundItems.every((item) => item.itemId === "item_herb_01")).toBe(true);
+    expect(new Set(result.groundItems.map((item) => `${item.tileX}:${item.tileY}`)).size).toBe(3);
+  });
+
   it("tryOpenChestByClick は近傍が埋まっていても探索半径を拡張してdrop先を見つける", () => {
     const walkableGrid = createWalkableGrid(24, 24, false);
     walkableGrid[8][8] = false;
@@ -296,6 +377,34 @@ describe("treasureSystem", () => {
     const chest = {
       id: "chest_01",
       tier: "common",
+      roomId: 2,
+      tileX: 8,
+      tileY: 8,
+      isOpened: false,
+    };
+    const player = createPlayerAtFeetTile(8, 7);
+
+    const result = tryOpenChestByClick(
+      [chest],
+      [],
+      player,
+      chest.tileX * TILE_SIZE + 16,
+      chest.tileY * TILE_SIZE + 16,
+      { dungeon }
+    );
+
+    expect(result.opened).toBe(false);
+    expect(result.groundItems).toHaveLength(0);
+    expect(result.treasureChests[0].isOpened).toBe(false);
+  });
+
+  it("tryOpenChestByClick は必要個数を置けない場合に開封を成立させない", () => {
+    const walkableGrid = createWalkableGrid(24, 24, false);
+    walkableGrid[7][8] = true;
+    const dungeon = createDungeonMock({ walkableGrid });
+    const chest = {
+      id: "chest_rare_01",
+      tier: "rare",
       roomId: 2,
       tileX: 8,
       tileY: 8,

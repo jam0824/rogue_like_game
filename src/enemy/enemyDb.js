@@ -104,6 +104,28 @@ function assertEnemyShape(rawEnemy, fileName) {
   }
 }
 
+function normalizeSpawnBound(rawValue, fallback) {
+  const value = Math.floor(Number(rawValue));
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+}
+
+function normalizeSpawnConfig(rawSpawn) {
+  if (!rawSpawn || typeof rawSpawn !== "object") {
+    return { min: 1, max: 1 };
+  }
+
+  const min = normalizeSpawnBound(rawSpawn.min, 1);
+  const max = normalizeSpawnBound(rawSpawn.max, 1);
+  if (min <= max) {
+    return { min, max };
+  }
+
+  return { min: max, max: min };
+}
+
 function normalizeEnemyRecord(rawEnemy, fileName) {
   assertHasRequiredKeys(rawEnemy, fileName);
   assertEnemyShape(rawEnemy, fileName);
@@ -137,6 +159,7 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
     arc: Number.isFinite(rawEnemy.arc) ? rawEnemy.arc : 10,
     rank: typeof rawEnemy.rank === "string" && rawEnemy.rank.length > 0 ? rawEnemy.rank : "normal",
     role: typeof rawEnemy.role === "string" && rawEnemy.role.length > 0 ? rawEnemy.role : "chaser",
+    spawn: normalizeSpawnConfig(rawEnemy.spawn),
     tags: Array.isArray(rawEnemy.tags) ? rawEnemy.tags.filter((tag) => typeof tag === "string") : [],
     aiProfileId: typeof rawEnemy.ai_profile_id === "string" ? rawEnemy.ai_profile_id : null,
     weaponLoadoutId: typeof rawEnemy.weapon_loadout_id === "string" ? rawEnemy.weapon_loadout_id : null,
