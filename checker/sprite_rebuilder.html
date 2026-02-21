@@ -1,0 +1,1181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Sprite Rebuilder (Offline)</title>
+  <style>
+    :root{
+      --bg:#0b0c10;
+      --panel:#12141a;
+      --line:#2a2f3a;
+      --text:#e8eef7;
+      --muted:#97a3b6;
+      --accent:#6ea8fe;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    #app{height:100vh;display:flex;flex-direction:column;}
+    #topbar{
+      padding:12px 16px;
+      border-bottom:1px solid var(--line);
+      display:flex;align-items:center;gap:12px;
+    }
+    #topbar h1{font-size:16px;margin:0;font-weight:650;}
+    .main{
+      flex:1;
+      display:flex;
+      gap:12px;
+      padding:12px;
+      overflow:hidden;
+    }
+    .panel{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:14px;
+      overflow:hidden;
+      min-width:420px;
+    }
+    .panel > .head{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      background:rgba(255,255,255,0.02);
+      font-weight:650;
+      font-size:14px;
+    }
+    .controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      align-items:center;
+    }
+    label{
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      align-items:center;
+      gap:6px;
+      white-space:nowrap;
+    }
+    input[type="number"]{
+      width:80px;
+      background:#0d0f14;
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:6px 8px;
+      outline:none;
+    }
+    input[type="range"]{width:140px;}
+    button{
+      background:#0d0f14;
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:12px;
+      cursor:pointer;
+    }
+    button.primary{
+      border-color:rgba(110,168,254,0.7);
+      box-shadow:0 0 0 1px rgba(110,168,254,0.15) inset;
+    }
+    button:disabled{opacity:0.4;cursor:not-allowed;}
+    .canvasWrap{
+      flex:1;
+      overflow:auto;
+      position:relative;
+      background:linear-gradient(45deg,#0b0c10 25%, #0a0b0f 25%, #0a0b0f 50%, #0b0c10 50%, #0b0c10 75%, #0a0b0f 75%, #0a0b0f 100%);
+      background-size:24px 24px;
+    }
+    canvas{display:block;}
+    .drop{
+      border:1px dashed rgba(232,238,247,0.25);
+      border-radius:12px;
+      padding:10px 12px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .small{
+      font-size:12px;
+      color:var(--muted);
+      padding:10px 12px;
+      border-top:1px solid var(--line);
+      line-height:1.55;
+    }
+    .kbd{
+      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono","Courier New",monospace;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:6px;
+      padding:1px 6px;
+      color:var(--text);
+    }
+    .checkbox{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .checkbox input{accent-color:var(--accent);}
+    .infoLine{
+      font-size:12px;
+      color:var(--muted);
+      padding:6px 12px;
+      border-top:1px solid var(--line);
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .previewWrap{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-start;
+      padding:10px 12px;
+      border-top:1px solid var(--line);
+    }
+    .previewCanvasWrap{
+      background:#0a0b0f;
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    #dragGhost{
+      position:fixed;
+      left:0;top:0;
+      pointer-events:none;
+      display:none;
+      z-index:9999;
+      filter:drop-shadow(0 10px 20px rgba(0,0,0,0.45));
+      opacity:0.9;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>Sprite Sheet → Animation Rebuilder（オフライン / 1ファイル）</h1>
+  </div>
+
+  <div class="main">
+    <!-- Left -->
+    <section class="panel">
+      <div class="head">左：スプライト画像</div>
+      <div class="controls">
+        <div class="drop" id="dropZone" style="flex:1;min-width:240px">
+          画像をドラッグ＆ドロップ / または
+          <button id="btnPick" type="button">ファイル選択</button>
+          <input id="fileInput" type="file" accept="image/*" hidden>
+          <div style="margin-top:6px">選択：<span id="srcInfo">未読み込み</span></div>
+        </div>
+
+        <label>コマ幅 <input id="srcFrameW" type="number" min="1" value="64"></label>
+        <label>コマ高 <input id="srcFrameH" type="number" min="1" value="64"></label>
+        <label>表示倍率 <input id="srcZoom" type="range" min="0.25" max="6" step="0.25" value="1"></label>
+
+        <button id="btnCopyFromLeft" type="button" class="primary" disabled>選択コマをコピー</button>
+      </div>
+
+      <div class="canvasWrap" id="leftWrap">
+        <canvas id="leftCanvas"></canvas>
+      </div>
+
+      <div class="small">
+        画像を読み込み → コマ幅/高を設定 → クリックでコマ選択。<br>
+        右へ「ドラッグ」または <span class="kbd">Ctrl</span>+<span class="kbd">C</span> → 右のマス選択 → <span class="kbd">Ctrl</span>+<span class="kbd">V</span>。
+      </div>
+    </section>
+
+    <!-- Right -->
+    <section class="panel">
+      <div class="head">右：並び替え＆プレビュー</div>
+      <div class="controls">
+        <label>セル幅 <input id="dstCellW" type="number" min="1" value="64"></label>
+        <label>セル高 <input id="dstCellH" type="number" min="1" value="64"></label>
+        <label>列数 <input id="dstCols" type="number" min="1" value="8"></label>
+        <label>段数 <input id="dstRows" type="number" min="1" value="1"></label>
+
+        <button id="btnApplyGrid" type="button" class="primary">グリッド作成/更新</button>
+
+        <span class="checkbox">
+          <input id="autoCenter" type="checkbox" checked>
+          <label for="autoCenter">左から貼り付け時に中央寄せ</label>
+        </span>
+
+        <button id="btnPasteToCell" type="button" disabled>貼り付け</button>
+        <button id="btnClearCell" type="button" disabled>選択マスを消去</button>
+        <button id="btnClearAll" type="button">全消去</button>
+      </div>
+
+      <div class="canvasWrap" id="rightWrap">
+        <canvas id="rightCanvas"></canvas>
+      </div>
+
+      <div class="infoLine" id="selInfo">選択マス：なし</div>
+
+      <div class="previewWrap">
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:280px">
+          <div class="controls" style="border:0;padding:0">
+            <label>FPS <input id="fps" type="number" min="1" max="240" value="12"></label>
+
+            <span class="checkbox">
+              <input id="skipEmpty" type="checkbox" checked>
+              <label for="skipEmpty">空マスを飛ばす</label>
+            </span>
+
+            <button id="btnPlay" type="button" class="primary">再生</button>
+            <button id="btnStep" type="button">1コマ進む</button>
+          </div>
+
+          <button id="btnExport" type="button" class="primary" disabled>横一列PNGとして保存</button>
+
+          <div class="small" style="border:0;padding:0">
+            移動：マス内の絵をドラッグ。微調整：矢印キー（<span class="kbd">Shift</span>で5px）。<br>
+            消去：<span class="kbd">Del</span>。コピー/貼付：<span class="kbd">Ctrl</span>+<span class="kbd">C</span>/<span class="kbd">V</span>。
+          </div>
+        </div>
+
+        <div class="previewCanvasWrap">
+          <canvas id="previewCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <canvas id="dragGhost"></canvas>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  const el = {
+    dropZone: document.getElementById('dropZone'),
+    btnPick: document.getElementById('btnPick'),
+    fileInput: document.getElementById('fileInput'),
+    srcInfo: document.getElementById('srcInfo'),
+    srcFrameW: document.getElementById('srcFrameW'),
+    srcFrameH: document.getElementById('srcFrameH'),
+    srcZoom: document.getElementById('srcZoom'),
+    btnCopyFromLeft: document.getElementById('btnCopyFromLeft'),
+    leftCanvas: document.getElementById('leftCanvas'),
+    leftWrap: document.getElementById('leftWrap'),
+
+    dstCellW: document.getElementById('dstCellW'),
+    dstCellH: document.getElementById('dstCellH'),
+    dstCols: document.getElementById('dstCols'),
+    dstRows: document.getElementById('dstRows'),
+    btnApplyGrid: document.getElementById('btnApplyGrid'),
+    autoCenter: document.getElementById('autoCenter'),
+    btnPasteToCell: document.getElementById('btnPasteToCell'),
+    btnClearCell: document.getElementById('btnClearCell'),
+    btnClearAll: document.getElementById('btnClearAll'),
+    rightCanvas: document.getElementById('rightCanvas'),
+    rightWrap: document.getElementById('rightWrap'),
+    selInfo: document.getElementById('selInfo'),
+
+    fps: document.getElementById('fps'),
+    skipEmpty: document.getElementById('skipEmpty'),
+    btnPlay: document.getElementById('btnPlay'),
+    btnStep: document.getElementById('btnStep'),
+    btnExport: document.getElementById('btnExport'),
+    previewCanvas: document.getElementById('previewCanvas'),
+
+    dragGhost: document.getElementById('dragGhost'),
+  };
+
+  const state = {
+    lastActivePane: 'left',
+    srcImg: null,
+    srcName: '',
+    left: {
+      frameW: 64,
+      frameH: 64,
+      zoom: 1,
+      selected: null, // {col,row,sx,sy,sw,sh}
+    },
+    right: {
+      cellW: 64,
+      cellH: 64,
+      cols: 8,
+      rows: 1,
+      grid: [], // { item: {sx,sy,sw,sh,dx,dy} | null }
+      selectedIndex: null,
+      hoverIndex: null,
+      _oldCols: 8,
+      _oldRows: 1,
+    },
+    clipboard: null, // {sx,sy,sw,sh,dx,dy, from:'left'|'right'}
+    drag: {
+      pending: false,
+      active: false,
+      kind: null,
+      startX: 0,
+      startY: 0,
+      frame: null,     // dragging from left
+      cellIndex: null, // moving item in right
+      grab: {x:0,y:0},
+    },
+    anim: {
+      playing: false,
+      rafId: 0,
+      startTime: 0,
+      forcedIndex: 0,
+    }
+  };
+
+  function clamp(n, min, max){ return Math.min(max, Math.max(min, n)); }
+  function int(n){ return Number.isFinite(n) ? Math.trunc(n) : 0; }
+
+  function setCanvasSize(canvas, cssW, cssH){
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const h = Math.max(1, Math.round(cssH * dpr));
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = `${Math.max(1, cssW)}px`;
+    canvas.style.height = `${Math.max(1, cssH)}px`;
+  }
+
+  function clearCanvas(ctx, cssW, cssH){
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cssW,cssH);
+  }
+
+  function getMouseInCanvas(evt, canvas){
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    return { x, y, rect };
+  }
+
+  function updateLeftFromInputs(){
+    state.left.frameW = Math.max(1, int(Number(el.srcFrameW.value)));
+    state.left.frameH = Math.max(1, int(Number(el.srcFrameH.value)));
+    state.left.zoom = Math.max(0.25, Number(el.srcZoom.value) || 1);
+  }
+
+  function updateRightFromInputs(){
+    state.right.cellW = Math.max(1, int(Number(el.dstCellW.value)));
+    state.right.cellH = Math.max(1, int(Number(el.dstCellH.value)));
+    state.right.cols = Math.max(1, int(Number(el.dstCols.value)));
+    state.right.rows = Math.max(1, int(Number(el.dstRows.value)));
+  }
+
+  function ensureRightGrid(preserve=true){
+    const {cols, rows} = state.right;
+    const newLen = cols*rows;
+    const old = state.right.grid;
+    const oldCols = state.right._oldCols || cols;
+    const oldRows = state.right._oldRows || rows;
+
+    const next = new Array(newLen).fill(null).map(() => ({item:null}));
+
+    if (preserve && old && old.length){
+      const copyCols = Math.min(cols, oldCols);
+      const copyRows = Math.min(rows, oldRows);
+      for(let r=0; r<copyRows; r++){
+        for(let c=0; c<copyCols; c++){
+          const oldIdx = r*oldCols + c;
+          const newIdx = r*cols + c;
+          if (old[oldIdx]?.item) next[newIdx].item = {...old[oldIdx].item};
+        }
+      }
+    }
+
+    state.right.grid = next;
+    state.right._oldCols = cols;
+    state.right._oldRows = rows;
+    state.right.selectedIndex = null;
+    state.right.hoverIndex = null;
+
+    drawRight();
+    updateSelectionInfo();
+    updateButtons();
+  }
+
+  function leftFrameAt(xImg, yImg){
+    if (!state.srcImg) return null;
+    const {frameW, frameH} = state.left;
+    if (xImg < 0 || yImg < 0 || xImg >= state.srcImg.width || yImg >= state.srcImg.height) return null;
+    const col = Math.floor(xImg / frameW);
+    const row = Math.floor(yImg / frameH);
+    const sx = col*frameW;
+    const sy = row*frameH;
+    return {col, row, sx, sy, sw: frameW, sh: frameH};
+  }
+
+  function getRightCellIndex(xCss, yCss){
+    const {cellW, cellH, cols, rows} = state.right;
+    if (xCss < 0 || yCss < 0) return null;
+    const col = Math.floor(xCss / cellW);
+    const row = Math.floor(yCss / cellH);
+    if (col < 0 || row < 0 || col >= cols || row >= rows) return null;
+    return row*cols + col;
+  }
+
+  function drawLeft(){
+    const ctx = el.leftCanvas.getContext('2d');
+
+    if (!state.srcImg){
+      const cssW = Math.max(240, el.leftWrap.clientWidth-2);
+      const cssH = Math.max(160, el.leftWrap.clientHeight-2);
+      setCanvasSize(el.leftCanvas, cssW, cssH);
+      clearCanvas(ctx, cssW, cssH);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      ctx.fillStyle = 'rgba(232,238,247,0.55)';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText('ここにスプライト画像をドロップ', 12, 22);
+      return;
+    }
+
+    const img = state.srcImg;
+    const z = state.left.zoom;
+    const cssW = img.width * z;
+    const cssH = img.height * z;
+    setCanvasSize(el.leftCanvas, cssW, cssH);
+
+    clearCanvas(ctx, cssW, cssH);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    // image
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0,0,img.width,img.height, 0,0, cssW, cssH);
+
+    // grid
+    const {frameW, frameH} = state.left;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(110,168,254,0.75)';
+    ctx.beginPath();
+    for(let x=0; x<=img.width; x+=frameW){
+      const xx = x*z + 0.5;
+      ctx.moveTo(xx, 0);
+      ctx.lineTo(xx, cssH);
+    }
+    for(let y=0; y<=img.height; y+=frameH){
+      const yy = y*z + 0.5;
+      ctx.moveTo(0, yy);
+      ctx.lineTo(cssW, yy);
+    }
+    ctx.stroke();
+
+    // selection
+    if (state.left.selected){
+      const s = state.left.selected;
+      ctx.strokeStyle = 'rgba(255, 200, 80, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.sx*z+1, s.sy*z+1, s.sw*z-2, s.sh*z-2);
+    }
+  }
+
+  function drawRight(){
+    const ctx = el.rightCanvas.getContext('2d');
+    const {cellW, cellH, cols, rows, grid} = state.right;
+    const cssW = cellW * cols;
+    const cssH = cellH * rows;
+    setCanvasSize(el.rightCanvas, cssW, cssH);
+    clearCanvas(ctx, cssW, cssH);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    // bg
+    ctx.fillStyle = 'rgba(13,15,20,1)';
+    ctx.fillRect(0,0,cssW,cssH);
+
+    // items
+    if (state.srcImg){
+      ctx.imageSmoothingEnabled = false;
+      for(let i=0;i<grid.length;i++){
+        const item = grid[i].item;
+        if (!item) continue;
+        const r = Math.floor(i/cols);
+        const c = i%cols;
+        const x0 = c*cellW;
+        const y0 = r*cellH;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, y0, cellW, cellH);
+        ctx.clip();
+
+        ctx.drawImage(state.srcImg,
+          item.sx, item.sy, item.sw, item.sh,
+          x0 + item.dx, y0 + item.dy, item.sw, item.sh
+        );
+
+        ctx.restore();
+      }
+    }
+
+    // grid lines
+    ctx.strokeStyle = 'rgba(232,238,247,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let x=0; x<=cssW; x+=cellW){
+      const xx = x + 0.5;
+      ctx.moveTo(xx, 0);
+      ctx.lineTo(xx, cssH);
+    }
+    for(let y=0; y<=cssH; y+=cellH){
+      const yy = y + 0.5;
+      ctx.moveTo(0, yy);
+      ctx.lineTo(cssW, yy);
+    }
+    ctx.stroke();
+
+    // center cross (faint)
+    ctx.strokeStyle = 'rgba(232,238,247,0.10)';
+    ctx.beginPath();
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const x0 = c*cellW;
+        const y0 = r*cellH;
+        const cx = x0 + cellW/2 + 0.5;
+        const cy = y0 + cellH/2 + 0.5;
+        ctx.moveTo(cx, y0);
+        ctx.lineTo(cx, y0 + cellH);
+        ctx.moveTo(x0, cy);
+        ctx.lineTo(x0 + cellW, cy);
+      }
+    }
+    ctx.stroke();
+
+    // hover highlight
+    if (state.right.hoverIndex != null){
+      const i = state.right.hoverIndex;
+      const r = Math.floor(i/cols);
+      const c = i%cols;
+      ctx.strokeStyle = 'rgba(110,168,254,0.60)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(c*cellW+1, r*cellH+1, cellW-2, cellH-2);
+    }
+
+    // selected highlight
+    if (state.right.selectedIndex != null){
+      const i = state.right.selectedIndex;
+      const r = Math.floor(i/cols);
+      const c = i%cols;
+      ctx.strokeStyle = 'rgba(255, 200, 80, 0.95)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(c*cellW+1.5, r*cellH+1.5, cellW-3, cellH-3);
+    }
+  }
+
+  function drawChecker(ctx, w, h, size=12){
+    const c1 = 'rgba(255,255,255,0.04)';
+    const c2 = 'rgba(255,255,255,0.08)';
+    for(let y=0; y<h; y+=size){
+      for(let x=0; x<w; x+=size){
+        ctx.fillStyle = ((x/size + y/size) % 2 === 0) ? c1 : c2;
+        ctx.fillRect(x,y,size,size);
+      }
+    }
+  }
+
+  function drawPreview(frameItem){
+    const ctx = el.previewCanvas.getContext('2d');
+    const {cellW, cellH} = state.right;
+
+    const maxSize = 360;
+    const scale = clamp(maxSize / Math.max(cellW, cellH), 1, 8);
+
+    const cssW = Math.max(1, Math.round(cellW * scale));
+    const cssH = Math.max(1, Math.round(cellH * scale));
+    setCanvasSize(el.previewCanvas, cssW, cssH);
+    clearCanvas(ctx, cssW, cssH);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.imageSmoothingEnabled = false;
+
+    // checker bg
+    drawChecker(ctx, cssW, cssH, 14);
+
+    // frame border
+    ctx.strokeStyle = 'rgba(232,238,247,0.18)';
+    ctx.strokeRect(0.5,0.5,cssW-1,cssH-1);
+
+    if (frameItem && state.srcImg){
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0,0,cssW,cssH);
+      ctx.clip();
+      ctx.scale(scale, scale);
+      ctx.drawImage(state.srcImg,
+        frameItem.sx, frameItem.sy, frameItem.sw, frameItem.sh,
+        frameItem.dx, frameItem.dy, frameItem.sw, frameItem.sh
+      );
+      ctx.restore();
+    }
+
+    // center cross
+    ctx.strokeStyle = 'rgba(232,238,247,0.10)';
+    ctx.beginPath();
+    const cx = cssW/2 + 0.5;
+    const cy = cssH/2 + 0.5;
+    ctx.moveTo(cx, 0); ctx.lineTo(cx, cssH);
+    ctx.moveTo(0, cy); ctx.lineTo(cssW, cy);
+    ctx.stroke();
+  }
+
+  function updateSelectionInfo(){
+    const idx = state.right.selectedIndex;
+    if (idx == null){
+      el.selInfo.textContent = '選択マス：なし';
+      drawPreview(null);
+      return;
+    }
+    const {cols, cellW, cellH} = state.right;
+    const r = Math.floor(idx/cols);
+    const c = idx%cols;
+    const item = state.right.grid[idx]?.item;
+    const base = `選択マス：${r+1}段目 / ${c+1}列目`;
+    if (item){
+      el.selInfo.textContent = `${base}（dx=${item.dx}, dy=${item.dy} / 画像 ${item.sw}×${item.sh}）`;
+      drawPreview(item);
+    } else {
+      el.selInfo.textContent = `${base}（空）セル ${cellW}×${cellH}`;
+      drawPreview(null);
+    }
+  }
+
+  function anyFramesExist(){
+    return state.right.grid.some(c => !!c.item);
+  }
+
+  function updateButtons(){
+    el.btnCopyFromLeft.disabled = !state.srcImg || !state.left.selected;
+    el.btnPasteToCell.disabled = state.right.selectedIndex == null || !state.clipboard;
+    el.btnClearCell.disabled = state.right.selectedIndex == null || !state.right.grid[state.right.selectedIndex]?.item;
+    el.btnExport.disabled = !anyFramesExist();
+  }
+
+  function setClipboardFromLeft(){
+    if (!state.left.selected) return;
+    const f = state.left.selected;
+    state.clipboard = { sx:f.sx, sy:f.sy, sw:f.sw, sh:f.sh, dx:0, dy:0, from:'left' };
+    updateButtons();
+  }
+
+  function setClipboardFromRightCell(){
+    const idx = state.right.selectedIndex;
+    if (idx == null) return;
+    const item = state.right.grid[idx]?.item;
+    if (!item) return;
+    state.clipboard = {...item, from:'right'};
+    updateButtons();
+  }
+
+  function pasteClipboardToSelectedCell(){
+    const idx = state.right.selectedIndex;
+    if (idx == null || !state.clipboard) return;
+
+    const cell = state.right.grid[idx];
+    const src = state.clipboard;
+
+    const item = {
+      sx: src.sx, sy: src.sy, sw: src.sw, sh: src.sh,
+      dx: src.dx ?? 0, dy: src.dy ?? 0
+    };
+
+    if (el.autoCenter.checked && src.from === 'left'){
+      item.dx = Math.round((state.right.cellW - item.sw)/2);
+      item.dy = Math.round((state.right.cellH - item.sh)/2);
+    }
+
+    cell.item = item;
+    drawRight();
+    updateSelectionInfo();
+    updateButtons();
+  }
+
+  function pasteFrameToCell(frame, idx){
+    if (!frame || idx == null) return;
+    const cell = state.right.grid[idx];
+    const item = { sx: frame.sx, sy: frame.sy, sw: frame.sw, sh: frame.sh, dx:0, dy:0 };
+    if (el.autoCenter.checked){
+      item.dx = Math.round((state.right.cellW - item.sw)/2);
+      item.dy = Math.round((state.right.cellH - item.sh)/2);
+    }
+    cell.item = item;
+    state.right.selectedIndex = idx;
+    drawRight();
+    updateSelectionInfo();
+    updateButtons();
+  }
+
+  function clearSelectedCell(){
+    const idx = state.right.selectedIndex;
+    if (idx == null) return;
+    state.right.grid[idx].item = null;
+    drawRight();
+    updateSelectionInfo();
+    updateButtons();
+  }
+
+  function clearAllCells(){
+    for(const cell of state.right.grid) cell.item = null;
+    drawRight();
+    updateSelectionInfo();
+    updateButtons();
+  }
+
+  function buildFrameSequence(){
+    const skipEmpty = el.skipEmpty.checked;
+    const seq = [];
+    for(const cell of state.right.grid){
+      if (!cell.item){
+        if (!skipEmpty) seq.push(null);
+        continue;
+      }
+      seq.push(cell.item);
+    }
+    return seq;
+  }
+
+  function renderAnimFrame(index){
+    const seq = buildFrameSequence();
+    if (seq.length === 0){
+      drawPreview(null);
+      return;
+    }
+    const i = ((index % seq.length) + seq.length) % seq.length;
+    drawPreview(seq[i]);
+  }
+
+  function startAnimation(){
+    if (state.anim.playing) return;
+    state.anim.playing = true;
+    state.anim.startTime = performance.now();
+    state.anim.forcedIndex = 0;
+    el.btnPlay.textContent = '停止';
+
+    const tick = (t) => {
+      if (!state.anim.playing) return;
+      const seq = buildFrameSequence();
+      if (seq.length === 0){
+        drawPreview(null);
+      } else {
+        const fps = clamp(Number(el.fps.value) || 12, 1, 240);
+        const elapsed = t - state.anim.startTime;
+        const idx = Math.floor(elapsed * fps / 1000);
+        renderAnimFrame(idx);
+      }
+      state.anim.rafId = requestAnimationFrame(tick);
+    };
+    state.anim.rafId = requestAnimationFrame(tick);
+  }
+
+  function stopAnimation(){
+    state.anim.playing = false;
+    el.btnPlay.textContent = '再生';
+    if (state.anim.rafId) cancelAnimationFrame(state.anim.rafId);
+    state.anim.rafId = 0;
+  }
+
+  function toggleAnimation(){
+    if (state.anim.playing) stopAnimation();
+    else startAnimation();
+  }
+
+  function stepOneFrame(){
+    stopAnimation();
+    const seq = buildFrameSequence();
+    if (seq.length === 0){
+      drawPreview(null);
+      return;
+    }
+    state.anim.forcedIndex = (state.anim.forcedIndex + 1) % seq.length;
+    renderAnimFrame(state.anim.forcedIndex);
+  }
+
+  function exportPng(){
+    const seq = buildFrameSequence();
+    const hasAny = seq.some(Boolean);
+    if (!hasAny) return;
+
+    const {cellW, cellH} = state.right;
+    const out = document.createElement('canvas');
+    out.width = Math.round(cellW * seq.length);
+    out.height = Math.round(cellH);
+
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    // transparent bg (default)
+    for(let i=0;i<seq.length;i++){
+      const item = seq[i];
+      if (!item || !state.srcImg) continue;
+
+      const x0 = i*cellW;
+      const y0 = 0;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, cellW, cellH);
+      ctx.clip();
+
+      ctx.drawImage(state.srcImg,
+        item.sx, item.sy, item.sw, item.sh,
+        x0 + item.dx, y0 + item.dy, item.sw, item.sh
+      );
+
+      ctx.restore();
+    }
+
+    out.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      const base = state.srcName ? state.srcName.replace(/\.[^.]+$/, '') : 'sprite';
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+      a.download = `${base}_anim_${stamp}.png`;
+      a.href = URL.createObjectURL(blob);
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+    }, 'image/png');
+  }
+
+  // ===== Image loading =====
+  function loadImageFromFile(file){
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      state.srcImg = img;
+      state.srcName = file.name || 'image';
+      el.srcInfo.textContent = `${state.srcName}（${img.width}×${img.height}）`;
+
+      // default select
+      state.left.selected = {col:0,row:0,sx:0,sy:0,sw:state.left.frameW,sh:state.left.frameH};
+
+      drawLeft();
+      drawRight();
+      updateButtons();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      alert('画像の読み込みに失敗しました。');
+    };
+    img.src = url;
+  }
+
+  // Drop zone
+  el.btnPick.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    loadImageFromFile(file);
+    e.target.value = '';
+  });
+
+  function preventDefaults(e){ e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover','dragleave','drop'].forEach(evName => {
+    el.dropZone.addEventListener(evName, preventDefaults, false);
+  });
+  el.dropZone.addEventListener('dragover', () => {
+    el.dropZone.style.borderColor = 'rgba(110,168,254,0.7)';
+  });
+  el.dropZone.addEventListener('dragleave', () => {
+    el.dropZone.style.borderColor = 'rgba(232,238,247,0.25)';
+  });
+  el.dropZone.addEventListener('drop', (e) => {
+    el.dropZone.style.borderColor = 'rgba(232,238,247,0.25)';
+    const file = e.dataTransfer.files?.[0];
+    if (file) loadImageFromFile(file);
+  });
+
+  // Left inputs
+  el.srcFrameW.addEventListener('input', () => {
+    updateLeftFromInputs();
+    if (state.left.selected){
+      state.left.selected.sw = state.left.frameW;
+      state.left.selected.sh = state.left.frameH;
+      state.left.selected.sx = state.left.selected.col * state.left.frameW;
+      state.left.selected.sy = state.left.selected.row * state.left.frameH;
+    }
+    drawLeft();
+    updateButtons();
+  });
+  el.srcFrameH.addEventListener('input', () => {
+    updateLeftFromInputs();
+    if (state.left.selected){
+      state.left.selected.sw = state.left.frameW;
+      state.left.selected.sh = state.left.frameH;
+      state.left.selected.sx = state.left.selected.col * state.left.frameW;
+      state.left.selected.sy = state.left.selected.row * state.left.frameH;
+    }
+    drawLeft();
+    updateButtons();
+  });
+  el.srcZoom.addEventListener('input', () => {
+    updateLeftFromInputs();
+    drawLeft();
+  });
+
+  // Right controls
+  el.btnApplyGrid.addEventListener('click', () => {
+    updateRightFromInputs();
+    ensureRightGrid(true);
+  });
+  el.btnPasteToCell.addEventListener('click', () => pasteClipboardToSelectedCell());
+  el.btnClearCell.addEventListener('click', () => clearSelectedCell());
+  el.btnClearAll.addEventListener('click', () => clearAllCells());
+
+  el.btnExport.addEventListener('click', () => exportPng());
+  el.btnPlay.addEventListener('click', () => toggleAnimation());
+  el.btnStep.addEventListener('click', () => stepOneFrame());
+  el.fps.addEventListener('input', () => { if(!state.anim.playing) renderAnimFrame(state.anim.forcedIndex); });
+  el.skipEmpty.addEventListener('change', () => { updateButtons(); if(!state.anim.playing) renderAnimFrame(state.anim.forcedIndex); });
+
+  el.btnCopyFromLeft.addEventListener('click', () => {
+    state.lastActivePane = 'left';
+    setClipboardFromLeft();
+  });
+
+  // ===== Drag ghost =====
+  function showGhostFromFrame(frame){
+    if (!state.srcImg || !frame) return;
+    const scale = Math.min(1, 256 / Math.max(frame.sw, frame.sh));
+    const w = Math.max(1, Math.round(frame.sw * scale));
+    const h = Math.max(1, Math.round(frame.sh * scale));
+    setCanvasSize(el.dragGhost, w, h);
+    const ctx = el.dragGhost.getContext('2d');
+    clearCanvas(ctx, w, h);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(state.srcImg, frame.sx, frame.sy, frame.sw, frame.sh, 0,0, w, h);
+    el.dragGhost.style.display = 'block';
+  }
+  function moveGhost(clientX, clientY){
+    el.dragGhost.style.left = `${clientX + 12}px`;
+    el.dragGhost.style.top = `${clientY + 12}px`;
+  }
+  function hideGhost(){ el.dragGhost.style.display = 'none'; }
+
+  function findRightCellUnderPointer(clientX, clientY){
+    const rect = el.rightCanvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+    return getRightCellIndex(x, y);
+  }
+
+  // ===== Canvas interactions =====
+  // Left: select + drag to right
+  el.leftCanvas.addEventListener('mousedown', (e) => {
+    state.lastActivePane = 'left';
+    if (!state.srcImg) return;
+    updateLeftFromInputs();
+
+    const {x, y} = getMouseInCanvas(e, el.leftCanvas);
+    const xImg = x / state.left.zoom;
+    const yImg = y / state.left.zoom;
+    const f = leftFrameAt(xImg, yImg);
+    if (!f) return;
+
+    state.left.selected = f;
+    drawLeft();
+    updateButtons();
+
+    // start drag (threshold)
+    state.drag.pending = true;
+    state.drag.active = false;
+    state.drag.kind = 'leftFrame';
+    state.drag.startX = e.clientX;
+    state.drag.startY = e.clientY;
+    state.drag.frame = f;
+
+    e.preventDefault();
+  });
+
+  // Right: select cell + move item inside cell
+  el.rightCanvas.addEventListener('mousedown', (e) => {
+    state.lastActivePane = 'right';
+
+    const {x, y} = getMouseInCanvas(e, el.rightCanvas);
+    const idx = getRightCellIndex(x, y);
+    state.right.selectedIndex = idx;
+
+    updateSelectionInfo();
+    updateButtons();
+    drawRight();
+
+    if (idx == null) return;
+
+    const cell = state.right.grid[idx];
+    if (!cell?.item) return;
+
+    const {cellW, cellH, cols} = state.right;
+    const r = Math.floor(idx/cols);
+    const c = idx%cols;
+    const localX = x - c*cellW;
+    const localY = y - r*cellH;
+    const it = cell.item;
+
+    const withinItem = (localX >= it.dx && localX <= it.dx + it.sw && localY >= it.dy && localY <= it.dy + it.sh);
+    if (!withinItem) return;
+
+    // start moving
+    state.drag.pending = false;
+    state.drag.active = true;
+    state.drag.kind = 'moveItem';
+    state.drag.cellIndex = idx;
+    state.drag.startX = e.clientX;
+    state.drag.startY = e.clientY;
+    state.drag.grab = {x: it.dx, y: it.dy};
+
+    e.preventDefault();
+  });
+
+  // Global mouse move/up for drag logic
+  window.addEventListener('mousemove', (e) => {
+    if (!state.drag.pending && !state.drag.active) return;
+
+    const dx = e.clientX - state.drag.startX;
+    const dy = e.clientY - state.drag.startY;
+
+    if (state.drag.pending){
+      const dist2 = dx*dx + dy*dy;
+      if (dist2 < 16) return;
+
+      if (state.drag.kind === 'leftFrame'){
+        state.drag.pending = false;
+        state.drag.active = true;
+        showGhostFromFrame(state.drag.frame);
+      } else {
+        state.drag.pending = false;
+      }
+    }
+
+    if (!state.drag.active) return;
+
+    if (state.drag.kind === 'leftFrame'){
+      moveGhost(e.clientX, e.clientY);
+      const over = findRightCellUnderPointer(e.clientX, e.clientY);
+      state.right.hoverIndex = over;
+      drawRight();
+    } else if (state.drag.kind === 'moveItem'){
+      const idx = state.drag.cellIndex;
+      if (idx == null) return;
+      const cell = state.right.grid[idx];
+      if (!cell?.item) return;
+
+      cell.item.dx = int(state.drag.grab.x + dx);
+      cell.item.dy = int(state.drag.grab.y + dy);
+
+      drawRight();
+      updateSelectionInfo();
+      updateButtons();
+    }
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (!state.drag.pending && !state.drag.active) return;
+
+    if (state.drag.pending){
+      state.drag.pending = false;
+      state.drag.kind = null;
+      return;
+    }
+
+    if (state.drag.active){
+      if (state.drag.kind === 'leftFrame'){
+        hideGhost();
+        const target = findRightCellUnderPointer(e.clientX, e.clientY);
+        state.right.hoverIndex = null;
+        if (target != null){
+          pasteFrameToCell(state.drag.frame, target);
+        } else {
+          drawRight();
+        }
+      }
+    }
+
+    state.drag.active = false;
+    state.drag.kind = null;
+    state.drag.frame = null;
+    state.drag.cellIndex = null;
+  });
+
+  // ===== Keyboard shortcuts =====
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+
+    const key = e.key;
+
+    if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === 'c'){
+      e.preventDefault();
+      if (state.lastActivePane === 'right') setClipboardFromRightCell();
+      else setClipboardFromLeft();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === 'v'){
+      e.preventDefault();
+      pasteClipboardToSelectedCell();
+      return;
+    }
+
+    if (key === 'Delete' || key === 'Backspace'){
+      if (state.right.selectedIndex != null){
+        e.preventDefault();
+        clearSelectedCell();
+      }
+      return;
+    }
+
+    // nudge with arrows
+    const idx = state.right.selectedIndex;
+    if (idx == null) return;
+    const cell = state.right.grid[idx];
+    if (!cell?.item) return;
+
+    const step = e.shiftKey ? 5 : 1;
+    let changed = false;
+
+    if (key === 'ArrowLeft'){ cell.item.dx -= step; changed = true; }
+    if (key === 'ArrowRight'){ cell.item.dx += step; changed = true; }
+    if (key === 'ArrowUp'){ cell.item.dy -= step; changed = true; }
+    if (key === 'ArrowDown'){ cell.item.dy += step; changed = true; }
+
+    if (changed){
+      e.preventDefault();
+      drawRight();
+      updateSelectionInfo();
+      updateButtons();
+    }
+  });
+
+  // ===== Init =====
+  updateLeftFromInputs();
+  updateRightFromInputs();
+  ensureRightGrid(false);
+  drawLeft();
+  drawRight();
+  renderAnimFrame(0);
+  updateButtons();
+
+  window.addEventListener('resize', () => {
+    drawLeft();
+    drawRight();
+    updateSelectionInfo();
+  });
+
+})();
+</script>
+</body>
+</html>
