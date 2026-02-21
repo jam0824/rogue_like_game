@@ -1,4 +1,4 @@
-const ENEMY_DB_FALLBACK_FILE_NAMES = ["BrownMushroom_01.json"];
+const ENEMY_DB_FALLBACK_FILE_NAMES = ["Bee_01.json", "BrownMushroom_01.json"];
 
 const REQUIRED_KEYS = [
   "name_key",
