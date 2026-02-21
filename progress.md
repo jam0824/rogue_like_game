@@ -1313,3 +1313,34 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - Playwright run (`web_game_playwright_client.js`, `tests/actions/enemy_idle_walk.json`) captured `output/web-game-bite-stop/shot-0.png` and `state-0.json`; state confirms enemy weapons now resolve to `weapon_enemy_bite_01` + `formation_id_stop01`.
 - 2026-02-21: Full unit suite re-run after stop+bite integration -> PASS (`37 files / 228 tests`).
 - 2026-02-21: Fixed `db/skill_db/skill_id_bite_01.json` shape to spec-compliant attack format by moving `hit.pierce_count` under `params.hit`; verified with `tests/unit/skillDb.test.js` and `npm run check:enemy-skill-chain`.
+- 2026-02-21: Implemented `hit_box_per` support for attack hitbox sizing (projectile + aoe).
+  - `src/skill/skillDb.js`:
+    - added `normalizeHitBoxPer(...)` with auto-correction rule.
+    - projectile normalization now exposes `params.projectile.hitBoxPer`.
+    - aoe normalization now exposes `params.aoe.hitBoxPer`.
+    - invalid/missing values (`<=0`, `>1`, non-number, omitted) now resolve to `1`.
+  - `src/combat/skillChainSystem.js`:
+    - `resolveAttackStep(...)` now propagates `hitBoxPer` into resolved `projectile`/`aoe` configs.
+    - `resolveHitboxSizeFromEffectRuntime(...)` now applies `hitBoxPer` ratio to effect-size-derived hitbox dimensions.
+    - player/enemy projectile spawn and aoe hitbox resolution now pass `hitBoxPer` into hitbox size calculation.
+  - `db/skill_db/skill_db_template/*.json`:
+    - added `hit_box_per` example fields to projectile and aoe attack templates.
+- 2026-02-21: Added regression tests for `hit_box_per`.
+  - `tests/unit/skillDb.test.js`:
+    - explicit `hit_box_per=0.5` normalization assertion.
+    - default/invalid (`omitted`, `2`, `-0.2`) auto-correction assertions to `1`.
+  - `tests/unit/skillChainSystem.test.js`:
+    - player projectile hitbox size reflects `hitBoxPer`.
+    - enemy projectile hitbox size reflects `hitBoxPer`.
+    - aoe boundary case verifies reduced `hitBoxPer` can remove hits that default size would hit.
+- 2026-02-21: Validation complete for `hit_box_per`.
+  - `npm run unit -- tests/unit/skillDb.test.js tests/unit/skillChainSystem.test.js` -> PASS (2 files, 23 tests)
+  - `npm run check:skill-chain` -> PASS
+  - `npm run check:enemy-skill-chain` -> PASS
+  - `npm run test:checks` -> PASS
+- 2026-02-21: Playwright verification run completed with skill client.
+  - command: `node "$WEB_GAME_CLIENT" --url http://127.0.0.1:4173 --actions-file /Users/mineo.matsuya/Desktop/code/rogue_like_game/tests/actions/skill_chain_projectile_poison_explosion.json --iterations 1 --pause-ms 250 --screenshot-dir /Users/mineo.matsuya/Desktop/code/rogue_like_game/output/web-game-hit-box-per`
+  - artifacts reviewed: `output/web-game-hit-box-per/shot-0.png`, `output/web-game-hit-box-per/state-0.json`
+  - no `errors-*.json` artifacts generated.
+- 2026-02-21: Post-change full unit suite re-run for `hit_box_per` branch.
+  - `npm run unit` -> PASS (37 files, 232 tests)

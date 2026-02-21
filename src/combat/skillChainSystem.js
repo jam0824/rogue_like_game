@@ -217,6 +217,12 @@ function resolveAttackStep(entry, modifiers) {
             moveDirection: params.projectile?.moveDirection === "to_target" ? "to_target" : "to_target",
             spriteEffectId:
               typeof params.projectile?.spriteEffectId === "string" ? params.projectile.spriteEffectId : "",
+            hitBoxPer:
+              Number.isFinite(params.projectile?.hitBoxPer) &&
+              params.projectile.hitBoxPer > 0 &&
+              params.projectile.hitBoxPer <= 1
+                ? params.projectile.hitBoxPer
+                : 1,
             disappearHitWall: params.projectile?.disappearHitWall !== false,
           }
         : null,
@@ -224,6 +230,10 @@ function resolveAttackStep(entry, modifiers) {
       params.attackKind === "aoe"
         ? {
             spriteEffectId: typeof params.aoe?.spriteEffectId === "string" ? params.aoe.spriteEffectId : "",
+            hitBoxPer:
+              Number.isFinite(params.aoe?.hitBoxPer) && params.aoe.hitBoxPer > 0 && params.aoe.hitBoxPer <= 1
+                ? params.aoe.hitBoxPer
+                : 1,
             hitIntervalSec: Math.max(0, toFiniteNumber(params.aoe?.hitIntervalSec, 0)),
           }
         : null,
@@ -664,17 +674,15 @@ function tryConsumeChainSpawnBudget(runtime, attackSeq) {
   return true;
 }
 
-function resolveHitboxSizeFromEffectRuntime(effectRuntime, fallbackSize = TILE_SIZE) {
-  if (!effectRuntime) {
-    return {
-      width: fallbackSize,
-      height: fallbackSize,
-    };
-  }
+function resolveHitboxSizeFromEffectRuntime(effectRuntime, fallbackSize = TILE_SIZE, hitBoxPer = 1) {
+  const ratio = Number.isFinite(hitBoxPer) && hitBoxPer > 0 && hitBoxPer <= 1 ? hitBoxPer : 1;
+  const scale = Math.max(0.0001, toFiniteNumber(effectRuntime?.scale, 1));
+  const baseWidth = effectRuntime ? toFiniteNumber(effectRuntime.width, fallbackSize) * scale : fallbackSize;
+  const baseHeight = effectRuntime ? toFiniteNumber(effectRuntime.height, fallbackSize) * scale : fallbackSize;
 
   return {
-    width: Math.max(1, toFiniteNumber(effectRuntime.width, fallbackSize) * Math.max(0.0001, toFiniteNumber(effectRuntime.scale, 1))),
-    height: Math.max(1, toFiniteNumber(effectRuntime.height, fallbackSize) * Math.max(0.0001, toFiniteNumber(effectRuntime.scale, 1))),
+    width: Math.max(1, baseWidth * ratio),
+    height: Math.max(1, baseHeight * ratio),
   };
 }
 
@@ -743,7 +751,7 @@ function spawnProjectile({
     }
   }
 
-  const hitbox = resolveHitboxSizeFromEffectRuntime(projectileEffectRuntime, TILE_SIZE);
+  const hitbox = resolveHitboxSizeFromEffectRuntime(projectileEffectRuntime, TILE_SIZE, projectileConfig.hitBoxPer);
 
   runtime.projectiles.push({
     id: projectileId,
@@ -783,7 +791,7 @@ function resolveAoeHitbox(attack, spawnX, spawnY, effects, buildEffectRuntime) {
     }
   }
 
-  const hitbox = resolveHitboxSizeFromEffectRuntime(effectRuntime, TILE_SIZE);
+  const hitbox = resolveHitboxSizeFromEffectRuntime(effectRuntime, TILE_SIZE, aoeConfig.hitBoxPer);
 
   return {
     aabb: buildAabbFromCenter(spawnX, spawnY, hitbox.width, hitbox.height),
@@ -1473,7 +1481,7 @@ function spawnEnemySkillProjectile({
     }
   }
 
-  const hitbox = resolveHitboxSizeFromEffectRuntime(projectileEffectRuntime, TILE_SIZE);
+  const hitbox = resolveHitboxSizeFromEffectRuntime(projectileEffectRuntime, TILE_SIZE, projectileConfig.hitBoxPer);
   runtime.projectiles.push({
     id: projectileId,
     attackSeq,

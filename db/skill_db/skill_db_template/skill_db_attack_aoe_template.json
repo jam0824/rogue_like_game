@@ -16,6 +16,7 @@
       "chain_trigger": "on_hit",
       "aoe": {
         "sprite_effect_id": "effect_id_explosion_01",
+        "hit_box_per": 1.0,
         "hit_interval_sec": 0.0
       }
     },

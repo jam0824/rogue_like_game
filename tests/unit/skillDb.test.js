@@ -26,6 +26,7 @@ function createSkillRecord(overrides = {}) {
         life_sec: 1.2,
         move_direction: "to_target",
         sprite_effect_id: "effect_id_proj_basic_01",
+        hit_box_per: 0.5,
         disappear_hit_wall: true,
       },
     },
@@ -161,9 +162,77 @@ describe("skillDb", () => {
         baseDamage: 10,
         projectile: {
           spriteEffectId: "effect_id_proj_basic_01",
+          hitBoxPer: 0.5,
         },
       },
     });
+  });
+
+  it("hit_box_per は省略時/不正値で 1.0 に自動補正される", async () => {
+    setupFetchMock({
+      fileNames: ["skill_id_aoe_invalid.json", "skill_id_projectile_default.json", "skill_id_projectile_invalid.json"],
+      recordsByFileName: {
+        "skill_id_projectile_default.json": createSkillRecord({
+          id: "skill_id_projectile_default",
+          params: {
+            attack_kind: "projectile",
+            base_damage: 10,
+            damage_element: "physical",
+            start_spawn_timing: "start",
+            chain_trigger: "on_hit",
+            projectile: {
+              speed_tile_per_sec: 10,
+              life_sec: 1.2,
+              move_direction: "to_target",
+              sprite_effect_id: "effect_id_proj_basic_01",
+              disappear_hit_wall: true,
+            },
+          },
+        }),
+        "skill_id_projectile_invalid.json": createSkillRecord({
+          id: "skill_id_projectile_invalid",
+          params: {
+            attack_kind: "projectile",
+            base_damage: 10,
+            damage_element: "physical",
+            start_spawn_timing: "start",
+            chain_trigger: "on_hit",
+            projectile: {
+              speed_tile_per_sec: 10,
+              life_sec: 1.2,
+              move_direction: "to_target",
+              sprite_effect_id: "effect_id_proj_basic_01",
+              hit_box_per: 2,
+              disappear_hit_wall: true,
+            },
+          },
+        }),
+        "skill_id_aoe_invalid.json": createSkillRecord({
+          id: "skill_id_aoe_invalid",
+          params: {
+            attack_kind: "aoe",
+            base_damage: 12,
+            damage_element: "fire",
+            start_spawn_timing: "hit",
+            chain_trigger: "on_hit",
+            aoe: {
+              sprite_effect_id: "effect_id_explosion_01",
+              hit_box_per: -0.2,
+              hit_interval_sec: 0,
+            },
+          },
+        }),
+      },
+    });
+
+    const definitions = await loadSkillDefinitions();
+    const projectileDefault = definitions.find((definition) => definition.id === "skill_id_projectile_default");
+    const projectileInvalid = definitions.find((definition) => definition.id === "skill_id_projectile_invalid");
+    const aoeInvalid = definitions.find((definition) => definition.id === "skill_id_aoe_invalid");
+
+    expect(projectileDefault?.params?.projectile?.hitBoxPer).toBe(1);
+    expect(projectileInvalid?.params?.projectile?.hitBoxPer).toBe(1);
+    expect(aoeInvalid?.params?.aoe?.hitBoxPer).toBe(1);
   });
 
   it("required key 欠落はエラーになる", async () => {

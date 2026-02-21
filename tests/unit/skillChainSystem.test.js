@@ -305,6 +305,160 @@ describe("skillChainSystem", () => {
     expect(plan.attackSteps[0].skillId).toBe("skill_id_projectile_01");
   });
 
+  it("projectile の hitBoxPer は player 側の projectile hitbox サイズに反映される", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.hitBoxPer = 0.5;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const weaponRuntime = {
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    };
+
+    updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [createEnemy("enemy-a", 300, 300, 100)],
+      effects: [],
+      weapons: [weaponRuntime],
+      weaponStartEvents: [{ weaponId: "weapon-0", weaponDefId: "weapon_sword_01", attackSeq: 1, worldX: 116, worldY: 116 }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+    });
+
+    const projectile = weaponRuntime?.skillChainRuntime?.projectiles?.[0];
+    expect(projectile).toBeTruthy();
+    expect(projectile.hitboxWidth).toBeCloseTo(8, 5);
+    expect(projectile.hitboxHeight).toBeCloseTo(8, 5);
+  });
+
+  it("projectile の hitBoxPer は enemy 側の projectile hitbox サイズに反映される", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.hitBoxPer = 0.5;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-caster", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+
+    updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const projectile = weapon?.skillChainRuntime?.projectiles?.[0];
+    expect(projectile).toBeTruthy();
+    expect(projectile.hitboxWidth).toBeCloseTo(8, 5);
+    expect(projectile.hitboxHeight).toBeCloseTo(8, 5);
+  });
+
+  it("aoe の hitBoxPer 縮小で境界上の敵に当たらなくなる", () => {
+    function runAoeHitCount(hitBoxPer) {
+      const dungeon = createDungeon();
+      const player = createPlayer();
+      const aoeConfig = {
+        spriteEffectId: "effect_id_explosion_01",
+        hitIntervalSec: 0,
+      };
+      if (Number.isFinite(hitBoxPer)) {
+        aoeConfig.hitBoxPer = hitBoxPer;
+      }
+
+      const skillDefinitionsById = {
+        skill_id_aoe_boundary: {
+          id: "skill_id_aoe_boundary",
+          skillType: "attack",
+          params: {
+            attackKind: "aoe",
+            baseDamage: 10,
+            damageElement: "fire",
+            startSpawnTiming: "start",
+            chainTrigger: "on_hit",
+            hit: { hitNum: 1, pierceCount: 0 },
+            aoe: aoeConfig,
+          },
+        },
+      };
+
+      const weaponDefinition = createWeaponDefinition([{ id: "skill_id_aoe_boundary", plus: 0 }]);
+      const weaponDefinitionsById = {
+        weapon_sword_01: weaponDefinition,
+      };
+      const weaponRuntime = {
+        id: "weapon-0",
+        weaponDefId: "weapon_sword_01",
+        x: 100,
+        y: 100,
+        width: 32,
+        height: 32,
+        attackSeq: 1,
+        skillInstances: weaponDefinition.skills,
+      };
+      const enemies = [createEnemy("enemy-edge", 155, 108, 220)];
+
+      const result = updateSkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies,
+        effects: [],
+        weapons: [weaponRuntime],
+        weaponStartEvents: [{ weaponId: "weapon-0", weaponDefId: "weapon_sword_01", attackSeq: 1, worldX: 116, worldY: 116 }],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime: createBuildEffectRuntime(),
+      });
+
+      return result.events.filter(
+        (event) =>
+          event?.kind === "damage" &&
+          event?.targetType === "enemy" &&
+          event?.sourceType === "skill" &&
+          event?.skillId === "skill_id_aoe_boundary"
+      ).length;
+    }
+
+    expect(runAoeHitCount(undefined)).toBe(1);
+    expect(runAoeHitCount(0.5)).toBe(0);
+  });
+
   it("projectile -> poison -> explosion が連鎖し、爆発AoEが複数敵に当たり poison DoT が発生する", () => {
     const dungeon = createDungeon();
     const player = createPlayer();

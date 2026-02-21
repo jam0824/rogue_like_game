@@ -19,6 +19,7 @@
         "life_sec": 1.2,
         "move_direction": "to_target",
         "sprite_effect_id": "effect_id_proj_basic_01",
+        "hit_box_per": 1.0,
         "disappear_hit_wall":false
       }
     },

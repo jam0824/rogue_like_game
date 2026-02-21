@@ -38,6 +38,19 @@ function toNonNegativeNumber(value, fallback) {
   return Math.max(0, toFiniteNumber(value, fallback));
 }
 
+function normalizeHitBoxPer(value) {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  const numeric = Number(value);
+  if (numeric <= 0 || numeric > 1) {
+    return 1;
+  }
+
+  return numeric;
+}
+
 function normalizeStringArray(raw, fallback = []) {
   if (!Array.isArray(raw)) {
     return fallback.slice();
@@ -190,6 +203,7 @@ function normalizeAttackParams(rawSkill, fileName) {
       lifeSec: Number(rawProjectile.life_sec),
       moveDirection,
       spriteEffectId,
+      hitBoxPer: normalizeHitBoxPer(rawProjectile.hit_box_per),
       disappearHitWall: rawProjectile.disappear_hit_wall !== false,
     };
   }
@@ -210,6 +224,7 @@ function normalizeAttackParams(rawSkill, fileName) {
 
     aoe = {
       spriteEffectId,
+      hitBoxPer: normalizeHitBoxPer(rawAoe.hit_box_per),
       hitIntervalSec,
     };
   }
