@@ -22,6 +22,7 @@
         "life_sec": 1.0,
         "move_direction": "to_target",
         "sprite_effect_id": "effect_id_bite_01",
+        "hit_box_per":0.5,
         "disappear_hit_wall":false
       }
     },
