@@ -207,6 +207,9 @@
         <label>列数 <input id="dstCols" type="number" min="1" value="8"></label>
         <label>段数 <input id="dstRows" type="number" min="1" value="1"></label>
 
+        <!-- ★右カラム拡大スライダー -->
+        <label>表示倍率 <input id="dstZoom" type="range" min="0.25" max="6" step="0.25" value="1"></label>
+
         <button id="btnApplyGrid" type="button" class="primary">グリッド作成/更新</button>
 
         <span class="checkbox">
@@ -242,13 +245,16 @@
           <button id="btnExport" type="button" class="primary" disabled>横一列PNGとして保存</button>
 
           <div class="small" style="border:0;padding:0">
-            移動：マス内の絵をドラッグ。微調整：矢印キー（<span class="kbd">Shift</span>で5px）。<br>
+            移動：マス内の絵をドラッグ。矢印キーで5px移動（<span class="kbd">Shift</span>で1px微調整）。<br>
             消去：<span class="kbd">Del</span>。コピー/貼付：<span class="kbd">Ctrl</span>+<span class="kbd">C</span>/<span class="kbd">V</span>。
           </div>
         </div>
 
-        <div class="previewCanvasWrap">
-          <canvas id="previewCanvas"></canvas>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="previewCanvasWrap">
+            <canvas id="previewCanvas"></canvas>
+          </div>
+          <div id="frameLabel" style="font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;">— / —</div>
         </div>
       </div>
     </section>
@@ -279,6 +285,7 @@
     dstCellH: document.getElementById('dstCellH'),
     dstCols: document.getElementById('dstCols'),
     dstRows: document.getElementById('dstRows'),
+    dstZoom: document.getElementById('dstZoom'), // ★追加
     btnApplyGrid: document.getElementById('btnApplyGrid'),
     autoCenter: document.getElementById('autoCenter'),
     btnPasteToCell: document.getElementById('btnPasteToCell'),
@@ -296,6 +303,7 @@
     previewCanvas: document.getElementById('previewCanvas'),
 
     dragGhost: document.getElementById('dragGhost'),
+    frameLabel: document.getElementById('frameLabel'),
   };
 
   const state = {
@@ -313,6 +321,7 @@
       cellH: 64,
       cols: 8,
       rows: 1,
+      zoom: 1, // ★追加（右カラム表示倍率）
       grid: [], // { item: {sx,sy,sw,sh,dx,dy} | null }
       selectedIndex: null,
       hoverIndex: null,
@@ -373,6 +382,7 @@
     state.right.cellH = Math.max(1, int(Number(el.dstCellH.value)));
     state.right.cols = Math.max(1, int(Number(el.dstCols.value)));
     state.right.rows = Math.max(1, int(Number(el.dstRows.value)));
+    state.right.zoom = Math.max(0.25, Number(el.dstZoom.value) || 1); // ★追加
   }
 
   function ensureRightGrid(preserve=true){
@@ -418,11 +428,11 @@
     return {col, row, sx, sy, sw: frameW, sh: frameH};
   }
 
-  function getRightCellIndex(xCss, yCss){
+  function getRightCellIndex(xLogical, yLogical){
     const {cellW, cellH, cols, rows} = state.right;
-    if (xCss < 0 || yCss < 0) return null;
-    const col = Math.floor(xCss / cellW);
-    const row = Math.floor(yCss / cellH);
+    if (xLogical < 0 || yLogical < 0) return null;
+    const col = Math.floor(xLogical / cellW);
+    const row = Math.floor(yLogical / cellH);
     if (col < 0 || row < 0 || col >= cols || row >= rows) return null;
     return row*cols + col;
   }
@@ -481,18 +491,33 @@
     }
   }
 
+  // ★右カラム：ズーム対応描画
   function drawRight(){
     const ctx = el.rightCanvas.getContext('2d');
     const {cellW, cellH, cols, rows, grid} = state.right;
-    const cssW = cellW * cols;
-    const cssH = cellH * rows;
+
+    const z = state.right.zoom || 1;
+
+    const logicalW = cellW * cols;
+    const logicalH = cellH * rows;
+
+    const cssW = logicalW * z;
+    const cssH = logicalH * z;
+
     setCanvasSize(el.rightCanvas, cssW, cssH);
     clearCanvas(ctx, cssW, cssH);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    // 論理座標で描いて、ctx側で拡大
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
+
+    const px = 0.5 / z;   // 1px揃え
+    const lw1 = 1 / z;
+    const lw2 = 2 / z;
+    const lw3 = 3 / z;
 
     // bg
     ctx.fillStyle = 'rgba(13,15,20,1)';
-    ctx.fillRect(0,0,cssW,cssH);
+    ctx.fillRect(0,0,logicalW,logicalH);
 
     // items
     if (state.srcImg){
@@ -521,29 +546,30 @@
 
     // grid lines
     ctx.strokeStyle = 'rgba(232,238,247,0.18)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = lw1;
     ctx.beginPath();
-    for(let x=0; x<=cssW; x+=cellW){
-      const xx = x + 0.5;
+    for(let x=0; x<=logicalW; x+=cellW){
+      const xx = x + px;
       ctx.moveTo(xx, 0);
-      ctx.lineTo(xx, cssH);
+      ctx.lineTo(xx, logicalH);
     }
-    for(let y=0; y<=cssH; y+=cellH){
-      const yy = y + 0.5;
+    for(let y=0; y<=logicalH; y+=cellH){
+      const yy = y + px;
       ctx.moveTo(0, yy);
-      ctx.lineTo(cssW, yy);
+      ctx.lineTo(logicalW, yy);
     }
     ctx.stroke();
 
     // center cross (faint)
     ctx.strokeStyle = 'rgba(232,238,247,0.10)';
+    ctx.lineWidth = lw1;
     ctx.beginPath();
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const x0 = c*cellW;
         const y0 = r*cellH;
-        const cx = x0 + cellW/2 + 0.5;
-        const cy = y0 + cellH/2 + 0.5;
+        const cx = x0 + cellW/2 + px;
+        const cy = y0 + cellH/2 + px;
         ctx.moveTo(cx, y0);
         ctx.lineTo(cx, y0 + cellH);
         ctx.moveTo(x0, cy);
@@ -558,8 +584,9 @@
       const r = Math.floor(i/cols);
       const c = i%cols;
       ctx.strokeStyle = 'rgba(110,168,254,0.60)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(c*cellW+1, r*cellH+1, cellW-2, cellH-2);
+      ctx.lineWidth = lw2;
+      const inset = 1 / z;
+      ctx.strokeRect(c*cellW + inset, r*cellH + inset, cellW - inset*2, cellH - inset*2);
     }
 
     // selected highlight
@@ -568,8 +595,9 @@
       const r = Math.floor(i/cols);
       const c = i%cols;
       ctx.strokeStyle = 'rgba(255, 200, 80, 0.95)';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(c*cellW+1.5, r*cellH+1.5, cellW-3, cellH-3);
+      ctx.lineWidth = lw3;
+      const inset = 1.5 / z;
+      ctx.strokeRect(c*cellW + inset, r*cellH + inset, cellW - inset*2, cellH - inset*2);
     }
   }
 
@@ -743,14 +771,24 @@
     return seq;
   }
 
+  function updateFrameLabel(current, total){
+    if (total <= 0){
+      el.frameLabel.textContent = '— / —';
+    } else {
+      el.frameLabel.textContent = `${current + 1} / ${total}`;
+    }
+  }
+
   function renderAnimFrame(index){
     const seq = buildFrameSequence();
     if (seq.length === 0){
       drawPreview(null);
+      updateFrameLabel(0, 0);
       return;
     }
     const i = ((index % seq.length) + seq.length) % seq.length;
     drawPreview(seq[i]);
+    updateFrameLabel(i, seq.length);
   }
 
   function startAnimation(){
@@ -793,6 +831,7 @@
     const seq = buildFrameSequence();
     if (seq.length === 0){
       drawPreview(null);
+      updateFrameLabel(0, 0);
       return;
     }
     state.anim.forcedIndex = (state.anim.forcedIndex + 1) % seq.length;
@@ -931,6 +970,12 @@
     updateRightFromInputs();
     ensureRightGrid(true);
   });
+  el.dstZoom.addEventListener('input', () => { // ★追加：右ズーム変えたら再描画
+    updateRightFromInputs();
+    drawRight();
+    updateSelectionInfo();
+  });
+
   el.btnPasteToCell.addEventListener('click', () => pasteClipboardToSelectedCell());
   el.btnClearCell.addEventListener('click', () => clearSelectedCell());
   el.btnClearAll.addEventListener('click', () => clearAllCells());
@@ -966,11 +1011,18 @@
   }
   function hideGhost(){ el.dragGhost.style.display = 'none'; }
 
+  // ★ズーム対応：右Canvas上のポインタ位置 → セルindex
   function findRightCellUnderPointer(clientX, clientY){
     const rect = el.rightCanvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+    const z = state.right.zoom || 1;
+
+    const x = (clientX - rect.left) / z;
+    const y = (clientY - rect.top) / z;
+
+    const w = rect.width / z;
+    const h = rect.height / z;
+
+    if (x < 0 || y < 0 || x > w || y > h) return null;
     return getRightCellIndex(x, y);
   }
 
@@ -1007,7 +1059,11 @@
     state.lastActivePane = 'right';
 
     const {x, y} = getMouseInCanvas(e, el.rightCanvas);
-    const idx = getRightCellIndex(x, y);
+    const z = state.right.zoom || 1;
+    const zx = x / z;   // 論理座標
+    const zy = y / z;
+
+    const idx = getRightCellIndex(zx, zy);
     state.right.selectedIndex = idx;
 
     updateSelectionInfo();
@@ -1022,8 +1078,10 @@
     const {cellW, cellH, cols} = state.right;
     const r = Math.floor(idx/cols);
     const c = idx%cols;
-    const localX = x - c*cellW;
-    const localY = y - r*cellH;
+
+    const localX = zx - c*cellW;
+    const localY = zy - r*cellH;
+
     const it = cell.item;
 
     const withinItem = (localX >= it.dx && localX <= it.dx + it.sw && localY >= it.dy && localY <= it.dy + it.sh);
@@ -1034,7 +1092,7 @@
     state.drag.active = true;
     state.drag.kind = 'moveItem';
     state.drag.cellIndex = idx;
-    state.drag.startX = e.clientX;
+    state.drag.startX = e.clientX; // CSS座標で保持
     state.drag.startY = e.clientY;
     state.drag.grab = {x: it.dx, y: it.dy};
 
@@ -1045,11 +1103,11 @@
   window.addEventListener('mousemove', (e) => {
     if (!state.drag.pending && !state.drag.active) return;
 
-    const dx = e.clientX - state.drag.startX;
-    const dy = e.clientY - state.drag.startY;
+    const dxCss = e.clientX - state.drag.startX;
+    const dyCss = e.clientY - state.drag.startY;
 
     if (state.drag.pending){
-      const dist2 = dx*dx + dy*dy;
+      const dist2 = dxCss*dxCss + dyCss*dyCss;
       if (dist2 < 16) return;
 
       if (state.drag.kind === 'leftFrame'){
@@ -1074,8 +1132,10 @@
       const cell = state.right.grid[idx];
       if (!cell?.item) return;
 
-      cell.item.dx = int(state.drag.grab.x + dx);
-      cell.item.dy = int(state.drag.grab.y + dy);
+      // ★ズーム分だけ移動量を補正（論理座標でdx/dyに反映）
+      const z = state.right.zoom || 1;
+      cell.item.dx = int(state.drag.grab.x + dxCss / z);
+      cell.item.dy = int(state.drag.grab.y + dyCss / z);
 
       drawRight();
       updateSelectionInfo();
