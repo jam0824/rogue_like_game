@@ -1244,17 +1244,28 @@ function buildEnemyAttackProfilesByDbId() {
       }
 
       const formationDefinition = formationDefinitionsById?.[formationId];
-      if (!formationDefinition || formationDefinition.type !== "circle") {
+      if (!formationDefinition) {
         continue;
       }
 
-      const angularSpeed = Number(formationDefinition.angularSpeedBase) || 0;
+      const formationType = formationDefinition.type;
+      const isCircleFormation = formationType === "circle";
+      const isStopFormation = formationType === "stop";
+      if (!isCircleFormation && !isStopFormation) {
+        continue;
+      }
+
+      const angularSpeed = isCircleFormation ? Number(formationDefinition.angularSpeedBase) || 0 : 0;
       const executeDurationSec =
         Math.abs(angularSpeed) <= 0.0001 ? 0 : (Math.PI * 2 * attackCycles) / Math.abs(angularSpeed);
+      const weaponVisibleParam =
+        formationDefinition?.params?.weaponVisible ?? formationDefinition?.params?.weapon_visible;
+      const forceHidden = isStopFormation ? weaponVisibleParam !== true : false;
 
       resolvedWeapons.push({
         weaponDefId: weaponDefinition.id,
         formationId,
+        formationType,
         baseDamage: Number(weaponDefinition.baseDamage) || 0,
         skills: Array.isArray(weaponInstance.skills)
           ? weaponInstance.skills
@@ -1266,14 +1277,17 @@ function buildEnemyAttackProfilesByDbId() {
           : [],
         width: weaponDefinition.width,
         height: weaponDefinition.height,
-        radiusPx: (Number(formationDefinition.radiusBase) || 0) * TILE_SIZE,
+        radiusPx: isCircleFormation ? (Number(formationDefinition.radiusBase) || 0) * TILE_SIZE : 0,
         angularSpeed,
-        centerMode: formationDefinition?.params?.centerMode ?? formationDefinition?.params?.center_mode ?? "player",
-        biasStrengthMul: Number(formationDefinition.biasStrengthMul) || 0,
-        biasResponseMul: Number(formationDefinition.biasResponseMul) || 0,
-        biasOffsetRatioMax: Number(formationDefinition?.clamp?.biasOffsetRatioMax),
+        centerMode: isCircleFormation
+          ? formationDefinition?.params?.centerMode ?? formationDefinition?.params?.center_mode ?? "player"
+          : "player",
+        biasStrengthMul: isCircleFormation ? Number(formationDefinition.biasStrengthMul) || 0 : 0,
+        biasResponseMul: isCircleFormation ? Number(formationDefinition.biasResponseMul) || 0 : 0,
+        biasOffsetRatioMax: isCircleFormation ? Number(formationDefinition?.clamp?.biasOffsetRatioMax) : 0,
         executeDurationSec,
-        supported: true,
+        supported: isCircleFormation,
+        forceHidden,
       });
 
       executeDurationsSec.push(executeDurationSec);

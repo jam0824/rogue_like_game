@@ -8,6 +8,10 @@ function loadImage(src) {
 }
 
 async function loadAssetForDefinition(definition) {
+  if (typeof definition?.weaponFileName !== "string" || definition.weaponFileName.length <= 0) {
+    return [definition.id, null];
+  }
+
   const src = new URL(`../../graphic/weapon/weapon_tip/${definition.weaponFileName}`, import.meta.url).href;
   const image = await loadImage(src);
 

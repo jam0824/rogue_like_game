@@ -1,4 +1,10 @@
-const EFFECT_DB_FALLBACK_FILE_NAMES = ["effect_id_sword_slash_01.json"];
+const EFFECT_DB_FALLBACK_FILE_NAMES = [
+  "effect_id_sword_slash_01.json",
+  "effect_id_proj_basic_01.json",
+  "effect_id_explosion_01.json",
+  "effect_id_explosion_02.json",
+  "effect_id_bite_01.json",
+];
 
 const REQUIRED_KEYS = [
   "id",

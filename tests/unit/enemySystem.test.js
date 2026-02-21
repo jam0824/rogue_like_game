@@ -526,6 +526,54 @@ describe("enemySystem", () => {
     expect(player.hp).toBe(26);
   });
 
+  it("forceHidden + supported=false の敵武器は攻撃中も非表示で直接接触ダメージを出さない", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-skill-only-hidden-01" });
+    const attackProfile = createEnemyAttackProfile({
+      windupSec: 0,
+      executeSec: 0.2,
+      recoverSec: 0,
+      cooldownAfterRecoverSec: 0.1,
+      attackRangePx: 999,
+      weapons: [
+        {
+          weaponDefId: "weapon_enemy_bite_01",
+          width: 0,
+          height: 0,
+          radiusPx: 0,
+          angularSpeed: 0,
+          executeDurationSec: 0.2,
+          supported: false,
+          forceHidden: true,
+        },
+      ],
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-skill-only-hidden-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    const player = createPlayer({
+      x: enemy.x,
+      y: enemy.y,
+      hp: 30,
+      maxHp: 30,
+    });
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const [weapon] = getEnemyWeaponRuntimes(enemy);
+    expect(enemy.attack.phase).toBe("attack");
+    expect(weapon.visible).toBe(false);
+    expect(weapon.supported).toBe(false);
+
+    const events = updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(events).toHaveLength(0);
+    expect(player.hp).toBe(30);
+    expect(weapon.visible).toBe(false);
+  });
+
   it("被ダメ無効オプション時は演出イベントのみ発行しHPは減らない", () => {
     const dungeon = createDungeon();
     const enemyDef = createEnemyDefinition({ id: "enemy-preview-only-01" });

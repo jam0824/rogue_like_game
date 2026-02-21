@@ -14,9 +14,12 @@
       "damage_element": "physical",
       "start_spawn_timing": "start",
       "chain_trigger": "on_hit",
+      "hit": {
+        "pierce_count": 99
+      },
       "projectile": {
-        "speed_tile_per_sec": 10.0,
-        "life_sec": 1.2,
+        "speed_tile_per_sec": 4.0,
+        "life_sec": 1.0,
         "move_direction": "to_target",
         "sprite_effect_id": "effect_id_bite_01",
         "disappear_hit_wall":false

@@ -699,6 +699,105 @@ describe("skillChainSystem", () => {
     expect(player.hp).toBeLessThan(200);
   });
 
+  it("不可視 skill専用敵武器（stop想定）でも start event から projectile を発射して player に命中する", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = {
+      skill_id_bite_01: {
+        id: "skill_id_bite_01",
+        skillType: "attack",
+        params: {
+          attackKind: "projectile",
+          baseDamage: 15,
+          damageElement: "physical",
+          startSpawnTiming: "start",
+          chainTrigger: "on_hit",
+          hit: { hitNum: 1, pierceCount: 0 },
+          projectile: {
+            speedTilePerSec: 10,
+            lifeSec: 1.2,
+            moveDirection: "to_target",
+            spriteEffectId: "effect_id_proj_basic_01",
+            disappearHitWall: false,
+          },
+        },
+      },
+    };
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_bite_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_enemy_bite_01: {
+        ...weaponDefinition,
+        id: "weapon_enemy_bite_01",
+      },
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 180,
+      maxHp: 180,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-stop-hidden", 96, 96, [{ id: "skill_id_bite_01", plus: 0 }]);
+    const weapon = enemy.attack.weapons[0];
+    weapon.weaponDefId = "weapon_enemy_bite_01";
+    weapon.visible = false;
+    weapon.supported = false;
+    weapon.forceHidden = true;
+    weapon.width = 1;
+    weapon.height = 1;
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    let effects = [];
+    const allEvents = [];
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 112, worldY: 112 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+    effects = first.effects;
+    allEvents.push(...first.events);
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const result = updateEnemySkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies: [enemy],
+        effects,
+        weaponStartEvents: [],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+        applyPlayerHpDamage: true,
+      });
+      effects = result.effects;
+      allEvents.push(...result.events);
+    }
+
+    expect(
+      allEvents.some(
+        (event) =>
+          event?.kind === "damage" &&
+          event?.targetType === "player" &&
+          event?.sourceType === "skill" &&
+          event?.skillId === "skill_id_bite_01"
+      )
+    ).toBe(true);
+    expect(player.hp).toBeLessThan(180);
+  });
+
   it("敵スキルダメージは enemy.attackScale を反映して増加する", () => {
     const lowDamage = runEnemySingleSkillDamage({ attackScale: 1, damageMult: 1 });
     const highDamage = runEnemySingleSkillDamage({ attackScale: 2, damageMult: 1 });

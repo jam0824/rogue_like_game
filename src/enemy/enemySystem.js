@@ -686,6 +686,7 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
 
   const weapons = profileWeapons.map((weapon, index) => {
     const supported = weapon?.supported !== false;
+    const forceHidden = weapon?.forceHidden === true;
     const width = Math.max(1, toFiniteNumber(weapon?.width, 32));
     const height = Math.max(1, toFiniteNumber(weapon?.height, 32));
     const angleOffset = (index / weaponCount) * Math.PI * 2;
@@ -722,9 +723,10 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       biasResponseMul: Math.max(0, toFiniteNumber(weapon?.biasResponseMul, 0)),
       biasOffsetRatioMax: Math.max(0, toFiniteNumber(weapon?.biasOffsetRatioMax, Number.POSITIVE_INFINITY)),
       executeDurationSec: Math.max(0, toFiniteNumber(weapon?.executeDurationSec, 0)),
-      visible: visibilityMode === "always",
+      visible: forceHidden ? false : visibilityMode === "always",
       hitApplied: false,
       supported,
+      forceHidden,
     };
   });
 
@@ -1124,7 +1126,7 @@ function setEnemyWeaponVisibility(attack, visible) {
   const alwaysVisible = attack.weaponVisibilityMode === "always";
 
   for (const weapon of attack.weapons) {
-    weapon.visible = alwaysVisible ? true : visible;
+    weapon.visible = weapon.forceHidden === true ? false : alwaysVisible ? true : visible;
   }
 }
 

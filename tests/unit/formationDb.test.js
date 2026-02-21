@@ -137,4 +137,36 @@ describe("formationDb", () => {
 
     await expect(loadFormationDefinitions()).rejects.toThrow("invalid ui.icon_file_name");
   });
+
+  it("type=stop は radius/angular_speed が 0 でも読み込める", async () => {
+    setupFetchMock({
+      fileNames: ["formation_stop_01.json"],
+      recordsByFileName: {
+        "formation_stop_01.json": createFormationRecord({
+          id: "formation_id_stop01",
+          type: "stop",
+          radius_base: 0,
+          angular_speed_base: 0,
+          bias_strength_mul: 0,
+          bias_response_mul: 0,
+          params: {
+            weapon_visible: false,
+          },
+          ui: {
+            icon_file_name: "graphic/ui/icon/icon_formation/icon_formation_stop_01.png",
+            sort_order: 70,
+          },
+        }),
+      },
+    });
+
+    const formations = await loadFormationDefinitions();
+    expect(formations).toHaveLength(1);
+    expect(formations[0]).toMatchObject({
+      id: "formation_id_stop01",
+      type: "stop",
+      radiusBase: 0,
+      angularSpeedBase: 0,
+    });
+  });
 });

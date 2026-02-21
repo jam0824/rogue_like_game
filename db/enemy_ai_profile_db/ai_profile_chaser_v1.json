@@ -2,14 +2,14 @@
     "id": "ai_profile_chaser_v1",
     "role": "chaser",
   
-    "preferred_range_tiles": 2.2,
-    "engage_range_tiles": 2.0,
+    "preferred_range_tiles": 4.2,
+    "engage_range_tiles": 4.0,
     "retreat_range_tiles": 1.5,
     "strafe_chance": 0.05,
     "repath_interval_sec": 0.40,
   
-    "attack_windup_sec": 0.25,
-    "recover_sec": 0.35,
+    "attack_windup_sec": 0.5,
+    "recover_sec": 1.0,
   
     "max_active_hazards": 0,
     "ally_prefer_radius_tiles": 0,
@@ -17,7 +17,7 @@
     "weapon_aim_mode": "move_dir",
     "weapon_visibility_mode": "burst",
     "weapon_attack_cycles": 1,
-    "weapon_active_range_tiles": 2.0,
+    "weapon_active_range_tiles": 4.0,
     "weapon_cooldown_mul": 1.0,
     "los_required": true
   }

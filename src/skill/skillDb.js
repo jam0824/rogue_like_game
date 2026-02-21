@@ -2,6 +2,7 @@ const SKILL_DB_FALLBACK_FILE_NAMES = [
   "skill_id_projectile_01.json",
   "skill_id_poison_01.json",
   "skill_id_explosion_01.json",
+  "skill_id_bite_01.json",
 ];
 
 const REQUIRED_KEYS = [

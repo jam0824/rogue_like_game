@@ -6,7 +6,7 @@
         "weapon_def_id": "weapon_enemy_bite_01",
         "rarity": "common",
         "weapon_plus": 0,
-        "formation_id": "formation_id_stop_01",
+        "formation_id": "formation_id_stop01",
         "skills": [
           {"id": "skill_id_bite_01", "plus": 0}
         ]

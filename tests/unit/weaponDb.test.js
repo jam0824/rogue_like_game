@@ -194,4 +194,32 @@ describe("weaponDb", () => {
     expect(definitions[0].seKeyStartAttack).toBe("se_key_start_legacy");
     expect(definitions[0].seKeyHitAttack).toBe("se_key_hit_legacy");
   });
+
+  it("weapon/icon が null かつ width/height=0 の skill専用武器を許容する", async () => {
+    setupFetchMock({
+      fileNames: ["weapon_enemy_bite_01.json"],
+      recordsByFileName: {
+        "weapon_enemy_bite_01.json": createWeaponRecord({
+          id: "weapon_enemy_bite_01",
+          weapon_file_name: null,
+          icon_file_name: null,
+          width: 0,
+          height: 0,
+          formation_id: "formation_id_stop01",
+          skills: [{ id: "skill_id_bite_01", plus: 0 }],
+        }),
+      },
+    });
+
+    const definitions = await loadWeaponDefinitions();
+    expect(definitions).toHaveLength(1);
+    expect(definitions[0]).toMatchObject({
+      id: "weapon_enemy_bite_01",
+      weaponFileName: "",
+      iconFileName: "",
+      width: 0,
+      height: 0,
+      formationId: "formation_id_stop01",
+    });
+  });
 });

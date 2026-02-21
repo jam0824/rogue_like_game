@@ -1,4 +1,4 @@
-const FORMATION_DB_FALLBACK_FILE_NAMES = ["formation_circle_01.json"];
+const FORMATION_DB_FALLBACK_FILE_NAMES = ["formation_circle_01.json", "formation_stop_01.json"];
 
 const REQUIRED_KEYS = [
   "id",
@@ -31,11 +31,18 @@ function assertFormationShape(rawFormation, fileName) {
     throw new Error(`Formation DB ${fileName} has invalid type: ${rawFormation.type}`);
   }
 
-  if (!Number.isFinite(rawFormation.radius_base) || rawFormation.radius_base <= 0) {
+  const isStopFormation = rawFormation.type === "stop";
+  if (
+    !Number.isFinite(rawFormation.radius_base) ||
+    (isStopFormation ? rawFormation.radius_base < 0 : rawFormation.radius_base <= 0)
+  ) {
     throw new Error(`Formation DB ${fileName} has invalid radius_base: ${rawFormation.radius_base}`);
   }
 
-  if (!Number.isFinite(rawFormation.angular_speed_base) || rawFormation.angular_speed_base <= 0) {
+  if (
+    !Number.isFinite(rawFormation.angular_speed_base) ||
+    (isStopFormation ? rawFormation.angular_speed_base < 0 : rawFormation.angular_speed_base <= 0)
+  ) {
     throw new Error(
       `Formation DB ${fileName} has invalid angular_speed_base: ${rawFormation.angular_speed_base}`
     );

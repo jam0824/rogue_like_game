@@ -1,4 +1,4 @@
-const WEAPON_DB_FALLBACK_FILE_NAMES = ["weapon_sword_01.json"];
+const WEAPON_DB_FALLBACK_FILE_NAMES = ["weapon_sword_01.json", "weapon_enemy_bite_01.json"];
 
 const REQUIRED_KEYS = [
   "id",
@@ -32,11 +32,11 @@ function assertWeaponShape(rawWeapon, fileName) {
     throw new Error(`Weapon DB ${fileName} has invalid id: ${rawWeapon.id}`);
   }
 
-  if (!Number.isFinite(rawWeapon.width) || rawWeapon.width <= 0) {
+  if (!Number.isFinite(rawWeapon.width) || rawWeapon.width < 0) {
     throw new Error(`Weapon DB ${fileName} has invalid width: ${rawWeapon.width}`);
   }
 
-  if (!Number.isFinite(rawWeapon.height) || rawWeapon.height <= 0) {
+  if (!Number.isFinite(rawWeapon.height) || rawWeapon.height < 0) {
     throw new Error(`Weapon DB ${fileName} has invalid height: ${rawWeapon.height}`);
   }
 
@@ -62,11 +62,17 @@ function assertWeaponShape(rawWeapon, fileName) {
     throw new Error(`Weapon DB ${fileName} has invalid skills: must be an array`);
   }
 
-  if (typeof rawWeapon.weapon_file_name !== "string" || rawWeapon.weapon_file_name.length === 0) {
+  if (
+    rawWeapon.weapon_file_name !== null &&
+    (typeof rawWeapon.weapon_file_name !== "string" || rawWeapon.weapon_file_name.trim().length === 0)
+  ) {
     throw new Error(`Weapon DB ${fileName} has invalid weapon_file_name: ${rawWeapon.weapon_file_name}`);
   }
 
-  if (typeof rawWeapon.icon_file_name !== "string" || rawWeapon.icon_file_name.length === 0) {
+  if (
+    rawWeapon.icon_file_name !== null &&
+    (typeof rawWeapon.icon_file_name !== "string" || rawWeapon.icon_file_name.trim().length === 0)
+  ) {
     throw new Error(`Weapon DB ${fileName} has invalid icon_file_name: ${rawWeapon.icon_file_name}`);
   }
 
@@ -86,6 +92,14 @@ function normalizeEffectId(rawValue) {
   if (typeof rawValue !== "string") {
     return "";
   }
+  return rawValue.trim();
+}
+
+function normalizeOptionalAssetFileName(rawValue) {
+  if (typeof rawValue !== "string") {
+    return "";
+  }
+
   return rawValue.trim();
 }
 
@@ -113,8 +127,8 @@ function normalizeWeaponRecord(rawWeapon, fileName) {
     id: rawWeapon.id,
     nameKey: rawWeapon.name_key,
     descriptionKey: rawWeapon.description_key,
-    iconFileName: rawWeapon.icon_file_name,
-    weaponFileName: rawWeapon.weapon_file_name,
+    iconFileName: normalizeOptionalAssetFileName(rawWeapon.icon_file_name),
+    weaponFileName: normalizeOptionalAssetFileName(rawWeapon.weapon_file_name),
     width: rawWeapon.width,
     height: rawWeapon.height,
     seKeyStartAttack: resolveWeaponSeKey(rawWeapon, "se_key_start_attack", "sound_key_start_attack"),

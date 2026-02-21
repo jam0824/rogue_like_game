@@ -1,4 +1,4 @@
-const ENEMY_WEAPON_LOADOUT_DB_FALLBACK_FILE_NAMES = ["enemy_loadout_rabbit_claw01.json"];
+const ENEMY_WEAPON_LOADOUT_DB_FALLBACK_FILE_NAMES = ["enemy_loadout_bite_01.json"];
 
 const REQUIRED_KEYS = ["id", "weapons"];
 

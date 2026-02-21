@@ -1298,3 +1298,18 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - command: `node /Users/mineo.matsuya/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url http://127.0.0.1:4173 --actions-file /Users/mineo.matsuya/Desktop/code/rogue_like_game/tests/actions/skill_chain_projectile_poison_explosion.json --iterations 1 --pause-ms 250 --screenshot-dir /Users/mineo.matsuya/Desktop/code/rogue_like_game/output/web-game-enemy-skill-power-scaling`
   - artifacts reviewed: `output/web-game-enemy-skill-power-scaling/shot-0.png`, `output/web-game-enemy-skill-power-scaling/state-0.json`
   - no `errors-*.json` artifacts generated.
+- 2026-02-21: Implemented stop-formation enemy weapon flow for BrownMushroom bite chain.
+  - Normalized bite loadout/weapon formation reference to `formation_id_stop01`.
+  - Updated loaders to support skill-only weapons (`weapon_file_name`/`icon_file_name` nullable, width/height allow zero) and stop formations with zero radius/angular speed.
+  - Added optional weapon sprite loading path: empty `weaponFileName` now resolves to `null` asset.
+  - Expanded DB discovery fallback lists to include current bite/stop related records (enemy loadout, weapon, formation, skill, effect).
+  - Extended enemy attack profile build to support `formation.type = stop` with `supported=false` and `forceHidden` driven by `params.weapon_visible`.
+  - Extended enemy runtime visibility handling to keep `forceHidden` weapons invisible across phases.
+  - Added/updated unit tests: weaponDb, formationDb, enemySystem, skillChainSystem, and new weaponAsset test for empty sprite handling.
+- 2026-02-21: Validation complete for stop+bite implementation.
+  - `npm run unit -- tests/unit/weaponDb.test.js tests/unit/formationDb.test.js tests/unit/weaponAsset.test.js tests/unit/enemySystem.test.js tests/unit/skillChainSystem.test.js` -> PASS (5 files, 43 tests).
+  - `npm run check:enemy-attack` -> PASS.
+  - `npm run check:enemy-skill-chain` -> PASS.
+  - Playwright run (`web_game_playwright_client.js`, `tests/actions/enemy_idle_walk.json`) captured `output/web-game-bite-stop/shot-0.png` and `state-0.json`; state confirms enemy weapons now resolve to `weapon_enemy_bite_01` + `formation_id_stop01`.
+- 2026-02-21: Full unit suite re-run after stop+bite integration -> PASS (`37 files / 228 tests`).
+- 2026-02-21: Fixed `db/skill_db/skill_id_bite_01.json` shape to spec-compliant attack format by moving `hit.pierce_count` under `params.hit`; verified with `tests/unit/skillDb.test.js` and `npm run check:enemy-skill-chain`.
