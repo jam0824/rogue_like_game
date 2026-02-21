@@ -23,6 +23,7 @@
         "move_direction": "to_target",
         "sprite_effect_id": "effect_id_bite_01",
         "hit_box_per":0.5,
+        "is_rotate":false,
         "disappear_hit_wall":false
       }
     },
