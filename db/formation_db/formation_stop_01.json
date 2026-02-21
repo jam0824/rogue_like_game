@@ -1,0 +1,31 @@
+{
+  "id": "formation_id_stop01",
+  "type": "stop",
+  "name_key": "formation_name_stop",
+  "description_key": "formation_desc_stop",
+  "tags": ["enemy_only"],
+
+  "radius_base": 0,
+  "angular_speed_base": 0,
+  "phase_style": "even",
+
+  "bias_strength_mul": 0,
+  "bias_response_mul": 0,
+
+  "clamp": {
+    "radius_min": 0,
+    "radius_max": 0,
+    "speed_min": 0,
+    "speed_max": 0,
+    "bias_offset_ratio_max": 0
+  },
+
+  "params": {
+    "weapon_visible": false
+  },
+
+  "ui": {
+    "icon_file_name": "graphic/ui/icon/icon_formation/icon_formation_stop_01.png",
+    "sort_order": 70
+  }
+}
