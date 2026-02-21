@@ -71,6 +71,15 @@ function assertEnemyShape(rawEnemy, fileName) {
     );
   }
 
+  if (
+    "attack_png_file_path" in rawEnemy &&
+    (typeof rawEnemy.attack_png_file_path !== "string" || rawEnemy.attack_png_file_path.trim().length === 0)
+  ) {
+    throw new Error(
+      `Enemy DB ${fileName} has invalid attack_png_file_path: ${rawEnemy.attack_png_file_path}`
+    );
+  }
+
   if (!Number.isFinite(rawEnemy.fps) || rawEnemy.fps <= 0) {
     throw new Error(`Enemy DB ${fileName} has invalid fps: ${rawEnemy.fps}`);
   }
@@ -106,6 +115,10 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
     type: rawEnemy.type,
     walkPngFilePath: rawEnemy.walk_png_file_path.trim(),
     idlePngFilePath: rawEnemy.idle_png_file_path.trim(),
+    attackPngFilePath:
+      typeof rawEnemy.attack_png_file_path === "string" && rawEnemy.attack_png_file_path.trim().length > 0
+        ? rawEnemy.attack_png_file_path.trim()
+        : null,
     deathPngFilePath: rawEnemy.death_png_file_path.trim(),
     width: rawEnemy.width,
     height: rawEnemy.height,

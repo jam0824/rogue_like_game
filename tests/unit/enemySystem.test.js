@@ -58,6 +58,7 @@ function createEnemyAsset(overrides = {}) {
   return {
     walk: { frameCount: 6 },
     idle: { frameCount: 4 },
+    attack: { frameCount: 3 },
     death: { frameCount: 6 },
     fps: 12,
     defaultFacing: "right",
@@ -417,6 +418,72 @@ describe("enemySystem", () => {
     }
 
     expect(enemy.attack.phase).toBe("cooldown");
+  });
+
+  it("windup終了後は attack アニメに入り、1回再生後に通常アニメへ戻る", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-attack-anim-oneshot-01" });
+    const attackProfile = createEnemyAttackProfile({
+      windupSec: 0.01,
+      executeSec: 0.2,
+      recoverSec: 0.1,
+      cooldownAfterRecoverSec: 0.1,
+      attackRangePx: 999,
+    });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-attack-anim-oneshot-seed", {
+      [enemyDef.id]: attackProfile,
+    });
+    const [enemy] = enemies;
+    const player = createPlayer({ x: enemy.x, y: enemy.y });
+    const enemyAsset = createEnemyAsset({ attack: { frameCount: 3 }, idle: { frameCount: 4 }, fps: 12 });
+
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.005);
+    expect(enemy.attack.phase).toBe("windup");
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(enemy.attack.phase).toBe("attack");
+
+    const attackStartFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(attackStartFrame.animation).toBe("attack");
+    expect(attackStartFrame.col).toBe(0);
+
+    enemy.attackAnimActive = true;
+    enemy.attackAnimTime = (3 - 0.01) / 12;
+    const nearEndFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(nearEndFrame.animation).toBe("attack");
+    expect(nearEndFrame.col).toBe(2);
+
+    enemy.animTime = 0;
+    enemy.attackAnimTime = 3 / 12;
+    const afterOneShotFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(afterOneShotFrame.animation).toBe("idle");
+    expect(afterOneShotFrame.col).toBe(0);
+  });
+
+  it("attackシート未設定時は idle を代替表示し、1回分の長さ後に通常アニメへ戻る", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "enemy-attack-anim-idle-fallback-01" });
+    const enemies = createEnemies(dungeon, [enemyDef], "enemy-attack-anim-idle-fallback-seed");
+    const [enemy] = enemies;
+    const enemyAsset = createEnemyAsset({ attack: undefined, idle: { frameCount: 4 }, fps: 12 });
+
+    enemy.isDead = false;
+    enemy.isMoving = false;
+    enemy.animTime = 0;
+    enemy.attackAnimActive = true;
+    enemy.attackAnimTime = (4 - 0.01) / 12;
+
+    const fallbackActiveFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(fallbackActiveFrame.animation).toBe("idle");
+    expect(fallbackActiveFrame.col).toBe(3);
+
+    enemy.attackAnimTime = 4 / 12;
+    const fallbackFinishedFrame = getEnemyFrame(enemy, enemyAsset);
+    expect(fallbackFinishedFrame.animation).toBe("idle");
+    expect(fallbackFinishedFrame.col).toBe(0);
   });
 
   it("windup終了直後の attack 開始フレームで武器transformが確定している", () => {

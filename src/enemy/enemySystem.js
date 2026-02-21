@@ -127,6 +127,10 @@ function getLoopFrameIndex(animTime, fps, frameCount) {
   return Math.floor(Math.max(0, Number(animTime) || 0) * fps) % frameCount;
 }
 
+function getOneShotFrameIndex(animTime, fps, frameCount) {
+  return Math.min(frameCount - 1, Math.floor(Math.max(0, Number(animTime) || 0) * fps));
+}
+
 function resolveEnemyRangeConfig(attackProfile) {
   const preferredRawPx = Math.max(0, toFiniteNumber(attackProfile?.preferredRangePx, 0));
   const retreatRangePx = Math.max(0, toFiniteNumber(attackProfile?.retreatRangePx, 0));
@@ -808,6 +812,8 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     defaultSpriteFacing,
     isMoving: false,
     animTime: 0,
+    attackAnimActive: false,
+    attackAnimTime: 0,
     deathAnimTime: 0,
     animFps,
     imageMagnification,
@@ -983,6 +989,9 @@ function updateDeadEnemy(enemy, dt) {
 
 function updateEnemy(enemy, dungeon, dt, player) {
   enemy.hitFlashTimerSec = Math.max(0, toFiniteNumber(enemy.hitFlashTimerSec, 0) - dt);
+  if (enemy.attackAnimActive === true) {
+    enemy.attackAnimTime = Math.max(0, toFiniteNumber(enemy.attackAnimTime, 0) + dt);
+  }
   updateBehaviorMode(enemy, dungeon, player);
 
   const speedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
@@ -1144,6 +1153,8 @@ function setEnemyAttackPhase(enemy, phase, timerSec) {
   if (phase === ENEMY_ATTACK_PHASE.ATTACK) {
     attack.attackCycle = Math.max(0, Math.floor(toFiniteNumber(attack.attackCycle, 0))) + 1;
     attack.telegraphAlpha = 0;
+    enemy.attackAnimActive = true;
+    enemy.attackAnimTime = 0;
     resetEnemyAttackWeaponHits(attack);
     setEnemyWeaponVisibility(attack, true);
     for (const weapon of attack.weapons) {
@@ -1369,9 +1380,26 @@ export function updateEnemyAttacks(enemies, player, dungeon, dt, options = {}) {
 
 function resolveEnemyAnimation(enemy) {
   if (enemy?.isDead === true) {
-    return "death";
+    return {
+      animation: "death",
+      oneShot: true,
+      animTime: Math.max(0, toFiniteNumber(enemy.deathAnimTime, 0)),
+    };
   }
-  return enemy?.isMoving === true ? "walk" : "idle";
+
+  if (enemy?.attackAnimActive === true) {
+    return {
+      animation: "attack",
+      oneShot: true,
+      animTime: Math.max(0, toFiniteNumber(enemy.attackAnimTime, 0)),
+    };
+  }
+
+  return {
+    animation: enemy?.isMoving === true ? "walk" : "idle",
+    oneShot: false,
+    animTime: Math.max(0, toFiniteNumber(enemy?.animTime, 0)),
+  };
 }
 
 export function getEnemyFrame(enemy, enemyAsset = null) {
@@ -1384,17 +1412,35 @@ export function getEnemyFrame(enemy, enemyAsset = null) {
     };
   }
 
-  const animation = resolveEnemyAnimation(enemy);
+  const resolved = resolveEnemyAnimation(enemy);
+  const defaultAnimation = resolved.animation;
   const fps = resolveAnimationFps(enemy, enemyAsset);
+  let animation = defaultAnimation;
+  let oneShot = resolved.oneShot;
+  let animTime = resolved.animTime;
+
+  if (defaultAnimation === "attack") {
+    const hasAttackSheet = Number.isFinite(enemyAsset?.attack?.frameCount);
+    const attackFrameCount = hasAttackSheet
+      ? resolveAnimationFrameCount(enemyAsset, "attack")
+      : resolveAnimationFrameCount(enemyAsset, "idle");
+    const elapsedAttackFrames = Math.floor(animTime * fps);
+
+    if (elapsedAttackFrames >= attackFrameCount) {
+      animation = enemy?.isMoving === true ? "walk" : "idle";
+      oneShot = false;
+      animTime = Math.max(0, toFiniteNumber(enemy?.animTime, 0));
+    } else if (!hasAttackSheet) {
+      animation = "idle";
+    }
+  }
+
   const frameCount = resolveAnimationFrameCount(enemyAsset, animation);
   const usesAssetFrameCount = Number.isFinite(enemyAsset?.[animation]?.frameCount);
-  const animTime = animation === "death"
-    ? Math.max(0, toFiniteNumber(enemy.deathAnimTime, 0))
-    : Math.max(0, toFiniteNumber(enemy.animTime, 0));
 
   let col = 0;
-  if (animation === "death") {
-    col = Math.min(frameCount - 1, Math.floor(animTime * fps));
+  if (oneShot) {
+    col = getOneShotFrameIndex(animTime, fps, frameCount);
   } else if (usesAssetFrameCount) {
     col = getLoopFrameIndex(animTime, fps, frameCount);
   } else {

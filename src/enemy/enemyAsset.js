@@ -66,7 +66,27 @@ async function loadAssetForDefinition(definition) {
   const drawScale = resolvePositiveNumber(definition.imageMagnification, "imageMagnification");
   const defaultFacing = definition.pngFacingDirection === "left" ? "left" : "right";
 
-  const [walk, idle, death] = await Promise.all([
+  const attackPath =
+    typeof definition.attackPngFilePath === "string" && definition.attackPngFilePath.trim().length > 0
+      ? definition.attackPngFilePath
+      : null;
+  const attackPromise = attackPath
+    ? loadEnemySheet(
+        toNonEmptyPath(attackPath, "attackPngFilePath"),
+        frameWidth,
+        frameHeight,
+        `attack sheet (${definition.id})`
+      ).catch((error) => {
+        console.warn(
+          `Failed to load optional attack sheet (${definition.id}): ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return null;
+      })
+    : Promise.resolve(null);
+
+  const [walk, idle, death, attack] = await Promise.all([
     loadEnemySheet(
       toNonEmptyPath(definition.walkPngFilePath, "walkPngFilePath"),
       frameWidth,
@@ -85,6 +105,7 @@ async function loadAssetForDefinition(definition) {
       frameHeight,
       `death sheet (${definition.id})`
     ),
+    attackPromise,
   ]);
 
   return [
@@ -92,6 +113,7 @@ async function loadAssetForDefinition(definition) {
     {
       walk,
       idle,
+      attack,
       death,
       fps,
       defaultFacing,
