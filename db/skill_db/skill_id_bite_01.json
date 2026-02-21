@@ -7,7 +7,7 @@
     "max_plus": 99,
     "unique_per_weapon": false,
     "tags": ["skill_type:attack", "attack:projectile", "element:physical"],
-    "ui": { "icon_file_name": "skill_projectile_01.png", "sort_order": 120 },
+    "ui": { "icon_file_name": "graphic/ui/icon/icon_skill/icon_bite_01.png", "sort_order": 120 },
     "params": {
       "attack_kind": "projectile",
       "base_damage": 15,
