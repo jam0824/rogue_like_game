@@ -5,6 +5,7 @@
   "type": "walk",
   "walk_png_file_path": "graphic/enemy/BrownMushroom/walk_BrownMushroom.png",
   "idle_png_file_path": "graphic/enemy/BrownMushroom/idle_BrownMushroom.png",
+  "attack_png_file_path": "graphic/enemy/BrownMushroom/attack_BrownMushroom.png",
   "death_png_file_path": "graphic/enemy/BrownMushroom/death_BrownMushroom.png",
   "width": 32,
   "height": 32,
