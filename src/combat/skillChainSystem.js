@@ -223,6 +223,7 @@ function resolveAttackStep(entry, modifiers) {
               params.projectile.hitBoxPer <= 1
                 ? params.projectile.hitBoxPer
                 : 1,
+            isRotate: params.projectile?.isRotate !== false,
             disappearHitWall: params.projectile?.disappearHitWall !== false,
           }
         : null,
@@ -743,10 +744,13 @@ function spawnProjectile({
 
   let projectileEffectRuntime = null;
   if (typeof projectileConfig.spriteEffectId === "string" && projectileConfig.spriteEffectId.length > 0) {
-    const projectileRotationRad = calcRotationRadFromDirection(direction.x, direction.y);
+    const projectileRotationRad =
+      projectileConfig.isRotate !== false ? calcRotationRadFromDirection(direction.x, direction.y) : null;
     projectileEffectRuntime = buildEffectRuntime?.(projectileConfig.spriteEffectId, spawnX, spawnY) ?? null;
     if (projectileEffectRuntime) {
-      projectileEffectRuntime.rotationRad = projectileRotationRad;
+      if (Number.isFinite(projectileRotationRad)) {
+        projectileEffectRuntime.rotationRad = projectileRotationRad;
+      }
       effects.push(projectileEffectRuntime);
     }
   }
@@ -766,6 +770,7 @@ function spawnProjectile({
     speedPxPerSec: Math.max(0, toFiniteNumber(projectileConfig.speedTilePerSec, 0) * TILE_SIZE),
     remainingLifeSec: Math.max(0.0001, toFiniteNumber(projectileConfig.lifeSec, 0.0001)),
     disappearHitWall: projectileConfig.disappearHitWall !== false,
+    isRotate: projectileConfig.isRotate !== false,
     maxTargets: Math.max(1, 1 + Math.max(0, toNonNegativeInt(attack.pierceCount, 0))),
     hitEnemyIds: new Set(),
     hitboxWidth: hitbox.width,
@@ -958,8 +963,12 @@ function updateProjectiles({
     projectile.y += toFiniteNumber(projectile.dirY, 0) * speed * stepDt;
 
     if (projectile.effectRuntimeId) {
-      const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
-      syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
+      if (projectile.isRotate !== false) {
+        const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
+        syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
+      } else {
+        syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y);
+      }
     }
 
     shouldDespawn = projectile.remainingLifeSec <= 0;
@@ -1473,10 +1482,13 @@ function spawnEnemySkillProjectile({
 
   let projectileEffectRuntime = null;
   if (typeof projectileConfig.spriteEffectId === "string" && projectileConfig.spriteEffectId.length > 0) {
-    const projectileRotationRad = calcRotationRadFromDirection(direction.x, direction.y);
+    const projectileRotationRad =
+      projectileConfig.isRotate !== false ? calcRotationRadFromDirection(direction.x, direction.y) : null;
     projectileEffectRuntime = buildEffectRuntime?.(projectileConfig.spriteEffectId, spawnX, spawnY) ?? null;
     if (projectileEffectRuntime) {
-      projectileEffectRuntime.rotationRad = projectileRotationRad;
+      if (Number.isFinite(projectileRotationRad)) {
+        projectileEffectRuntime.rotationRad = projectileRotationRad;
+      }
       effects.push(projectileEffectRuntime);
     }
   }
@@ -1497,6 +1509,7 @@ function spawnEnemySkillProjectile({
     speedPxPerSec: Math.max(0, toFiniteNumber(projectileConfig.speedTilePerSec, 0) * TILE_SIZE),
     remainingLifeSec: Math.max(0.0001, toFiniteNumber(projectileConfig.lifeSec, 0.0001)),
     disappearHitWall: projectileConfig.disappearHitWall !== false,
+    isRotate: projectileConfig.isRotate !== false,
     maxTargets: Math.max(1, 1 + Math.max(0, toNonNegativeInt(attack.pierceCount, 0))),
     hitTargetCount: 0,
     hitPlayer: false,
@@ -1667,8 +1680,12 @@ function updateEnemySkillProjectiles({
     projectile.y += toFiniteNumber(projectile.dirY, 0) * speed * stepDt;
 
     if (projectile.effectRuntimeId) {
-      const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
-      syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
+      if (projectile.isRotate !== false) {
+        const rotationRad = calcRotationRadFromDirection(projectile.dirX, projectile.dirY);
+        syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y, rotationRad);
+      } else {
+        syncEffectPosition(effects, projectile.effectRuntimeId, projectile.x, projectile.y);
+      }
     }
 
     shouldDespawn = projectile.remainingLifeSec <= 0;

@@ -543,6 +543,74 @@ describe("skillChainSystem", () => {
     expect(dotEvents.length).toBeGreaterThan(0);
   });
 
+  it("player projectile は isRotate=false のとき回転せず固定向きを維持する", () => {
+    const dungeon = createDungeon();
+    const player = createPlayer();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.isRotate = false;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const weaponRuntime = {
+      id: "weapon-0",
+      weaponDefId: "weapon_sword_01",
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 32,
+      attackSeq: 1,
+      skillInstances: weaponDefinition.skills,
+    };
+    const enemies = [createEnemy("enemy-a", 300, 300, 220)];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    let effects = [];
+    const first = updateSkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies,
+      effects,
+      weapons: [weaponRuntime],
+      weaponStartEvents: [{ weaponId: "weapon-0", weaponDefId: "weapon_sword_01", attackSeq: 1, worldX: 116, worldY: 116 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+    });
+    effects = first.effects;
+
+    const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
+    expect(projectileEffect).toBeTruthy();
+    expect(projectileEffect.rotationRad).toBeCloseTo(0, 5);
+
+    const expectedRotationRad = Math.atan2((300 + 16) - 116, (300 + 16) - 116);
+    expect(Math.abs(expectedRotationRad)).toBeGreaterThan(0.1);
+
+    for (let frame = 0; frame < 30; frame += 1) {
+      const result = updateSkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies,
+        effects,
+        weapons: [weaponRuntime],
+        weaponStartEvents: [],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+      });
+      effects = result.effects;
+    }
+
+    const updatedProjectileEffect = effects.find((effect) => effect?.id === projectileEffect.id);
+    expect(updatedProjectileEffect).toBeTruthy();
+    expect(updatedProjectileEffect.rotationRad).toBeCloseTo(0, 5);
+  });
+
   it("start_spawn_timing=hit の先頭Attackは weaponHitEvents で開始し、weaponStartEvents では開始しない", () => {
     const dungeon = createDungeon();
     const player = createPlayer();
@@ -851,6 +919,77 @@ describe("skillChainSystem", () => {
       )
     ).toBe(true);
     expect(player.hp).toBeLessThan(200);
+  });
+
+  it("enemy projectile は isRotate=false のとき回転せず固定向きを維持する", () => {
+    const dungeon = createDungeon();
+    const skillDefinitionsById = createSkillDefinitions();
+    skillDefinitionsById.skill_id_projectile_01.params.projectile.isRotate = false;
+
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_projectile_01", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 640,
+      y: 640,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const enemy = createEnemyCaster("enemy-caster", 96, 96, weaponDefinition.skills);
+    const weapon = enemy.attack.weapons[0];
+    const buildEffectRuntime = createBuildEffectRuntime();
+
+    let effects = [];
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects,
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 128, worldY: 128 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime,
+      applyPlayerHpDamage: true,
+    });
+    effects = first.effects;
+
+    const projectileEffect = effects.find((effect) => effect?.effectId === "effect_id_proj_basic_01");
+    expect(projectileEffect).toBeTruthy();
+    expect(projectileEffect.rotationRad).toBeCloseTo(0, 5);
+
+    const playerCenterX = player.x + player.width / 2;
+    const playerCenterY = player.y + player.height / 2;
+    const expectedRotation = Math.atan2(playerCenterY - 128, playerCenterX - 128);
+    expect(Math.abs(expectedRotation)).toBeGreaterThan(0.1);
+
+    for (let frame = 0; frame < 30; frame += 1) {
+      const result = updateEnemySkillChainCombat({
+        dt: 1 / 60,
+        dungeon,
+        player,
+        enemies: [enemy],
+        effects,
+        weaponStartEvents: [],
+        weaponHitEvents: [],
+        weaponDefinitionsById,
+        skillDefinitionsById,
+        buildEffectRuntime,
+        applyPlayerHpDamage: true,
+      });
+      effects = result.effects;
+    }
+
+    const updatedProjectileEffect = effects.find((effect) => effect?.id === projectileEffect.id);
+    expect(updatedProjectileEffect).toBeTruthy();
+    expect(updatedProjectileEffect.rotationRad).toBeCloseTo(0, 5);
   });
 
   it("不可視 skill専用敵武器（stop想定）でも start event から projectile を発射して player に命中する", () => {

@@ -204,6 +204,7 @@ function normalizeAttackParams(rawSkill, fileName) {
       moveDirection,
       spriteEffectId,
       hitBoxPer: normalizeHitBoxPer(rawProjectile.hit_box_per),
+      isRotate: rawProjectile.is_rotate !== false,
       disappearHitWall: rawProjectile.disappear_hit_wall !== false,
     };
   }

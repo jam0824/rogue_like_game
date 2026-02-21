@@ -235,6 +235,42 @@ describe("skillDb", () => {
     expect(aoeInvalid?.params?.aoe?.hitBoxPer).toBe(1);
   });
 
+  it("projectile is_rotate は省略時 true、false 指定時 false に正規化される", async () => {
+    setupFetchMock({
+      fileNames: ["skill_id_projectile_rotate_default.json", "skill_id_projectile_rotate_false.json"],
+      recordsByFileName: {
+        "skill_id_projectile_rotate_default.json": createSkillRecord({
+          id: "skill_id_projectile_rotate_default",
+        }),
+        "skill_id_projectile_rotate_false.json": createSkillRecord({
+          id: "skill_id_projectile_rotate_false",
+          params: {
+            attack_kind: "projectile",
+            base_damage: 10,
+            damage_element: "physical",
+            start_spawn_timing: "start",
+            chain_trigger: "on_hit",
+            projectile: {
+              speed_tile_per_sec: 10,
+              life_sec: 1.2,
+              move_direction: "to_target",
+              sprite_effect_id: "effect_id_proj_basic_01",
+              is_rotate: false,
+              disappear_hit_wall: true,
+            },
+          },
+        }),
+      },
+    });
+
+    const definitions = await loadSkillDefinitions();
+    const rotateDefault = definitions.find((definition) => definition.id === "skill_id_projectile_rotate_default");
+    const rotateFalse = definitions.find((definition) => definition.id === "skill_id_projectile_rotate_false");
+
+    expect(rotateDefault?.params?.projectile?.isRotate).toBe(true);
+    expect(rotateFalse?.params?.projectile?.isRotate).toBe(false);
+  });
+
   it("required key 欠落はエラーになる", async () => {
     const invalid = createSkillRecord();
     delete invalid.id;
