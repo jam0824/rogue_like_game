@@ -64,9 +64,13 @@ function loadCircleFormationFromFs() {
   };
 }
 
-function alignEnemyToWeapon(enemy, weapon) {
-  enemy.x = weapon.x;
-  enemy.y = weapon.y;
+function alignEnemyToPlayerBurstRange(enemy, player) {
+  const playerCenterX = player.x + player.width / 2;
+  const playerCenterY = player.y + player.height / 2;
+  enemy.width = 240;
+  enemy.height = 240;
+  enemy.x = playerCenterX - enemy.width / 2;
+  enemy.y = playerCenterY - enemy.height / 2;
 }
 
 function createGrid(width, height, initial = true) {
@@ -120,6 +124,17 @@ function advanceUntilNextAttackSeq(weapons, player, enemies, weaponDefinitionsBy
   throw new Error("attack_seq did not advance within expected frames");
 }
 
+function advanceUntilDamageEvent(weapons, player, enemies, weaponDefinitionsById, formationsById, maxFrames = 180) {
+  for (let i = 0; i < maxFrames; i += 1) {
+    const events = updateWeaponsAndCombat(weapons, player, enemies, weaponDefinitionsById, formationsById, DT);
+    if (events.some((event) => event?.kind === "damage" && event?.targetType === "enemy")) {
+      return events;
+    }
+  }
+
+  throw new Error("damage event was not emitted within expected frames");
+}
+
 function main() {
   const weaponDefinition = loadInitialWeaponDefinitionFromFs();
   const formationDefinition = loadCircleFormationFromFs();
@@ -155,8 +170,8 @@ function main() {
   assert(bootstrapEvents.length === 0, "initial bootstrap should not produce damage events without enemies");
   assert(weapons[0].attackSeq === 1, "initial attack should start immediately");
 
-  alignEnemyToWeapon(enemy, weapons[0]);
-  const firstEvents = updateWeaponsAndCombat(weapons, player, [enemy], weaponDefinitionsById, formationsById, HIT_DT);
+  alignEnemyToPlayerBurstRange(enemy, player);
+  const firstEvents = advanceUntilDamageEvent(weapons, player, [enemy], weaponDefinitionsById, formationsById);
   const hpAfterFirstHit = enemy.hp;
   assert(firstEvents.length === 1, "a damage event should be emitted on first hit");
   assert(firstEvents[0].kind === "damage", "event kind should be damage");
@@ -174,14 +189,14 @@ function main() {
   assert(fadedPopups[0].alpha < 1, "popup alpha should decay over time");
   assert(fadedPopups[0].y < initialPopups[0].y, "popup should rise upward");
 
-  alignEnemyToWeapon(enemy, weapons[0]);
+  alignEnemyToPlayerBurstRange(enemy, player);
   const noRepeatEvents = updateWeaponsAndCombat(weapons, player, [enemy], weaponDefinitionsById, formationsById, HIT_DT);
   assert(noRepeatEvents.length === 0, "enemy should not be re-hit in the same attack_seq");
   assert(enemy.hp === hpAfterFirstHit, "enemy should not be re-hit in the same attack_seq");
 
   advanceUntilNextAttackSeq(weapons, player, [], weaponDefinitionsById, formationsById);
-  alignEnemyToWeapon(enemy, weapons[0]);
-  const secondEvents = updateWeaponsAndCombat(weapons, player, [enemy], weaponDefinitionsById, formationsById, HIT_DT);
+  alignEnemyToPlayerBurstRange(enemy, player);
+  const secondEvents = advanceUntilDamageEvent(weapons, player, [enemy], weaponDefinitionsById, formationsById);
   assert(secondEvents.length === 1, "next attack sequence should emit damage event again");
   assert(enemy.hp < hpAfterFirstHit, "enemy should take damage again after attack_seq changes");
 
@@ -194,8 +209,8 @@ function main() {
   enemy.isDead = false;
 
   advanceUntilNextAttackSeq(weapons, player, [], weaponDefinitionsById, formationsById);
-  alignEnemyToWeapon(enemy, weapons[0]);
-  const killEvents = updateWeaponsAndCombat(weapons, player, [enemy], weaponDefinitionsById, formationsById, HIT_DT);
+  alignEnemyToPlayerBurstRange(enemy, player);
+  const killEvents = advanceUntilDamageEvent(weapons, player, [enemy], weaponDefinitionsById, formationsById);
   assert(killEvents.length === 1, "kill hit should also emit a damage event");
 
   assert(enemy.isDead === true, "enemy should be marked dead when HP reaches 0");

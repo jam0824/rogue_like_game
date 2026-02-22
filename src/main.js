@@ -871,6 +871,10 @@ function getPlayerFeetTile(player) {
 
 function buildWeaponTextState(weapon) {
   const hitbox = getWeaponHitbox(weapon);
+  const attackMotionPhase =
+    typeof weapon?.attackMotionPhase === "string" && weapon.attackMotionPhase.length > 0
+      ? weapon.attackMotionPhase
+      : "idle";
 
   return {
     id: weapon.id,
@@ -883,6 +887,8 @@ function buildWeaponTextState(weapon) {
     attackSeq: weapon.attackSeq,
     rotationDeg: round2(weapon.rotationDeg ?? 0),
     cooldownRemainingSec: round2(weapon.cooldownRemainingSec ?? 0),
+    attackMotionPhase,
+    isAttackActive: attackMotionPhase === "burst",
     hitTargetCount: weapon.hitSet instanceof Set ? weapon.hitSet.size : 0,
     hitbox: {
       x: round2(hitbox.x),
@@ -1669,6 +1675,11 @@ function updateWeaponFormationAtSlot(slot, nextFormationId) {
     slotView.runtimeWeapon.angleRad = 0;
     slotView.runtimeWeapon.biasDirX = Number.isFinite(slotView.runtimeWeapon.biasDirX) ? slotView.runtimeWeapon.biasDirX : 1;
     slotView.runtimeWeapon.biasDirY = Number.isFinite(slotView.runtimeWeapon.biasDirY) ? slotView.runtimeWeapon.biasDirY : 0;
+    slotView.runtimeWeapon.attackMotionPhase = "idle";
+    slotView.runtimeWeapon.attackMotionTimerSec = 0;
+    slotView.runtimeWeapon.attackMotionDurationSec = 0;
+    slotView.runtimeWeapon.lockedAimDirX = slotView.runtimeWeapon.biasDirX;
+    slotView.runtimeWeapon.lockedAimDirY = slotView.runtimeWeapon.biasDirY;
     if (slotView.runtimeWeapon.hitSet instanceof Set) {
       slotView.runtimeWeapon.hitSet.clear();
     }
