@@ -394,6 +394,15 @@ describe("systemHud", () => {
             descriptionKey: "formation_desc_circle",
             iconImageSrc: "/graphic/ui/icon/icon_formation/icon_formation_circle_01.png",
           },
+          formationOptions: [
+            {
+              formationId: "formation_id_circle01",
+              nameKey: "formation_name_circle",
+              descriptionKey: "formation_desc_circle",
+              iconImageSrc: "/graphic/ui/icon/icon_formation/icon_formation_circle_01.png",
+              isSelected: true,
+            },
+          ],
         },
       },
       chip: { entries: [], selectedChipKey: null, details: null },
@@ -403,6 +412,65 @@ describe("systemHud", () => {
     expect(refs.weaponSkillFormationLabel.textContent).toBe("Formation");
     expect(refs.weaponSkillFormationSlot.innerHTML).toContain("weapon-formation-slot");
     expect(refs.weaponSkillFormationSlot.innerHTML).toContain("サークル");
+    expect(refs.weaponSkillFormationSlot.innerHTML).toContain("weapon-formation-option");
+  });
+
+  it("フォーメーション選択クリックで onSelectFormation が呼ばれる", () => {
+    const refs = createHudRoot();
+    const onSelectFormation = vi.fn();
+    const hud = createSystemHud(refs.root, { onSelectFormation });
+
+    hud.setInventory({
+      capacity: 10,
+      items: [],
+      selectedItemId: null,
+      quickSlots: [],
+      isWindowOpen: true,
+      activeTab: "weapon",
+      weapon: {
+        selectedSlot: 0,
+        swapTargetSlot: null,
+        canEquipSwap: false,
+        slots: [{ slot: 0, hasWeapon: true, weaponDefId: "weapon_sword_01", iconImageSrc: "/graphic/ui/icon/icon_weapon/icon_sword_01.png" }],
+        details: null,
+        skillEditor: {
+          isOpen: true,
+          heldSource: null,
+          chainSlots: [],
+          formationSlot: {
+            formationId: "formation_id_circle01",
+            nameKey: "formation_name_circle",
+            descriptionKey: "formation_desc_circle",
+            iconImageSrc: "/graphic/ui/icon/icon_formation/icon_formation_circle_01.png",
+          },
+          formationOptions: [
+            {
+              formationId: "formation_id_arc_front01",
+              nameKey: "formation_name_arc_front",
+              descriptionKey: "formation_desc_arc_front",
+              iconImageSrc: "/graphic/ui/icon/icon_formation/icon_formation_arc_front_01.png",
+              isSelected: false,
+            },
+          ],
+        },
+      },
+      chip: { entries: [], selectedChipKey: null, details: null },
+      toastMessage: "",
+    });
+
+    const target = {
+      closest() {
+        return {
+          dataset: {
+            uiFormationId: "formation_id_arc_front01",
+          },
+        };
+      },
+    };
+    refs.weaponSkillFormationSlot.trigger("click", { target });
+
+    expect(onSelectFormation).toHaveBeenCalledTimes(1);
+    expect(onSelectFormation).toHaveBeenCalledWith("formation_id_arc_front01");
   });
 
   it("武器詳細にスキルラベルを表示する", () => {

@@ -462,6 +462,18 @@ function resolveFormationIdFromSlotView(slotView) {
   return Object.keys(formationDefinitionsById ?? {})[0] ?? "";
 }
 
+function isEnemyOnlyFormation(definition) {
+  return Array.isArray(definition?.tags) && definition.tags.includes("enemy_only");
+}
+
+function getFormationSortOrder(definition) {
+  const sortOrder = Number(definition?.ui?.sortOrder ?? definition?.ui?.sort_order ?? 0);
+  if (!Number.isFinite(sortOrder)) {
+    return 0;
+  }
+  return Math.floor(sortOrder);
+}
+
 function buildFormationSlotView(slotView) {
   if (!slotView?.weaponInstance) {
     return null;
@@ -485,6 +497,38 @@ function buildFormationSlotView(slotView) {
     description,
     iconImageSrc: resolveGraphicAssetSrc(definition?.ui?.iconFileName ?? definition?.ui?.icon_file_name ?? ""),
   };
+}
+
+function buildFormationOptionsForSlotView(slotView) {
+  if (!slotView?.weaponInstance) {
+    return [];
+  }
+
+  const selectedFormationId = resolveFormationIdFromSlotView(slotView);
+  const definitions = Object.values(formationDefinitionsById ?? {})
+    .filter((definition) => definition && typeof definition.id === "string" && definition.id.length > 0)
+    .filter((definition) => !isEnemyOnlyFormation(definition))
+    .sort((a, b) => {
+      const orderDiff = getFormationSortOrder(a) - getFormationSortOrder(b);
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+      return a.id.localeCompare(b.id);
+    });
+
+  return definitions.map((definition) => {
+    const nameKey = typeof definition?.nameKey === "string" ? definition.nameKey : "";
+    const descriptionKey = typeof definition?.descriptionKey === "string" ? definition.descriptionKey : "";
+    return {
+      formationId: definition.id,
+      nameKey,
+      name: tJa(nameKey, definition.id),
+      descriptionKey,
+      description: descriptionKey ? tJa(descriptionKey, descriptionKey) : "",
+      iconImageSrc: resolveGraphicAssetSrc(definition?.ui?.iconFileName ?? definition?.ui?.icon_file_name ?? ""),
+      isSelected: definition.id === selectedFormationId,
+    };
+  });
 }
 
 function resolveWeaponDetailFromSlot(slotView) {
@@ -590,6 +634,7 @@ function buildWeaponUiViewModel(systemUiState) {
   });
 
   const formationSlot = buildFormationSlotView(skillEditorSlotView);
+  const formationOptions = buildFormationOptionsForSlotView(skillEditorSlotView);
 
   return {
     selectedSlot,
@@ -617,6 +662,7 @@ function buildWeaponUiViewModel(systemUiState) {
       heldLabel: `${tJa("ui_label_skill_editor_holding_prefix", "Selected Skill")}: ${heldName}`,
       chainSlots,
       formationSlot,
+      formationOptions,
     },
   };
 }
@@ -1598,6 +1644,39 @@ function updateWeaponSkillsAtSlot(slot, nextSkills) {
   return true;
 }
 
+function updateWeaponFormationAtSlot(slot, nextFormationId) {
+  if (typeof nextFormationId !== "string" || nextFormationId.length <= 0) {
+    return false;
+  }
+
+  const formationDefinition = formationDefinitionsById?.[nextFormationId];
+  if (!formationDefinition || isEnemyOnlyFormation(formationDefinition)) {
+    return false;
+  }
+
+  const slotView = buildEquippedWeaponSlotsView()[normalizeWeaponSlotForUi(slot, 0)];
+  if (!slotView?.weaponInstance) {
+    return false;
+  }
+
+  if (slotView.weaponInstance.formation_id === nextFormationId) {
+    return false;
+  }
+
+  slotView.weaponInstance.formation_id = nextFormationId;
+  if (slotView.runtimeWeapon) {
+    slotView.runtimeWeapon.formationId = nextFormationId;
+    slotView.runtimeWeapon.angleRad = 0;
+    slotView.runtimeWeapon.biasDirX = Number.isFinite(slotView.runtimeWeapon.biasDirX) ? slotView.runtimeWeapon.biasDirX : 1;
+    slotView.runtimeWeapon.biasDirY = Number.isFinite(slotView.runtimeWeapon.biasDirY) ? slotView.runtimeWeapon.biasDirY : 0;
+    if (slotView.runtimeWeapon.hitSet instanceof Set) {
+      slotView.runtimeWeapon.hitSet.clear();
+    }
+  }
+
+  return true;
+}
+
 function getSkillAtEditorSlot(layout, row, index) {
   const safeIndex = Math.max(0, Math.floor(Number(index) || 0));
   if (row !== "chain") {
@@ -1978,6 +2057,17 @@ const systemHud = systemUiRoot
       },
       onClearHeldSkill: () => {
         applySystemUiState(setHeldSkillSource(getSystemUiState(), null));
+      },
+      onSelectFormation: (formationId) => {
+        const beforeSystemUi = getSystemUiState();
+        const context = resolveSkillEditorContext(beforeSystemUi);
+        if (!context) {
+          return;
+        }
+        if (!updateWeaponFormationAtSlot(context.slot, formationId)) {
+          return;
+        }
+        applySystemUiState(setHeldSkillSource(beforeSystemUi, null));
       },
       onUseSelectedItem: () => {
         const beforeSystemUi = getSystemUiState();

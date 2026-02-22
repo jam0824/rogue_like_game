@@ -26,6 +26,118 @@ function normalizeVector(x, y, fallbackX = 1, fallbackY = 0) {
   };
 }
 
+function rotateVector(vector, angleRad) {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos,
+  };
+}
+
+function getPerpendicular(vector) {
+  return {
+    x: -vector.y,
+    y: vector.x,
+  };
+}
+
+function resolveFormationParamNumber(formation, camelKey, snakeKey, fallback) {
+  const params = formation?.params;
+  const camel = params?.[camelKey];
+  if (Number.isFinite(camel)) {
+    return Number(camel);
+  }
+  const snake = params?.[snakeKey];
+  if (Number.isFinite(snake)) {
+    return Number(snake);
+  }
+  return fallback;
+}
+
+function resolveFormationParamString(formation, camelKey, snakeKey, fallback) {
+  const params = formation?.params;
+  const camel = params?.[camelKey];
+  if (typeof camel === "string" && camel.trim().length > 0) {
+    return camel.trim();
+  }
+  const snake = params?.[snakeKey];
+  if (typeof snake === "string" && snake.trim().length > 0) {
+    return snake.trim();
+  }
+  return fallback;
+}
+
+function resolveFormationParamBoolean(formation, camelKey, snakeKey, fallback = false) {
+  const params = formation?.params;
+  if (typeof params?.[camelKey] === "boolean") {
+    return params[camelKey];
+  }
+  if (typeof params?.[snakeKey] === "boolean") {
+    return params[snakeKey];
+  }
+  return fallback;
+}
+
+function resolveOrbitCenter(playerCenter, centerMode, biasDir, biasOffsetPx, forceCenterOffset = false) {
+  const useBiasCenter = centerMode === "biased_center" || forceCenterOffset;
+  if (!useBiasCenter) {
+    return {
+      x: playerCenter.x,
+      y: playerCenter.y,
+    };
+  }
+
+  return {
+    x: playerCenter.x + biasDir.x * biasOffsetPx,
+    y: playerCenter.y + biasDir.y * biasOffsetPx,
+  };
+}
+
+function applyWeaponPose(
+  weapon,
+  weaponCenterX,
+  weaponCenterY,
+  orbitCenterX,
+  orbitCenterY,
+  weaponDefinition,
+  formationDefinition
+) {
+  const fromOrbitDx = weaponCenterX - orbitCenterX;
+  const fromOrbitDy = weaponCenterY - orbitCenterY;
+  const hasRotationVector = Math.hypot(fromOrbitDx, fromOrbitDy) > VECTOR_EPSILON;
+  const rotationDeg = hasRotationVector ? toRotationDegrees(fromOrbitDx, fromOrbitDy) : toFiniteNumber(weapon.rotationDeg, 0);
+
+  weapon.x = weaponCenterX - weapon.width / 2;
+  weapon.y = weaponCenterY - weapon.height / 2;
+  weapon.rotationDeg = rotationDeg;
+  weapon.rotationRad = rotationDeg * Math.PI / 180;
+  weapon.weaponDefId = weaponDefinition.id;
+  weapon.formationId = formationDefinition.id;
+}
+
+function resolveRuntimeLaneSign(runtimeId) {
+  if (typeof runtimeId !== "string") {
+    return 0;
+  }
+  const match = runtimeId.match(/(\d+)$/);
+  if (!match) {
+    return 0;
+  }
+  const slotIndex = Number(match[1]);
+  if (!Number.isFinite(slotIndex)) {
+    return 0;
+  }
+  const lane = slotIndex % 3;
+  if (lane === 1) {
+    return 1;
+  }
+  if (lane === 2) {
+    return -1;
+  }
+  return 0;
+}
+
 function getFacingVector(facing) {
   if (facing === "left") {
     return { x: -1, y: 0 };
@@ -194,28 +306,171 @@ function updateWeaponTransform(weapon, weaponDefinition, formationDefinition, pl
   weapon.biasDirX = nextBias.x;
   weapon.biasDirY = nextBias.y;
 
-  weapon.angleRad = toFiniteNumber(weapon.angleRad, 0) + angularSpeed * dt;
-
   const playerCenter = getPlayerCenter(player);
   const centerMode = getFormationCenterMode(formationDefinition);
   const biasOffsetPx = resolveBiasOffsetPx(radiusPx, formationDefinition);
-  const orbitCenterX =
-    centerMode === "biased_center" ? playerCenter.x + nextBias.x * biasOffsetPx : playerCenter.x;
-  const orbitCenterY =
-    centerMode === "biased_center" ? playerCenter.y + nextBias.y * biasOffsetPx : playerCenter.y;
+  const formationType = resolveFormationParamString(formationDefinition, "type", "type", formationDefinition?.type ?? "circle");
+  const phaseRad = toFiniteNumber(weapon.angleRad, 0) + angularSpeed * dt;
+  weapon.angleRad = phaseRad;
 
-  const weaponCenterX = orbitCenterX + Math.cos(weapon.angleRad) * radiusPx;
-  const weaponCenterY = orbitCenterY + Math.sin(weapon.angleRad) * radiusPx;
-  const fromOrbitDx = weaponCenterX - orbitCenterX;
-  const fromOrbitDy = weaponCenterY - orbitCenterY;
-  const rotationDeg = toRotationDegrees(fromOrbitDx, fromOrbitDy);
+  if (formationType === "stop") {
+    applyWeaponPose(
+      weapon,
+      playerCenter.x,
+      playerCenter.y,
+      playerCenter.x,
+      playerCenter.y,
+      weaponDefinition,
+      formationDefinition
+    );
+    return;
+  }
 
-  weapon.x = weaponCenterX - weapon.width / 2;
-  weapon.y = weaponCenterY - weapon.height / 2;
-  weapon.rotationDeg = rotationDeg;
-  weapon.rotationRad = rotationDeg * Math.PI / 180;
-  weapon.weaponDefId = weaponDefinition.id;
-  weapon.formationId = formationDefinition.id;
+  if (formationType === "arc") {
+    const arcDeg = clamp(resolveFormationParamNumber(formationDefinition, "arcDeg", "arc_deg", 120), 1, 360);
+    const arcHalfRad = (arcDeg * Math.PI) / 360;
+    const arcDir = resolveFormationParamString(formationDefinition, "arcDir", "arc_dir", "front").toLowerCase();
+    const isBack = arcDir === "back";
+    const centerOffsetEnable = resolveFormationParamBoolean(
+      formationDefinition,
+      "centerOffsetEnable",
+      "center_offset_enable",
+      false
+    );
+    const orbitCenter = resolveOrbitCenter(playerCenter, centerMode, nextBias, biasOffsetPx, centerOffsetEnable);
+    const arcCenterDir = {
+      x: nextBias.x * (isBack ? -1 : 1),
+      y: nextBias.y * (isBack ? -1 : 1),
+    };
+    const oscillation = Math.sin(phaseRad) * arcHalfRad;
+    const rotatedArc = rotateVector(arcCenterDir, oscillation);
+    const arcLocalDir = normalizeVector(
+      rotatedArc.x,
+      rotatedArc.y,
+      arcCenterDir.x,
+      arcCenterDir.y
+    );
+    const weaponCenterX = orbitCenter.x + arcLocalDir.x * radiusPx;
+    const weaponCenterY = orbitCenter.y + arcLocalDir.y * radiusPx;
+    applyWeaponPose(
+      weapon,
+      weaponCenterX,
+      weaponCenterY,
+      orbitCenter.x,
+      orbitCenter.y,
+      weaponDefinition,
+      formationDefinition
+    );
+    return;
+  }
+
+  if (formationType === "line") {
+    const lineLenTiles = Math.max(0, resolveFormationParamNumber(formationDefinition, "lineLen", "line_len", 3));
+    const lineLenPx = lineLenTiles * TILE_SIZE;
+    const motion = resolveFormationParamString(formationDefinition, "motion", "motion", "pingpong").toLowerCase();
+    const sideSpacingTiles = Math.max(
+      0,
+      resolveFormationParamNumber(formationDefinition, "sideSpacing", "side_spacing", 0)
+    );
+    const sideSpacingPx = sideSpacingTiles * TILE_SIZE;
+    const laneSign = toFiniteNumber(weapon.laneSign, 0);
+    const progress = motion === "pingpong"
+      ? 0.5 - 0.5 * Math.cos(phaseRad)
+      : (phaseRad / (Math.PI * 2) + 1) % 1;
+    const forwardDistancePx = lineLenPx * clamp(progress, 0, 1);
+    const perpendicular = getPerpendicular(nextBias);
+    const weaponCenterX = playerCenter.x + nextBias.x * forwardDistancePx + perpendicular.x * sideSpacingPx * laneSign;
+    const weaponCenterY = playerCenter.y + nextBias.y * forwardDistancePx + perpendicular.y * sideSpacingPx * laneSign;
+    applyWeaponPose(
+      weapon,
+      weaponCenterX,
+      weaponCenterY,
+      playerCenter.x,
+      playerCenter.y,
+      weaponDefinition,
+      formationDefinition
+    );
+    return;
+  }
+
+  if (formationType === "figure8") {
+    const orbitCenter = resolveOrbitCenter(playerCenter, centerMode, nextBias, biasOffsetPx);
+    const a = resolveFormationParamNumber(formationDefinition, "a", "a", 1);
+    const b = resolveFormationParamNumber(formationDefinition, "b", "b", 0.5);
+    const omegaMul = Math.max(0.01, resolveFormationParamNumber(formationDefinition, "omegaMul", "omega_mul", 1));
+    const t = phaseRad * omegaMul;
+    const localForward = Math.sin(t) * radiusPx * a;
+    const localSide = Math.sin(t * 2) * radiusPx * b;
+    const perpendicular = getPerpendicular(nextBias);
+    const weaponCenterX = orbitCenter.x + nextBias.x * localForward + perpendicular.x * localSide;
+    const weaponCenterY = orbitCenter.y + nextBias.y * localForward + perpendicular.y * localSide;
+    applyWeaponPose(
+      weapon,
+      weaponCenterX,
+      weaponCenterY,
+      orbitCenter.x,
+      orbitCenter.y,
+      weaponDefinition,
+      formationDefinition
+    );
+    return;
+  }
+
+  if (formationType === "spiral") {
+    const orbitCenter = resolveOrbitCenter(playerCenter, centerMode, nextBias, biasOffsetPx);
+    const rMinTiles = resolveFormationParamNumber(
+      formationDefinition,
+      "rMin",
+      "r_min",
+      Math.max(0.3, toFiniteNumber(formationDefinition?.radiusBase, 2) * 0.6)
+    );
+    const rMaxTiles = resolveFormationParamNumber(
+      formationDefinition,
+      "rMax",
+      "r_max",
+      Math.max(rMinTiles, toFiniteNumber(formationDefinition?.radiusBase, 2) * 1.5)
+    );
+    const radialOmega = Math.max(
+      0.01,
+      resolveFormationParamNumber(formationDefinition, "radialOmega", "radial_omega", 1)
+    );
+    const rMinPx = Math.max(0, Math.min(rMinTiles, rMaxTiles) * TILE_SIZE);
+    const rMaxPx = Math.max(rMinPx, Math.max(rMinTiles, rMaxTiles) * TILE_SIZE);
+    const radialT = (Math.sin(phaseRad * radialOmega) + 1) / 2;
+    const radialDistancePx = rMinPx + (rMaxPx - rMinPx) * radialT;
+    const perpendicular = getPerpendicular(nextBias);
+    const orbitDir = normalizeVector(
+      nextBias.x * Math.cos(phaseRad) + perpendicular.x * Math.sin(phaseRad),
+      nextBias.y * Math.cos(phaseRad) + perpendicular.y * Math.sin(phaseRad),
+      nextBias.x,
+      nextBias.y
+    );
+    const weaponCenterX = orbitCenter.x + orbitDir.x * radialDistancePx;
+    const weaponCenterY = orbitCenter.y + orbitDir.y * radialDistancePx;
+    applyWeaponPose(
+      weapon,
+      weaponCenterX,
+      weaponCenterY,
+      orbitCenter.x,
+      orbitCenter.y,
+      weaponDefinition,
+      formationDefinition
+    );
+    return;
+  }
+
+  const orbitCenter = resolveOrbitCenter(playerCenter, centerMode, nextBias, biasOffsetPx);
+  const weaponCenterX = orbitCenter.x + Math.cos(phaseRad) * radiusPx;
+  const weaponCenterY = orbitCenter.y + Math.sin(phaseRad) * radiusPx;
+  applyWeaponPose(
+    weapon,
+    weaponCenterX,
+    weaponCenterY,
+    orbitCenter.x,
+    orbitCenter.y,
+    weaponDefinition,
+    formationDefinition
+  );
 }
 
 function applyWeaponHits(weapon, weaponDefinition, enemies, events, player) {
@@ -319,6 +574,7 @@ export function createWeaponRuntime(weaponDefinition, formationDefinition, playe
     hitSet: new Set(),
     biasDirX: facingDir.x,
     biasDirY: facingDir.y,
+    laneSign: resolveRuntimeLaneSign(runtimeId ?? `weapon-${weaponDefinition.id}`),
   };
 }
 
@@ -358,7 +614,7 @@ export function updateWeaponsAndCombat(
     }
 
     const formationDefinition = formationDefinitionsById?.[weapon.formationId];
-    if (!formationDefinition || formationDefinition.type !== "circle") {
+    if (!formationDefinition || typeof formationDefinition.type !== "string") {
       continue;
     }
 

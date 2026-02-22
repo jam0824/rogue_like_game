@@ -1,4 +1,12 @@
-const FORMATION_DB_FALLBACK_FILE_NAMES = ["formation_circle_01.json", "formation_stop_01.json"];
+const FORMATION_DB_FALLBACK_FILE_NAMES = [
+  "formation_circle_01.json",
+  "formation_arc_front_01.json",
+  "formation_arc_back_01.json",
+  "formation_line_front_01.json",
+  "formation_figure8_01.json",
+  "formation_spiral_01.json",
+  "formation_stop_01.json",
+];
 
 const REQUIRED_KEYS = [
   "id",

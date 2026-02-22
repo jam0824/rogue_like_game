@@ -258,6 +258,33 @@ function buildFormationSlotMarkup(slot) {
   </div>`;
 }
 
+function buildFormationOptionMarkup(option) {
+  const formationId = typeof option?.formationId === "string" ? option.formationId : "";
+  const name = tJa(option?.nameKey, option?.name ?? formationId);
+  const description = tJa(option?.descriptionKey, option?.description ?? "");
+  const iconImageSrc = typeof option?.iconImageSrc === "string" ? option.iconImageSrc : "";
+  const className = `weapon-formation-option${option?.isSelected === true ? " is-selected" : ""}`;
+  return `<button type="button"
+    class="${className}"
+    data-ui-formation-id="${escapeHtml(formationId)}"
+    title="${escapeHtml(description || name)}">
+    <span class="weapon-formation-option-icon">${
+      iconImageSrc
+        ? `<img class="inventory-asset-icon-image" src="${escapeHtml(iconImageSrc)}" alt="${escapeHtml(name)}" />`
+        : ""
+    }</span>
+    <span class="weapon-formation-option-name">${escapeHtml(name)}</span>
+  </button>`;
+}
+
+function buildFormationPanelMarkup(slot, options) {
+  const normalizedOptions = Array.isArray(options) ? options : [];
+  const optionsMarkup = normalizedOptions.length > 0
+    ? `<div class="weapon-formation-option-grid">${normalizedOptions.map((option) => buildFormationOptionMarkup(option)).join("")}</div>`
+    : "";
+  return `${buildFormationSlotMarkup(slot)}${optionsMarkup}`;
+}
+
 export function createSystemHud(root, handlers = {}) {
   const hpBar = root.querySelector("#system-hp-bar");
   const hpFill = root.querySelector("#system-hp-fill");
@@ -403,6 +430,26 @@ export function createSystemHud(root, handlers = {}) {
       }
       if (typeof handlers.onCloseWeaponSkillEditor === "function") {
         handlers.onCloseWeaponSkillEditor();
+      }
+    });
+  }
+
+  if (weaponSkillFormationSlot) {
+    weaponSkillFormationSlot.addEventListener("click", (event) => {
+      const target = event?.target;
+      if (!target || typeof target.closest !== "function") {
+        return;
+      }
+      const optionButton = target.closest("[data-ui-formation-id]");
+      if (!optionButton) {
+        return;
+      }
+      const formationId = readDatasetValue(optionButton, "uiFormationId", "data-ui-formation-id");
+      if (formationId.length <= 0) {
+        return;
+      }
+      if (typeof handlers.onSelectFormation === "function") {
+        handlers.onSelectFormation(formationId);
       }
     });
   }
@@ -770,7 +817,10 @@ export function createSystemHud(root, handlers = {}) {
             .join("");
         }
         if (weaponSkillFormationSlot) {
-          weaponSkillFormationSlot.innerHTML = buildFormationSlotMarkup(skillEditor.formationSlot);
+          weaponSkillFormationSlot.innerHTML = buildFormationPanelMarkup(
+            skillEditor.formationSlot,
+            skillEditor.formationOptions
+          );
         }
       } else {
         if (weaponSkillChainRow) {

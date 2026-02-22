@@ -1,0 +1,33 @@
+{
+  "id": "formation_id_figure801",
+  "type": "figure8",
+  "name_key": "formation_name_figure8",
+  "description_key": "formation_desc_figure8",
+  "tags": ["balanced", "sweep"],
+
+  "radius_base": 2.0,
+  "angular_speed_base": 2.2,
+  "phase_style": "even",
+
+  "bias_strength_mul": 1.0,
+  "bias_response_mul": 1.0,
+
+  "clamp": {
+    "radius_min": 0.8,
+    "radius_max": 4.8,
+    "speed_min": 0.3,
+    "speed_max": 8.0,
+    "bias_offset_ratio_max": 0.7
+  },
+
+  "params": {
+    "a": 1.0,
+    "b": 0.5,
+    "omega_mul": 1.0
+  },
+
+  "ui": {
+    "icon_file_name": "graphic/ui/icon/icon_formation/icon_formation_figure8_01.png",
+    "sort_order": 50
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "formation_id_arc_back01",
+  "type": "arc",
+  "name_key": "formation_name_arc_back",
+  "description_key": "formation_desc_arc_back",
+  "tags": ["defense", "back"],
+
+  "radius_base": 2.0,
+  "angular_speed_base": 2.8,
+  "phase_style": "even",
+
+  "bias_strength_mul": 1.1,
+  "bias_response_mul": 1.0,
+
+  "clamp": {
+    "radius_min": 0.8,
+    "radius_max": 4.5,
+    "speed_min": 0.4,
+    "speed_max": 8.0,
+    "bias_offset_ratio_max": 0.8
+  },
+
+  "params": {
+    "arc_deg": 120,
+    "arc_dir": "back",
+    "center_offset_enable": true
+  },
+
+  "ui": {
+    "icon_file_name": "graphic/ui/icon/icon_formation/icon_formation_arc_back_01.png",
+    "sort_order": 30
+  }
+}

@@ -999,7 +999,8 @@ body {
 }
 
 #weapon-skill-formation-slot {
-  display: block;
+  display: grid;
+  gap: 10px;
 }
 
 .weapon-formation-slot {
@@ -1044,6 +1045,47 @@ body {
   color: #d2c1a5;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.weapon-formation-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.weapon-formation-option {
+  border: 3px solid #8f5a28;
+  background: #4b2d1a;
+  color: #fef6e3;
+  min-height: 92px;
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+  cursor: pointer;
+}
+
+.weapon-formation-option.is-selected {
+  border-color: #f1c55f;
+  box-shadow: inset 0 0 0 2px #c58f2c;
+  background: #5d3b21;
+}
+
+.weapon-formation-option-icon {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #6a4a2a;
+  background: linear-gradient(to bottom, #3a2416, #2c1a10);
+  display: grid;
+  place-items: center;
+}
+
+.weapon-formation-option-name {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .weapon-skill-slot {

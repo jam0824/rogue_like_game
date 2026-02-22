@@ -68,6 +68,13 @@ function createEnemy(overrides = {}) {
   };
 }
 
+function getWeaponCenter(weapon) {
+  return {
+    x: weapon.x + weapon.width / 2,
+    y: weapon.y + weapon.height / 2,
+  };
+}
+
 describe("weaponSystem", () => {
   it("初回更新で attackSeq が進み、同一シーケンス中の再ヒットを防ぐ", () => {
     const player = createPlayer();
@@ -180,6 +187,206 @@ describe("weaponSystem", () => {
     expect(weapons[0].biasDirX).toBeGreaterThan(0.95);
     expect(Math.abs(weapons[0].biasDirY)).toBeLessThan(0.1);
     expect(weapons[0].x).toBeGreaterThan(190);
+  });
+
+  it("arc_front / arc_back は照準方向に対して前後へ偏る", () => {
+    const player = createPlayer({
+      pointerActive: true,
+      target: { x: 900, y: 132 },
+      facing: "up",
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 2 });
+    const playerCenterX = player.x + player.width / 2;
+
+    const frontFormation = createFormationDefinition({
+      id: "formation_id_arc_front01",
+      type: "arc",
+      radiusBase: 2,
+      angularSpeedBase: 0,
+      params: {
+        arcDir: "front",
+        arcDeg: 120,
+        centerOffsetEnable: false,
+      },
+    });
+    const frontWeaponDefinition = { ...weaponDefinition, formationId: frontFormation.id };
+    const frontWeapons = createPlayerWeapons([frontWeaponDefinition], { [frontFormation.id]: frontFormation }, player);
+    updateWeaponsAndCombat(
+      frontWeapons,
+      player,
+      [],
+      { [frontWeaponDefinition.id]: frontWeaponDefinition },
+      { [frontFormation.id]: frontFormation },
+      1 / 60
+    );
+    expect(getWeaponCenter(frontWeapons[0]).x).toBeGreaterThan(playerCenterX);
+
+    const backFormation = createFormationDefinition({
+      id: "formation_id_arc_back01",
+      type: "arc",
+      radiusBase: 2,
+      angularSpeedBase: 0,
+      params: {
+        arcDir: "back",
+        arcDeg: 120,
+        centerOffsetEnable: false,
+      },
+    });
+    const backWeaponDefinition = { ...weaponDefinition, formationId: backFormation.id };
+    const backWeapons = createPlayerWeapons([backWeaponDefinition], { [backFormation.id]: backFormation }, player);
+    updateWeaponsAndCombat(
+      backWeapons,
+      player,
+      [],
+      { [backWeaponDefinition.id]: backWeaponDefinition },
+      { [backFormation.id]: backFormation },
+      1 / 60
+    );
+    expect(getWeaponCenter(backWeapons[0]).x).toBeLessThan(playerCenterX);
+  });
+
+  it("line_front は前方へ伸びて戻る", () => {
+    const player = createPlayer({
+      pointerActive: true,
+      target: { x: 800, y: 132 },
+      facing: "right",
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 3, formationId: "formation_id_line_front01" });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_line_front01",
+      type: "line",
+      radiusBase: 2,
+      angularSpeedBase: 4,
+      params: {
+        lineLen: 3.2,
+        motion: "pingpong",
+        sideSpacing: 0,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+    const playerCenterX = player.x + player.width / 2;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < 240; i += 1) {
+      updateWeaponsAndCombat(weapons, player, [], weaponDefinitionsById, formationsById, 1 / 60);
+      const centerX = getWeaponCenter(weapons[0]).x;
+      minX = Math.min(minX, centerX);
+      maxX = Math.max(maxX, centerX);
+    }
+
+    expect(maxX - playerCenterX).toBeGreaterThan(80);
+    expect(Math.abs(minX - playerCenterX)).toBeLessThan(2);
+  });
+
+  it("figure8 は前後をまたぐ軌道を描く", () => {
+    const player = createPlayer({
+      pointerActive: true,
+      target: { x: 800, y: 132 },
+      facing: "right",
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 3, formationId: "formation_id_figure801" });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_figure801",
+      type: "figure8",
+      radiusBase: 2,
+      angularSpeedBase: 2.4,
+      params: {
+        a: 1,
+        b: 0.5,
+        omegaMul: 1,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+    const playerCenterX = player.x + player.width / 2;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < 240; i += 1) {
+      updateWeaponsAndCombat(weapons, player, [], weaponDefinitionsById, formationsById, 1 / 60);
+      const centerX = getWeaponCenter(weapons[0]).x;
+      minX = Math.min(minX, centerX);
+      maxX = Math.max(maxX, centerX);
+    }
+
+    expect(maxX - playerCenterX).toBeGreaterThan(40);
+    expect(playerCenterX - minX).toBeGreaterThan(40);
+  });
+
+  it("spiral は半径が内外に変動する", () => {
+    const player = createPlayer({
+      pointerActive: true,
+      target: { x: 800, y: 132 },
+      facing: "right",
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 3, formationId: "formation_id_spiral01" });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_spiral01",
+      type: "spiral",
+      radiusBase: 2,
+      angularSpeedBase: 2.6,
+      params: {
+        rMin: 1.2,
+        rMax: 3.6,
+        radialOmega: 1.6,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+    const playerCenter = { x: player.x + player.width / 2, y: player.y + player.height / 2 };
+    let minDistance = Number.POSITIVE_INFINITY;
+    let maxDistance = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < 240; i += 1) {
+      updateWeaponsAndCombat(weapons, player, [], weaponDefinitionsById, formationsById, 1 / 60);
+      const center = getWeaponCenter(weapons[0]);
+      const distance = Math.hypot(center.x - playerCenter.x, center.y - playerCenter.y);
+      minDistance = Math.min(minDistance, distance);
+      maxDistance = Math.max(maxDistance, distance);
+    }
+
+    expect(maxDistance - minDistance).toBeGreaterThan(40);
+  });
+
+  it("stop はプレイヤー中心へ固定追従する", () => {
+    const player = createPlayer({ x: 100, y: 100, width: 32, height: 64 });
+    const weaponDefinition = createWeaponDefinition({
+      attackCooldownSec: 2,
+      width: 16,
+      height: 16,
+      formationId: "formation_id_stop01",
+    });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_stop01",
+      type: "stop",
+      radiusBase: 0,
+      angularSpeedBase: 0,
+      biasStrengthMul: 0,
+      biasResponseMul: 0,
+      params: {
+        weaponVisible: false,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+
+    updateWeaponsAndCombat(weapons, player, [], weaponDefinitionsById, formationsById, 1 / 60);
+    const centerA = getWeaponCenter(weapons[0]);
+    expect(centerA.x).toBeCloseTo(player.x + player.width / 2, 5);
+    expect(centerA.y).toBeCloseTo(player.y + player.height / 2, 5);
+
+    player.x += 24;
+    player.y += 12;
+    updateWeaponsAndCombat(weapons, player, [], weaponDefinitionsById, formationsById, 1 / 60);
+    const centerB = getWeaponCenter(weapons[0]);
+    expect(centerB.x).toBeCloseTo(player.x + player.width / 2, 5);
+    expect(centerB.y).toBeCloseTo(player.y + player.height / 2, 5);
   });
 
   it("武器回転角が 上0/右90/下180/左270 に対応する", () => {

@@ -1,0 +1,33 @@
+{
+  "id": "formation_id_line_front01",
+  "type": "line",
+  "name_key": "formation_name_line_front",
+  "description_key": "formation_desc_line_front",
+  "tags": ["offense", "line"],
+
+  "radius_base": 2.0,
+  "angular_speed_base": 2.4,
+  "phase_style": "even",
+
+  "bias_strength_mul": 1.15,
+  "bias_response_mul": 1.0,
+
+  "clamp": {
+    "radius_min": 0.5,
+    "radius_max": 5.0,
+    "speed_min": 0.4,
+    "speed_max": 8.0,
+    "bias_offset_ratio_max": 0.8
+  },
+
+  "params": {
+    "line_len": 3.2,
+    "motion": "pingpong",
+    "side_spacing": 0.8
+  },
+
+  "ui": {
+    "icon_file_name": "graphic/ui/icon/icon_formation/icon_formation_line_front_01.png",
+    "sort_order": 40
+  }
+}
