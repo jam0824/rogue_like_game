@@ -880,7 +880,13 @@ function findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys =
     const candidate = { type: definition.type, width: definition.width, height: definition.height, collision };
 
     if (isEnemyPositionPassable(candidate, x, y, dungeon)) {
-      return { x, y, collision };
+      return {
+        x,
+        y,
+        collision,
+        tileX: tile.tileX,
+        tileY: tile.tileY,
+      };
     }
   }
 
@@ -896,11 +902,11 @@ function chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOr
 
 function normalizeBlockedTileSet(blockedTiles) {
   if (blockedTiles instanceof Set) {
-    return blockedTiles;
+    return new Set(blockedTiles);
   }
 
   if (!Array.isArray(blockedTiles)) {
-    return null;
+    return new Set();
   }
 
   return new Set(
@@ -924,6 +930,12 @@ function normalizeBlockedTileSet(blockedTiles) {
   );
 }
 
+function resolveSpawnCount(definition, spawnRng) {
+  const min = Math.max(1, Math.floor(toFiniteNumber(definition?.spawn?.min, 1)));
+  const max = Math.max(min, Math.floor(toFiniteNumber(definition?.spawn?.max, min)));
+  return spawnRng.int(min, max);
+}
+
 export function createEnemies(
   dungeon,
   enemyDefinitions,
@@ -942,29 +954,42 @@ export function createEnemies(
   const enemies = [];
   const blockedTileKeys = normalizeBlockedTileSet(blockedTiles);
 
-  for (let index = 0; index < spawnRooms.length; index += 1) {
-    const room = spawnRooms[index];
-    const definition = chooseDefinitionForRoom(index, enemyDefinitions, spawnRng, guaranteedOrder);
-    const spawn = findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys);
+  for (let roomIndex = 0; roomIndex < spawnRooms.length; roomIndex += 1) {
+    const room = spawnRooms[roomIndex];
+    const definition = chooseDefinitionForRoom(roomIndex, enemyDefinitions, spawnRng, guaranteedOrder);
+    const attackProfile = enemyAttackProfilesByDbId?.[definition.id] ?? null;
+    const requestedSpawnCount = resolveSpawnCount(definition, spawnRng);
+    let spawnedInRoom = 0;
 
-    if (!spawn) {
-      throw new Error(`Failed to spawn enemy in room ${room.id} (type=${definition.type})`);
+    for (let spawnIndex = 0; spawnIndex < requestedSpawnCount; spawnIndex += 1) {
+      const spawn = findSpawnForRoom(room, definition, dungeon, spawnRng, blockedTileKeys);
+      if (!spawn) {
+        break;
+      }
+
+      const tileKey = `${spawn.tileX}:${spawn.tileY}`;
+      blockedTileKeys.add(tileKey);
+      const enemyRng = createRng(
+        deriveSeed(seed ?? dungeon.seed, `enemy-${room.id}-${roomIndex}-${spawnIndex}`)
+      );
+      enemies.push(
+        createEnemyState(
+          definition,
+          spawn.x,
+          spawn.y,
+          spawn.collision,
+          enemyRng,
+          `enemy-${room.id}-${roomIndex}-${spawnIndex}`,
+          attackProfile,
+          dungeonFloor
+        )
+      );
+      spawnedInRoom += 1;
     }
 
-    const enemyRng = createRng(deriveSeed(seed ?? dungeon.seed, `enemy-${room.id}-${index}`));
-    const attackProfile = enemyAttackProfilesByDbId?.[definition.id] ?? null;
-    enemies.push(
-      createEnemyState(
-        definition,
-        spawn.x,
-        spawn.y,
-        spawn.collision,
-        enemyRng,
-        `enemy-${room.id}-${index}`,
-        attackProfile,
-        dungeonFloor
-      )
-    );
+    if (spawnedInRoom <= 0) {
+      throw new Error(`Failed to spawn enemy in room ${room.id} (type=${definition.type})`);
+    }
   }
 
   return enemies;

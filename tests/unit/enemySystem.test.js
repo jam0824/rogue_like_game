@@ -141,6 +141,48 @@ describe("enemySystem", () => {
     expect(enemy.hitFlashColor).toBe("#ffffff");
   });
 
+  it("spawn.min/max 指定時は1部屋1スポーンから複数体生成される", () => {
+    const dungeon = createDungeon();
+    const enemyDefinitions = [createEnemyDefinition({ spawn: { min: 3, max: 3 } })];
+
+    const enemies = createEnemies(dungeon, enemyDefinitions, "enemy-spawn-multi-seed");
+
+    expect(enemies).toHaveLength(3);
+    const centerTileKeys = new Set(
+      enemies.map((enemy) => {
+        const centerTileX = Math.floor((enemy.x + enemy.width / 2) / 32);
+        const centerTileY = Math.floor((enemy.y + enemy.height / 2) / 32);
+        return `${centerTileX}:${centerTileY}`;
+      })
+    );
+    expect(centerTileKeys.size).toBe(3);
+  });
+
+  it("spawn 数を置き切れない場合は置ける数まで生成して続行する", () => {
+    const dungeon = createDungeon();
+    const enemyDefinitions = [createEnemyDefinition({ spawn: { min: 3, max: 3 } })];
+    const blockedTiles = [
+      { tileX: 7, tileY: 7 },
+      { tileX: 8, tileY: 7 },
+      { tileX: 9, tileY: 7 },
+      { tileX: 7, tileY: 8 },
+      { tileX: 9, tileY: 8 },
+      { tileX: 7, tileY: 9 },
+      { tileX: 8, tileY: 9 },
+      { tileX: 9, tileY: 9 },
+    ];
+
+    const enemies = createEnemies(
+      dungeon,
+      enemyDefinitions,
+      "enemy-spawn-reduce-seed",
+      null,
+      blockedTiles
+    );
+
+    expect(enemies).toHaveLength(1);
+  });
+
   it("戦闘当たり判定は imageMagnification=1 では従来サイズを返す", () => {
     const enemy = {
       x: 12.5,
