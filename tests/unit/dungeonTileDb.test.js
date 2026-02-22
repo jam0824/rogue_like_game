@@ -7,7 +7,8 @@ function createDungeonRecord(overrides = {}) {
     name_key: "name_dungeon_01",
     description_key: "description_dungeon_01",
     tip_set_root_path: "graphic/dungeon_tip/dungeon_id_01",
-    bgm: "sounds/bgm/KIRI.mp3",
+    bgm: "bgm_key_dungeon_001",
+    enemy_db_ids: ["BrownMushroom_01", "Bee_01"],
     wall_height: 5,
     tip_set: {
       tile: ["tile_normal.png"],
@@ -121,7 +122,8 @@ describe("dungeonTileDb", () => {
       nameKey: "name_dungeon_01",
       descriptionKey: "description_dungeon_01",
       tipSetRootPath: "graphic/dungeon_tip/dungeon_id_01",
-      bgmPath: "sounds/bgm/KIRI.mp3",
+      bgmKey: "bgm_key_dungeon_001",
+      enemyDbIds: ["BrownMushroom_01", "Bee_01"],
       wallHeightTiles: 5,
       walkableTileDecoration: [],
     });
@@ -217,6 +219,46 @@ describe("dungeonTileDb", () => {
     });
 
     await expect(loadDungeonDefinitions()).rejects.toThrow("invalid walkable_tile_decoration[1]");
+  });
+
+  it("enemy_db_ids 欠損はエラー", async () => {
+    const invalidRecord = createDungeonRecord();
+    delete invalidRecord.enemy_db_ids;
+
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": invalidRecord,
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("missing required key: enemy_db_ids");
+  });
+
+  it("enemy_db_ids が配列でないならエラー", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({
+          enemy_db_ids: "BrownMushroom_01",
+        }),
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("invalid enemy_db_ids");
+  });
+
+  it("enemy_db_ids に空文字があればエラー", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_01.json"],
+      recordsByFileName: {
+        "dungeon_id_01.json": createDungeonRecord({
+          enemy_db_ids: ["BrownMushroom_01", "   "],
+        }),
+      },
+    });
+
+    await expect(loadDungeonDefinitions()).rejects.toThrow("invalid enemy_db_ids[1]");
   });
 
   it("id 重複はエラー", async () => {

@@ -20,6 +20,10 @@ import {
   updateEnemyAttacks,
   updateEnemies,
 } from "./enemy/enemySystem.js";
+import {
+  resolveDungeonBgmSourceOrThrow,
+  resolveDungeonEnemyDefinitionsOrThrow,
+} from "./dungeon/dungeonRuntimeConfig.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
@@ -1126,6 +1130,7 @@ function followPlayerInView() {
 const playerDefinition = await loadDefaultPlayerDefinition();
 const playerAssets = await loadPlayerAsset(playerDefinition);
 let enemyDefinitions = [];
+let enemyDefinitionsById = {};
 let enemyAssets = {};
 let enemyAiProfilesById = {};
 let enemyWeaponLoadoutsById = {};
@@ -1333,6 +1338,7 @@ async function refreshEnemyResources() {
   ]);
   const assets = await loadEnemyAssets(definitions);
   enemyDefinitions = definitions;
+  enemyDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
   enemyAssets = assets;
   enemyAiProfilesById = Object.fromEntries(aiProfiles.map((profile) => [profile.id, profile]));
   enemyWeaponLoadoutsById = Object.fromEntries(loadouts.map((loadout) => [loadout.id, loadout]));
@@ -1382,14 +1388,8 @@ async function refreshEffectResources() {
 }
 
 async function refreshSoundResources() {
-  try {
-    soundEffectMap = await loadSoundEffectMap();
-    soundEffectPlayer.setSoundEffectMap(soundEffectMap);
-  } catch (error) {
-    soundEffectMap = {};
-    soundEffectPlayer.setSoundEffectMap(soundEffectMap);
-    console.warn(`[SE] Failed to load sound DB: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  soundEffectMap = await loadSoundEffectMap();
+  soundEffectPlayer.setSoundEffectMap(soundEffectMap);
 }
 
 function ensurePlayerStateLoaded() {
@@ -2950,6 +2950,11 @@ async function regenerate(seed) {
     if (!dungeonDefinition) {
       throw new Error("Dungeon DB is empty.");
     }
+    const dungeonEnemyDefinitions = resolveDungeonEnemyDefinitionsOrThrow(
+      dungeonDefinition,
+      enemyDefinitionsById
+    );
+    const dungeonBgmSource = resolveDungeonBgmSourceOrThrow(dungeonDefinition, soundEffectMap);
     selectedDungeonId = dungeonDefinition.id;
     debugPanel.setDungeonId(selectedDungeonId);
     const tileAssets = await ensureTileAssetsForDungeon(dungeonDefinition);
@@ -2997,7 +3002,7 @@ async function regenerate(seed) {
     const blockedEnemyTiles = buildBlockedTileSetFromChests(treasureChests);
     const enemies = createEnemies(
       dungeon,
-      enemyDefinitions,
+      dungeonEnemyDefinitions,
       normalizedSeed,
       enemyAttackProfilesByDbId,
       blockedEnemyTiles
@@ -3088,7 +3093,7 @@ async function regenerate(seed) {
       return;
     }
 
-    void dungeonBgmPlayer.playLoop(dungeonDefinition.bgmPath);
+    void dungeonBgmPlayer.playLoop(dungeonBgmSource);
     renderCurrentFrame();
     followPlayerInView();
     persistPlayerState();

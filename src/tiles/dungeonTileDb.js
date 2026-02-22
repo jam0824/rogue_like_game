@@ -6,6 +6,7 @@ const REQUIRED_KEYS = [
   "description_key",
   "tip_set_root_path",
   "bgm",
+  "enemy_db_ids",
   "wall_height",
   "tip_set",
 ];
@@ -64,7 +65,20 @@ function assertDungeonShape(rawDungeon, fileName) {
   }
 
   assertTipSetShape(rawDungeon.tip_set, fileName);
+  assertEnemyDbIdsShape(rawDungeon.enemy_db_ids, fileName);
   assertWalkableTileDecorationShape(rawDungeon.walkable_tile_decoration, fileName);
+}
+
+function assertEnemyDbIdsShape(rawEnemyDbIds, fileName) {
+  if (!Array.isArray(rawEnemyDbIds)) {
+    throw new Error(`Dungeon DB ${fileName} has invalid enemy_db_ids: must be an array`);
+  }
+
+  rawEnemyDbIds.forEach((value, index) => {
+    if (typeof value !== "string" || value.trim().length <= 0) {
+      throw new Error(`Dungeon DB ${fileName} has invalid enemy_db_ids[${index}]: ${value}`);
+    }
+  });
 }
 
 function assertWalkableTileDecorationShape(rawWalkableTileDecoration, fileName) {
@@ -100,6 +114,10 @@ function normalizeWalkableTileDecoration(rawWalkableTileDecoration) {
   return rawWalkableTileDecoration.map((value) => value.trim());
 }
 
+function normalizeEnemyDbIds(rawEnemyDbIds) {
+  return rawEnemyDbIds.map((value) => value.trim());
+}
+
 function normalizeDungeonRecord(rawDungeon, fileName) {
   assertHasRequiredKeys(rawDungeon, fileName);
   assertDungeonShape(rawDungeon, fileName);
@@ -109,7 +127,8 @@ function normalizeDungeonRecord(rawDungeon, fileName) {
     nameKey: rawDungeon.name_key,
     descriptionKey: rawDungeon.description_key,
     tipSetRootPath: rawDungeon.tip_set_root_path,
-    bgmPath: rawDungeon.bgm.trim(),
+    bgmKey: rawDungeon.bgm.trim(),
+    enemyDbIds: normalizeEnemyDbIds(rawDungeon.enemy_db_ids),
     wallHeightTiles: Math.max(1, Math.floor(Number(rawDungeon.wall_height))),
     tipSet: normalizeTipSet(rawDungeon.tip_set),
     walkableTileDecoration: normalizeWalkableTileDecoration(rawDungeon.walkable_tile_decoration),

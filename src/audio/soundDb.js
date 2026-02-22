@@ -30,7 +30,7 @@ function normalizeSoundEffectMap(rawSoundDb) {
   }
 
   const soundMap = {};
-  const nestedSections = ["weapon", "skill"];
+  const nestedSections = ["weapon", "skill", "bgm"];
 
   for (const [key, value] of Object.entries(rawSoundDb)) {
     if (nestedSections.includes(key)) {

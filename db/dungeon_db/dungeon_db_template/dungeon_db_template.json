@@ -3,7 +3,7 @@
     "name_key": "name_dungeon_01",
     "description_key": "description_dungeon_01",
     "tip_set_root_path": "graphic/dungeon_tip/dungeon_id_01",
-    "bgm":"sounds/bgm/KIRI.mp3",
+    "bgm":"bgm_key_dungeon_001",
     "wall_height": 5,
     "tip_set":{
         "tile":["tile_normal.png"],
@@ -28,5 +28,9 @@
         "decoration_07.png",
         "decoration_08.png",
         "decoration_09.png"
+    ],
+    "enemy_db_ids":[
+        "BrownMushroom_01",
+        "Bee_01"
     ]
 }

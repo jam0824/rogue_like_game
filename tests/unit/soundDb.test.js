@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("soundDb", () => {
-  it("normalizeSoundEffectMap はトップレベルと weapon/skill を1つの map に正規化する", () => {
+  it("normalizeSoundEffectMap はトップレベルと weapon/skill/bgm を1つの map に正規化する", () => {
     const normalized = normalizeSoundEffectMap({
       se_key_open_chest: " sounds/se/open.wav ",
       weapon: {
@@ -36,6 +36,9 @@ describe("soundDb", () => {
       skill: {
         se_key_small_heal: "sounds/se/heal.mp3",
       },
+      bgm: {
+        bgm_key_dungeon_001: "sounds/bgm/dungeon01.mp3",
+      },
       not_used: 123,
     });
 
@@ -43,6 +46,7 @@ describe("soundDb", () => {
       se_key_open_chest: "sounds/se/open.wav",
       se_key_hit_sword_01: "sounds/se/sword.mp3",
       se_key_small_heal: "sounds/se/heal.mp3",
+      bgm_key_dungeon_001: "sounds/bgm/dungeon01.mp3",
     });
   });
 
@@ -56,6 +60,9 @@ describe("soundDb", () => {
         skill: {
           se_key_small_heal: "sounds/se/heal.mp3",
         },
+        bgm: {
+          bgm_key_dungeon_002: "sounds/bgm/dungeon02.mp3",
+        },
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -66,6 +73,7 @@ describe("soundDb", () => {
       se_key_get_item: "sounds/se/get.mp3",
       se_key_hit_sword_01: "sounds/se/hit.mp3",
       se_key_small_heal: "sounds/se/heal.mp3",
+      bgm_key_dungeon_002: "sounds/bgm/dungeon02.mp3",
     });
     const firstRequestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");
     expect(firstRequestedUrl).toContain("/db/sound_db/sound_db.json");

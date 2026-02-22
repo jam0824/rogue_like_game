@@ -3,7 +3,7 @@
     "name_key": "name_dungeon_01",
     "description_key": "description_dungeon_01",
     "tip_set_root_path": "graphic/dungeon_tip/dungeon_id_01",
-    "bgm":"sounds/bgm/洞窟の奥で光り輝くもの_M313.mp3",
+    "bgm":"bgm_key_dungeon_001",
     "wall_height": 5,
     "tip_set":{
         "tile":["tile_normal.png"],
@@ -19,5 +19,9 @@
         "J":["right_bottom_corner.png"],
         "K":["left_bottom_01.png"],
         "L":["right_bottom_01.png"]
-    }
+    },
+    "enemy_db_ids":[
+        "BrownMushroom_01",
+        "Bee_01"
+    ]
 }
