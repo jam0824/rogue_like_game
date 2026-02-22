@@ -1528,3 +1528,41 @@ Original prompt: specの中に仕様が入っているので読んでくださ�
   - `npm run check:player-attack`
   - `npm run check:skill-chain`
 - 2026-02-22: Playwright run attempted with `tests/actions/player_attack_burst_idle.json`, but Chromium launch is blocked in sandbox (`mach_port_rendezvous ... Permission denied (1100)`).
+- 2026-02-22: Adjusted idle weapon behavior to rear-hover style in `src/weapon/weaponSystem.js`.
+  - idle anchor now uses back direction (`playerCenter - biasDir * distance`) with existing fan/bob.
+  - idle bias target now blends facing and aim (`ATTACK_IDLE_AIM_BLEND=0.25`) instead of pure aim.
+  - idle rotation override now fixed vertical up (`0°`) via `IDLE_VERTICAL_UP_DIR`.
+- 2026-02-22: Updated `tests/unit/weaponSystem.test.js` idle assertions from front-hover to rear-hover + weak aim influence + fixed vertical idle rotation.
+- 2026-02-22: Validation complete for rear-idle change:
+  - `npm run unit -- tests/unit/weaponSystem.test.js tests/unit/playerStateStore.test.js tests/unit/systemHud.test.js` PASS.
+  - `npm run check:player-attack` PASS.
+  - `npm run check:skill-chain` PASS.
+- 2026-02-22: Playwright client run attempted (`tests/actions/player_attack_burst_idle.json`) but blocked by sandbox Chromium launch permission (`mach_port_rendezvous ... Permission denied (1100)`).
+- 2026-02-22: Enabled bias centroid effect for all player formations across approach/burst/return/idle.
+  - Added TEC-linked scaling in weapon motion (`BIAS_PER_TEC`, `RESPONSE_PER_TEC`, caps 3.0).
+  - Expanded bias offset/response resolvers to accept runtime scaling.
+  - Applied bias center shift to burst trajectories (`circle/line/figure8/spiral` via biased burst origin; `arc` via front/back arc center offset always enabled when bias offset exists).
+  - Applied bias center shift to idle anchor (rear-hover baseline retained) and return destination.
+- 2026-02-22: Expanded unit tests (`tests/unit/weaponSystem.test.js`) with bias coverage.
+  - Added all-formation burst centroid bias test.
+  - Added idle rear-anchor + bias shift test.
+  - Added return destination bias reflection test.
+  - Added TEC-driven bias strength and response speed tests.
+  - Added stop immunity test for TEC/bias inputs.
+- 2026-02-22: Validation complete:
+  - `npm run unit -- tests/unit/weaponSystem.test.js tests/unit/playerStateStore.test.js tests/unit/systemHud.test.js` PASS.
+  - `npm run check:player-attack` PASS.
+  - `npm run check:skill-chain` PASS.
+- 2026-02-22: Playwright client attempt blocked by sandbox Chromium launch permission (`mach_port_rendezvous ... Permission denied (1100)`).
+- 2026-02-22: Implemented idle-only rear minimum distance guard to prevent player/weapon overlap while keeping all-phase bias behavior.
+  - `src/weapon/weaponSystem.js`: added size-projected rear-distance helpers (`resolveHalfExtentAlongDirPx`, `resolveIdleRearMinDistancePx`) and `ATTACK_IDLE_REAR_GAP_PX=4`.
+  - Idle anchor now clamps rear distance with `max(idleRearMinDistancePx, idleFrontDistancePx - biasOffsetPx)`; applied only to `idle` and `return` destination anchor.
+  - `approach/burst` bias behavior unchanged.
+- 2026-02-22: Updated unit coverage for overlap guard in `tests/unit/weaponSystem.test.js`.
+  - Added geometry helpers in test file and replaced idle bias-forward test with high-bias/high-TEC rear-min-distance assertion.
+  - Updated return test to verify return endpoint also satisfies the same rear minimum distance.
+- 2026-02-22: Validation complete for idle rear-min guard.
+  - `npm run unit -- tests/unit/weaponSystem.test.js tests/unit/playerStateStore.test.js tests/unit/systemHud.test.js` PASS.
+  - `npm run check:player-attack` PASS.
+  - `npm run check:skill-chain` PASS.
+  - Playwright client run attempted (`tests/actions/player_attack_burst_idle.json`) but blocked by sandbox Chromium launch permission (`mach_port_rendezvous ... Permission denied (1100)`).

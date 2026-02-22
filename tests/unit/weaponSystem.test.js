@@ -3,6 +3,7 @@ import { rollHitDamage } from "../../src/combat/damageRoll.js";
 import { createPlayerWeapons, updateWeaponsAndCombat } from "../../src/weapon/weaponSystem.js";
 
 const DT = 1 / 60;
+const IDLE_REAR_GAP_PX = 4;
 
 function createPlayer(overrides = {}) {
   return {
@@ -75,6 +76,34 @@ function getWeaponCenter(weapon) {
     x: weapon.x + weapon.width / 2,
     y: weapon.y + weapon.height / 2,
   };
+}
+
+function normalizeDirection(vector, fallback = { x: 1, y: 0 }) {
+  const sourceX = Number.isFinite(vector?.x) ? vector.x : fallback.x;
+  const sourceY = Number.isFinite(vector?.y) ? vector.y : fallback.y;
+  const length = Math.hypot(sourceX, sourceY);
+  if (length <= 0.0001) {
+    return { x: fallback.x, y: fallback.y };
+  }
+  return {
+    x: sourceX / length,
+    y: sourceY / length,
+  };
+}
+
+function resolveHalfExtentAlongDirPx(width, height, dir) {
+  return Math.abs(dir.x) * (width / 2) + Math.abs(dir.y) * (height / 2);
+}
+
+function resolveIdleRearMinDistancePx(player, weapon, biasDir) {
+  const safeBiasDir = normalizeDirection(biasDir);
+  const playerHalf = resolveHalfExtentAlongDirPx(player.width, player.height, safeBiasDir);
+  const weaponHalf = resolveHalfExtentAlongDirPx(weapon.width, weapon.height, safeBiasDir);
+  return playerHalf + weaponHalf + IDLE_REAR_GAP_PX;
+}
+
+function projectAlongDir(vector, dir) {
+  return vector.x * dir.x + vector.y * dir.y;
 }
 
 function stepCombat(weapons, player, enemies, weaponDefinitionsById, formationsById) {
@@ -181,6 +210,16 @@ function countBurstFrames(formationDefinition, weaponDefinitionOverrides = {}, p
     playerOverrides,
   });
   return result.samples.length;
+}
+
+function measureAverageBurstOffsetX(formationDefinition, weaponDefinitionOverrides = {}, playerOverrides = {}) {
+  const { samples, playerCenter } = collectBurstSamples({
+    formationDefinition,
+    weaponDefinitionOverrides,
+    playerOverrides,
+  });
+  const averageCenterX = samples.reduce((sum, center) => sum + center.x, 0) / samples.length;
+  return averageCenterX - playerCenter.x;
 }
 
 describe("weaponSystem", () => {
@@ -475,7 +514,100 @@ describe("weaponSystem", () => {
     expect(figure8Frames).toBeGreaterThan(lineFrames);
   });
 
-  it("idle は前方に滞在しプレイヤー周囲を周回しない", () => {
+  it("全フォーメーションで burst 重心偏りが有効になる", () => {
+    const cases = [
+      {
+        name: "circle",
+        expectedSign: 1,
+        formation: createFormationDefinition({
+          id: "formation_id_circle01",
+          type: "circle",
+          radiusBase: 2,
+          params: { centerMode: "player" },
+        }),
+      },
+      {
+        name: "arc_front",
+        expectedSign: 1,
+        formation: createFormationDefinition({
+          id: "formation_id_arc_front01",
+          type: "arc",
+          radiusBase: 2,
+          params: { arcDeg: 120, arcDir: "front", centerOffsetEnable: true },
+        }),
+      },
+      {
+        name: "arc_back",
+        expectedSign: -1,
+        formation: createFormationDefinition({
+          id: "formation_id_arc_back01",
+          type: "arc",
+          radiusBase: 2,
+          params: { arcDeg: 120, arcDir: "back", centerOffsetEnable: true },
+        }),
+      },
+      {
+        name: "line_front",
+        expectedSign: 1,
+        formation: createFormationDefinition({
+          id: "formation_id_line_front01",
+          type: "line",
+          radiusBase: 2,
+          params: { lineLen: 3.2, sideSpacing: 0 },
+        }),
+      },
+      {
+        name: "figure8",
+        expectedSign: 1,
+        formation: createFormationDefinition({
+          id: "formation_id_figure801",
+          type: "figure8",
+          radiusBase: 2,
+          params: { a: 1, b: 0.5, omegaMul: 1 },
+        }),
+      },
+      {
+        name: "spiral",
+        expectedSign: 1,
+        formation: createFormationDefinition({
+          id: "formation_id_spiral01",
+          type: "spiral",
+          radiusBase: 2,
+          params: { rMin: 1.2, rMax: 3.6, radialOmega: 1.6 },
+        }),
+      },
+    ];
+
+    for (const testCase of cases) {
+      const baselineOffsetX = measureAverageBurstOffsetX({
+        ...testCase.formation,
+        biasStrengthMul: 0,
+        clamp: {
+          radiusMin: 0,
+          radiusMax: 10,
+          speedMin: 0,
+          speedMax: 10,
+          biasOffsetRatioMax: 1,
+        },
+      });
+      const biasedOffsetX = measureAverageBurstOffsetX({
+        ...testCase.formation,
+        biasStrengthMul: 0.35,
+        clamp: {
+          radiusMin: 0,
+          radiusMax: 10,
+          speedMin: 0,
+          speedMax: 10,
+          biasOffsetRatioMax: 1,
+        },
+      });
+
+      const delta = biasedOffsetX - baselineOffsetX;
+      expect(delta * testCase.expectedSign, `${testCase.name} should shift toward bias direction`).toBeGreaterThan(6);
+    }
+  });
+
+  it("idle は背後に滞在しプレイヤー周囲を周回しない", () => {
     const player = createPlayer({
       pointerActive: true,
       target: { x: 900, y: 132 },
@@ -506,11 +638,11 @@ describe("weaponSystem", () => {
       maxOffsetX = Math.max(maxOffsetX, offsetX);
     }
 
-    expect(minOffsetX).toBeGreaterThan(10);
+    expect(maxOffsetX).toBeLessThan(-10);
     expect(maxOffsetX - minOffsetX).toBeLessThan(0.001);
   });
 
-  it("idle 前方配置が aim_dir 変更に追従する", () => {
+  it("idle は facing 背後を維持しつつ弱く aim_dir に追従する", () => {
     const player = createPlayer({
       pointerActive: true,
       target: { x: 900, y: 132 },
@@ -533,19 +665,27 @@ describe("weaponSystem", () => {
     for (let i = 0; i < 20; i += 1) {
       stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
     }
-    const rightCenter = getWeaponCenter(weapon);
+    const baseCenter = getWeaponCenter(weapon);
 
-    player.target = { x: -900, y: 132 };
-    for (let i = 0; i < 50; i += 1) {
+    player.target = { x: playerCenterX + 10, y: player.y - 240 };
+    for (let i = 0; i < 60; i += 1) {
       stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
     }
-    const leftCenter = getWeaponCenter(weapon);
+    const upCenter = getWeaponCenter(weapon);
 
-    expect(rightCenter.x).toBeGreaterThan(playerCenterX + 10);
-    expect(leftCenter.x).toBeLessThan(playerCenterX - 10);
+    player.target = { x: playerCenterX + 10, y: player.y + player.height + 240 };
+    for (let i = 0; i < 60; i += 1) {
+      stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
+    }
+    const downCenter = getWeaponCenter(weapon);
+
+    expect(baseCenter.x).toBeLessThan(playerCenterX - 10);
+    expect(upCenter.x).toBeLessThan(playerCenterX - 10);
+    expect(downCenter.x).toBeLessThan(playerCenterX - 10);
+    expect(Math.abs(upCenter.y - downCenter.y)).toBeGreaterThan(8);
   });
 
-  it("idle は前方を保ったまま上下ボブする", () => {
+  it("idle は背後を保ったまま上下ボブする", () => {
     const player = createPlayer({
       pointerActive: true,
       target: { x: 900, y: 132 },
@@ -579,12 +719,61 @@ describe("weaponSystem", () => {
       maxY = Math.max(maxY, center.y);
     }
 
-    expect(minX).toBeGreaterThan(playerCenterX + 10);
+    expect(maxX).toBeLessThan(playerCenterX - 10);
     expect(maxX - minX).toBeLessThan(0.001);
     expect(maxY - minY).toBeGreaterThan(6);
   });
 
-  it("複数武器は idle 時に前方扇状へ分散する", () => {
+  it("idle は高Bias/高TECでも背後下限距離を割らない", () => {
+    const player = createPlayer({
+      pointerActive: false,
+      facing: "right",
+      statTotals: { tec: 999 },
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 2 });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_idle_bias_guard",
+      radiusBase: 2,
+      biasStrengthMul: 1.5,
+      biasResponseMul: 1,
+      clamp: {
+        radiusMin: 0,
+        radiusMax: 10,
+        speedMin: 0,
+        speedMax: 10,
+        biasOffsetRatioMax: 1,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: { ...weaponDefinition, formationId: formationDefinition.id } };
+    const weapons = createPlayerWeapons([weaponDefinitionsById[weaponDefinition.id]], formationsById, player);
+    const [weapon] = weapons;
+
+    weapon.attackSeq = 1;
+    weapon.cooldownRemainingSec = 30;
+    weapon.attackMotionPhase = "idle";
+    weapon.biasDirX = 1;
+    weapon.biasDirY = 0;
+
+    const playerCenter = { x: player.x + player.width / 2, y: player.y + player.height / 2 };
+
+    for (let i = 0; i < 180; i += 1) {
+      stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
+      const center = getWeaponCenter(weapon);
+      const biasDir = normalizeDirection({ x: weapon.biasDirX, y: weapon.biasDirY });
+      const minRearDistancePx = resolveIdleRearMinDistancePx(player, weapon, biasDir);
+      const rearProjection = projectAlongDir(
+        {
+          x: center.x - playerCenter.x,
+          y: center.y - playerCenter.y,
+        },
+        biasDir
+      );
+      expect(rearProjection).toBeLessThanOrEqual(-minRearDistancePx + 1);
+    }
+  });
+
+  it("複数武器は idle 時に背後扇状へ分散する", () => {
     const player = createPlayer({
       pointerActive: true,
       target: { x: 900, y: 132 },
@@ -614,12 +803,12 @@ describe("weaponSystem", () => {
     stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
     const centers = weapons.map((weapon) => getWeaponCenter(weapon));
     const yValues = centers.map((center) => center.y);
-    const minX = Math.min(...centers.map((center) => center.x));
+    const maxX = Math.max(...centers.map((center) => center.x));
     const minY = Math.min(...yValues);
     const maxY = Math.max(...yValues);
     const uniqueRoundedY = new Set(yValues.map((value) => Math.round(value)));
 
-    expect(minX).toBeGreaterThan(playerCenterX + 10);
+    expect(maxX).toBeLessThan(playerCenterX - 10);
     expect(maxY - minY).toBeGreaterThan(20);
     expect(uniqueRoundedY.size).toBe(3);
   });
@@ -718,6 +907,73 @@ describe("weaponSystem", () => {
     expect(Math.abs(minX - playerCenterX)).toBeLessThan(4);
   });
 
+  it("return の終点は背後下限距離を満たす", () => {
+    const player = createPlayer({
+      pointerActive: true,
+      target: { x: 900, y: 132 },
+      facing: "right",
+      statTotals: { tec: 999 },
+    });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_line_front01",
+      type: "line",
+      radiusBase: 2,
+      biasStrengthMul: 1.5,
+      biasResponseMul: 1,
+      clamp: {
+        radiusMin: 0,
+        radiusMax: 10,
+        speedMin: 0,
+        speedMax: 10,
+        biasOffsetRatioMax: 1,
+      },
+      params: {
+        lineLen: 3.2,
+        sideSpacing: 0,
+      },
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 3, formationId: formationDefinition.id });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+    const [weapon] = weapons;
+    const playerCenter = { x: player.x + player.width / 2, y: player.y + player.height / 2 };
+
+    weapon.attackSeq = 1;
+    weapon.cooldownRemainingSec = 30;
+    weapon.attackMotionPhase = "return";
+    weapon.attackMotionDurationSec = 0;
+    weapon.attackMotionTimerSec = 0;
+    weapon.attackBurstEndX = playerCenter.x + 120;
+    weapon.attackBurstEndY = playerCenter.y;
+    weapon.biasDirX = 1;
+    weapon.biasDirY = 0;
+    weapon.lockedAimDirX = 1;
+    weapon.lockedAimDirY = 0;
+
+    let reachedIdle = false;
+    for (let i = 0; i < 180; i += 1) {
+      stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
+      if (weapon.attackMotionPhase === "idle") {
+        reachedIdle = true;
+        break;
+      }
+    }
+
+    expect(reachedIdle).toBe(true);
+    const center = getWeaponCenter(weapon);
+    const biasDir = normalizeDirection({ x: weapon.biasDirX, y: weapon.biasDirY });
+    const minRearDistancePx = resolveIdleRearMinDistancePx(player, weapon, biasDir);
+    const rearProjection = projectAlongDir(
+      {
+        x: center.x - playerCenter.x,
+        y: center.y - playerCenter.y,
+      },
+      biasDir
+    );
+    expect(rearProjection).toBeLessThanOrEqual(-minRearDistancePx + 1);
+  });
+
   it("figure8 は burst 1回で前後を跨ぐ", () => {
     const player = createPlayer({
       pointerActive: true,
@@ -797,6 +1053,102 @@ describe("weaponSystem", () => {
     expect(maxDistance - minDistance).toBeGreaterThan(30);
   });
 
+  it("TEC が高いほど BiasStrength の実効オフセットが増える", () => {
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_line_front01",
+      type: "line",
+      radiusBase: 2,
+      biasStrengthMul: 0.2,
+      biasResponseMul: 1,
+      clamp: {
+        radiusMin: 0,
+        radiusMax: 10,
+        speedMin: 0,
+        speedMax: 10,
+        biasOffsetRatioMax: 1,
+      },
+      params: {
+        lineLen: 3.2,
+        sideSpacing: 0,
+      },
+    });
+
+    const lowTecOffsetX = measureAverageBurstOffsetX(
+      formationDefinition,
+      { attackCooldownSec: 2, formationId: formationDefinition.id },
+      {
+        pointerActive: true,
+        target: { x: 900, y: 132 },
+        facing: "right",
+        statTotals: { tec: 0 },
+      }
+    );
+    const highTecOffsetX = measureAverageBurstOffsetX(
+      formationDefinition,
+      { attackCooldownSec: 2, formationId: formationDefinition.id },
+      {
+        pointerActive: true,
+        target: { x: 900, y: 132 },
+        facing: "right",
+        statTotals: { tec: 60 },
+      }
+    );
+
+    expect(highTecOffsetX - lowTecOffsetX).toBeGreaterThan(4);
+  });
+
+  it("TEC が高いほど idle 中の BiasResponse 追従が速い", () => {
+    const formationDefinition = createFormationDefinition({
+      radiusBase: 2,
+      biasStrengthMul: 0,
+      biasResponseMul: 0.2,
+      clamp: {
+        radiusMin: 0,
+        radiusMax: 10,
+        speedMin: 0,
+        speedMax: 10,
+        biasOffsetRatioMax: 1,
+      },
+    });
+    const lowTecPlayer = createPlayer({
+      pointerActive: true,
+      target: { x: 116, y: -120 },
+      facing: "up",
+      statTotals: { tec: 0 },
+    });
+    const highTecPlayer = createPlayer({
+      pointerActive: true,
+      target: { x: 116, y: -120 },
+      facing: "up",
+      statTotals: { tec: 100 },
+    });
+    const weaponDefinition = createWeaponDefinition({ attackCooldownSec: 2 });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const lowWeapons = createPlayerWeapons([weaponDefinition], formationsById, lowTecPlayer);
+    const highWeapons = createPlayerWeapons([weaponDefinition], formationsById, highTecPlayer);
+    const lowWeapon = lowWeapons[0];
+    const highWeapon = highWeapons[0];
+
+    for (const weapon of [lowWeapon, highWeapon]) {
+      weapon.attackSeq = 1;
+      weapon.cooldownRemainingSec = 30;
+      weapon.attackMotionPhase = "idle";
+      weapon.biasDirX = 0;
+      weapon.biasDirY = -1;
+    }
+
+    lowTecPlayer.target = { x: 900, y: 132 };
+    highTecPlayer.target = { x: 900, y: 132 };
+
+    for (let i = 0; i < 6; i += 1) {
+      stepCombat(lowWeapons, lowTecPlayer, [], weaponDefinitionsById, formationsById);
+      stepCombat(highWeapons, highTecPlayer, [], weaponDefinitionsById, formationsById);
+    }
+
+    expect(highWeapon.biasDirX).toBeGreaterThan(lowWeapon.biasDirX + 0.01);
+  });
+
   it("stop は中心固定で burst 化しない", () => {
     const player = createPlayer({ x: 100, y: 100, width: 32, height: 64 });
     const weaponDefinition = createWeaponDefinition({
@@ -837,7 +1189,45 @@ describe("weaponSystem", () => {
     expect(centerB.y).toBeCloseTo(player.y + player.height / 2, 5);
   });
 
-  it("idle 時の武器回転角が aim_dir を向く", () => {
+  it("stop は TEC と Bias 設定があっても中心固定のまま", () => {
+    const player = createPlayer({
+      x: 100,
+      y: 100,
+      width: 32,
+      height: 64,
+      pointerActive: true,
+      target: { x: 900, y: 132 },
+      statTotals: { tec: 999 },
+    });
+    const weaponDefinition = createWeaponDefinition({
+      attackCooldownSec: 1,
+      width: 16,
+      height: 16,
+      formationId: "formation_id_stop_bias_test",
+    });
+    const formationDefinition = createFormationDefinition({
+      id: "formation_id_stop_bias_test",
+      type: "stop",
+      radiusBase: 0,
+      biasStrengthMul: 2,
+      biasResponseMul: 2,
+      params: {
+        weaponVisible: false,
+      },
+    });
+    const formationsById = { [formationDefinition.id]: formationDefinition };
+    const weaponDefinitionsById = { [weaponDefinition.id]: weaponDefinition };
+    const weapons = createPlayerWeapons([weaponDefinition], formationsById, player);
+
+    for (let i = 0; i < 30; i += 1) {
+      stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
+      const center = getWeaponCenter(weapons[0]);
+      expect(center.x).toBeCloseTo(player.x + player.width / 2, 5);
+      expect(center.y).toBeCloseTo(player.y + player.height / 2, 5);
+    }
+  });
+
+  it("idle 時の武器回転角は常に縦上向き固定になる", () => {
     const player = createPlayer({
       pointerActive: true,
       target: { x: 900, y: 132 },
@@ -858,10 +1248,10 @@ describe("weaponSystem", () => {
     weapon.attackMotionPhase = "idle";
 
     const testCases = [
-      { target: { x: player.x + player.width / 2, y: player.y - 200 }, bias: { x: 0, y: -1 }, expectedDeg: 0 },
-      { target: { x: player.x + player.width + 200, y: player.y + player.height / 2 }, bias: { x: 1, y: 0 }, expectedDeg: 90 },
-      { target: { x: player.x + player.width / 2, y: player.y + player.height + 200 }, bias: { x: 0, y: 1 }, expectedDeg: 180 },
-      { target: { x: player.x - 200, y: player.y + player.height / 2 }, bias: { x: -1, y: 0 }, expectedDeg: 270 },
+      { target: { x: player.x + player.width / 2, y: player.y - 200 }, bias: { x: 0, y: -1 } },
+      { target: { x: player.x + player.width + 200, y: player.y + player.height / 2 }, bias: { x: 1, y: 0 } },
+      { target: { x: player.x + player.width / 2, y: player.y + player.height + 200 }, bias: { x: 0, y: 1 } },
+      { target: { x: player.x - 200, y: player.y + player.height / 2 }, bias: { x: -1, y: 0 } },
     ];
 
     for (const testCase of testCases) {
@@ -869,7 +1259,7 @@ describe("weaponSystem", () => {
       weapon.biasDirX = testCase.bias.x;
       weapon.biasDirY = testCase.bias.y;
       stepCombat(weapons, player, [], weaponDefinitionsById, formationsById);
-      expect(weapon.rotationDeg).toBeCloseTo(testCase.expectedDeg, 3);
+      expect(weapon.rotationDeg).toBeCloseTo(0, 3);
     }
   });
 

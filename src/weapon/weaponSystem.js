@@ -29,6 +29,12 @@ const ATTACK_IDLE_FRONT_DISTANCE_MAX_PX = 44;
 const ATTACK_IDLE_FAN_SPACING_PX = 14;
 const ATTACK_IDLE_BOB_SPEED_RAD = 5.2;
 const ATTACK_IDLE_BOB_AMPLITUDE_PX = 4;
+const ATTACK_IDLE_REAR_GAP_PX = 4;
+const ATTACK_IDLE_AIM_BLEND = 0.25;
+const BIAS_PER_TEC = 0.01;
+const RESPONSE_PER_TEC = 0.01;
+const BIAS_STRENGTH_SCALE_CAP = 3.0;
+const BIAS_RESPONSE_SCALE_CAP = 3.0;
 const BURST_DURATION_SLOW_MUL_BY_TYPE = Object.freeze({
   circle: 1.45,
   figure8: 2.2,
@@ -38,6 +44,7 @@ const CIRCLE_BURST_SWEEP_RAD = 80 * Math.PI / 180;
 const CIRCLE_BURST_TURN_START_RAD = -Math.PI;
 const CIRCLE_BURST_TURN_END_RAD = Math.PI;
 const SPIRAL_BURST_TURN_COUNT = 1.25;
+const IDLE_VERTICAL_UP_DIR = Object.freeze({ x: 0, y: -1 });
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -272,6 +279,26 @@ function getPlayerCenter(player) {
   };
 }
 
+function resolveHalfExtentAlongDirPx(width, height, dir) {
+  const halfWidth = Math.max(0, toFiniteNumber(width, 0)) / 2;
+  const halfHeight = Math.max(0, toFiniteNumber(height, 0)) / 2;
+  const dirX = Math.abs(toFiniteNumber(dir?.x, 0));
+  const dirY = Math.abs(toFiniteNumber(dir?.y, 0));
+  return dirX * halfWidth + dirY * halfHeight;
+}
+
+function resolveIdleRearMinDistancePx(playerSize, weapon, biasDir) {
+  const safeBiasDir = normalizeVector(
+    toFiniteNumber(biasDir?.x, 1),
+    toFiniteNumber(biasDir?.y, 0),
+    1,
+    0
+  );
+  const playerHalfExtent = resolveHalfExtentAlongDirPx(playerSize?.width, playerSize?.height, safeBiasDir);
+  const weaponHalfExtent = resolveHalfExtentAlongDirPx(weapon?.width, weapon?.height, safeBiasDir);
+  return Math.max(0, playerHalfExtent + weaponHalfExtent + ATTACK_IDLE_REAR_GAP_PX);
+}
+
 function getAimDirection(player) {
   const playerCenter = getPlayerCenter(player);
   const facingDir = getFacingVector(player?.facing);
@@ -310,11 +337,13 @@ function resolveFormationRadiusPx(formation) {
   return clampedTiles * TILE_SIZE;
 }
 
-function resolveBiasOffsetPx(radiusPx, formation) {
-  const biasStrength = toFiniteNumber(
+function resolveBiasOffsetPx(radiusPx, formation, strengthScale = 1) {
+  const biasStrengthBase = toFiniteNumber(
     formation?.biasStrengthMul,
     toFiniteNumber(formation?.bias_strength_mul, 0)
   );
+  const safeStrengthScale = Math.max(0, toFiniteNumber(strengthScale, 1));
+  const biasStrength = biasStrengthBase * safeStrengthScale;
   const clampConfig = formation?.clamp ?? {};
   const maxRatio = toFiniteNumber(
     clampConfig.biasOffsetRatioMax,
@@ -325,8 +354,10 @@ function resolveBiasOffsetPx(radiusPx, formation) {
   return Math.min(rawOffset, maxOffset);
 }
 
-function resolveBiasResponse(formation) {
-  return Math.max(0, toFiniteNumber(formation?.biasResponseMul, toFiniteNumber(formation?.bias_response_mul, 0)));
+function resolveBiasResponse(formation, responseScale = 1) {
+  const responseBase = toFiniteNumber(formation?.biasResponseMul, toFiniteNumber(formation?.bias_response_mul, 0));
+  const safeResponseScale = Math.max(0, toFiniteNumber(responseScale, 1));
+  return Math.max(0, responseBase * safeResponseScale);
 }
 
 function resolveWeaponCooldownSec(weaponDefinition) {
@@ -581,27 +612,53 @@ function updateAttackMotionState({
   };
 }
 
-function resolveIdleHoverBaseAnchor(weapon, playerCenter, radiusPx, biasDir) {
+function resolveIdleHoverBaseAnchor(
+  weapon,
+  playerCenter,
+  radiusPx,
+  biasDir,
+  biasOffsetPx = 0,
+  idleRearMinDistancePx = 0
+) {
   const idleFrontDistancePx = clamp(
     radiusPx * ATTACK_IDLE_FRONT_DISTANCE_MUL,
     ATTACK_IDLE_FRONT_DISTANCE_MIN_PX,
     ATTACK_IDLE_FRONT_DISTANCE_MAX_PX
   );
-  const frontAnchor = {
-    x: playerCenter.x + biasDir.x * idleFrontDistancePx,
-    y: playerCenter.y + biasDir.y * idleFrontDistancePx,
+  const centerOffsetPx = Math.max(0, toFiniteNumber(biasOffsetPx, 0));
+  const minRearDistancePx = Math.max(0, toFiniteNumber(idleRearMinDistancePx, 0));
+  const baseRearDistancePx = idleFrontDistancePx - centerOffsetPx;
+  const rearDistancePx = Math.max(minRearDistancePx, baseRearDistancePx);
+  const backAnchor = {
+    x: playerCenter.x - biasDir.x * rearDistancePx,
+    y: playerCenter.y - biasDir.y * rearDistancePx,
   };
   const fanAxis = getPerpendicular(biasDir);
   const fanOffsetPx = toFiniteNumber(weapon.idleLaneIndex, 0) * ATTACK_IDLE_FAN_SPACING_PX;
 
   return {
-    x: frontAnchor.x + fanAxis.x * fanOffsetPx,
-    y: frontAnchor.y + fanAxis.y * fanOffsetPx,
+    x: backAnchor.x + fanAxis.x * fanOffsetPx,
+    y: backAnchor.y + fanAxis.y * fanOffsetPx,
   };
 }
 
-function resolveIdleHoverAnchor(weapon, playerCenter, radiusPx, biasDir, idleTimerSec = weapon.attackMotionTimerSec) {
-  const baseIdle = resolveIdleHoverBaseAnchor(weapon, playerCenter, radiusPx, biasDir);
+function resolveIdleHoverAnchor(
+  weapon,
+  playerCenter,
+  radiusPx,
+  biasDir,
+  biasOffsetPx = 0,
+  idleRearMinDistancePx = 0,
+  idleTimerSec = weapon.attackMotionTimerSec
+) {
+  const baseIdle = resolveIdleHoverBaseAnchor(
+    weapon,
+    playerCenter,
+    radiusPx,
+    biasDir,
+    biasOffsetPx,
+    idleRearMinDistancePx
+  );
   const bobPhase = toFiniteNumber(weapon.idleBobPhaseRad, 0);
   const bobY = Math.sin(idleTimerSec * ATTACK_IDLE_BOB_SPEED_RAD + bobPhase) * ATTACK_IDLE_BOB_AMPLITUDE_PX;
 
@@ -611,8 +668,22 @@ function resolveIdleHoverAnchor(weapon, playerCenter, radiusPx, biasDir, idleTim
   };
 }
 
-function resolveIdleHoverPose(weapon, playerCenter, radiusPx, biasDir) {
-  const anchor = resolveIdleHoverAnchor(weapon, playerCenter, radiusPx, biasDir);
+function resolveIdleHoverPose(
+  weapon,
+  playerCenter,
+  radiusPx,
+  biasDir,
+  biasOffsetPx = 0,
+  idleRearMinDistancePx = 0
+) {
+  const anchor = resolveIdleHoverAnchor(
+    weapon,
+    playerCenter,
+    radiusPx,
+    biasDir,
+    biasOffsetPx,
+    idleRearMinDistancePx
+  );
 
   return {
     weaponCenterX: anchor.x,
@@ -666,6 +737,11 @@ function resolveBurstPoseByFormation({
   const burstOriginX = toFiniteNumber(weapon.attackOriginX, playerCenter.x);
   const burstOriginY = toFiniteNumber(weapon.attackOriginY, playerCenter.y);
   const burstOrigin = { x: burstOriginX, y: burstOriginY };
+  const safeBiasOffsetPx = Math.max(0, toFiniteNumber(biasOffsetPx, 0));
+  const biasedBurstOrigin = {
+    x: burstOrigin.x + aimDir.x * safeBiasOffsetPx,
+    y: burstOrigin.y + aimDir.y * safeBiasOffsetPx,
+  };
 
   if (type === "line") {
     const lineLenTiles = Math.max(0, resolveFormationParamNumber(formationDefinition, "lineLen", "line_len", 3));
@@ -677,10 +753,10 @@ function resolveBurstPoseByFormation({
     const forwardDistancePx = lineLenPx * eased;
 
     return {
-      weaponCenterX: burstOrigin.x + aimDir.x * forwardDistancePx + perpendicular.x * sideSpacingPx * laneSign,
-      weaponCenterY: burstOrigin.y + aimDir.y * forwardDistancePx + perpendicular.y * sideSpacingPx * laneSign,
-      orbitCenterX: burstOrigin.x,
-      orbitCenterY: burstOrigin.y,
+      weaponCenterX: biasedBurstOrigin.x + aimDir.x * forwardDistancePx + perpendicular.x * sideSpacingPx * laneSign,
+      weaponCenterY: biasedBurstOrigin.y + aimDir.y * forwardDistancePx + perpendicular.y * sideSpacingPx * laneSign,
+      orbitCenterX: biasedBurstOrigin.x,
+      orbitCenterY: biasedBurstOrigin.y,
     };
   }
 
@@ -699,7 +775,13 @@ function resolveBurstPoseByFormation({
       x: aimDir.x * (isBack ? -1 : 1),
       y: aimDir.y * (isBack ? -1 : 1),
     };
-    const orbitCenter = resolveOrbitCenter(burstOrigin, centerMode, arcCenterDir, biasOffsetPx, centerOffsetEnable);
+    const orbitCenter = resolveOrbitCenter(
+      burstOrigin,
+      centerMode,
+      arcCenterDir,
+      safeBiasOffsetPx,
+      centerOffsetEnable || safeBiasOffsetPx > VECTOR_EPSILON
+    );
     const sweepAngle = lerp(-arcHalfRad, arcHalfRad, eased);
     const swung = rotateVector(arcCenterDir, sweepAngle);
     const localDir = normalizeVector(swung.x, swung.y, arcCenterDir.x, arcCenterDir.y);
@@ -722,10 +804,10 @@ function resolveBurstPoseByFormation({
     const perpendicular = getPerpendicular(aimDir);
 
     return {
-      weaponCenterX: burstOrigin.x + aimDir.x * localForward + perpendicular.x * localSide,
-      weaponCenterY: burstOrigin.y + aimDir.y * localForward + perpendicular.y * localSide,
-      orbitCenterX: burstOrigin.x,
-      orbitCenterY: burstOrigin.y,
+      weaponCenterX: biasedBurstOrigin.x + aimDir.x * localForward + perpendicular.x * localSide,
+      weaponCenterY: biasedBurstOrigin.y + aimDir.y * localForward + perpendicular.y * localSide,
+      orbitCenterX: biasedBurstOrigin.x,
+      orbitCenterY: biasedBurstOrigin.y,
     };
   }
 
@@ -761,10 +843,10 @@ function resolveBurstPoseByFormation({
     );
 
     return {
-      weaponCenterX: burstOrigin.x + orbitDir.x * radialDistancePx,
-      weaponCenterY: burstOrigin.y + orbitDir.y * radialDistancePx,
-      orbitCenterX: burstOrigin.x,
-      orbitCenterY: burstOrigin.y,
+      weaponCenterX: biasedBurstOrigin.x + orbitDir.x * radialDistancePx,
+      weaponCenterY: biasedBurstOrigin.y + orbitDir.y * radialDistancePx,
+      orbitCenterX: biasedBurstOrigin.x,
+      orbitCenterY: biasedBurstOrigin.y,
     };
   }
 
@@ -775,10 +857,10 @@ function resolveBurstPoseByFormation({
     const burstDistancePx = Math.max(8, radiusPx);
 
     return {
-      weaponCenterX: burstOrigin.x + slashDir.x * burstDistancePx,
-      weaponCenterY: burstOrigin.y + slashDir.y * burstDistancePx,
-      orbitCenterX: burstOrigin.x,
-      orbitCenterY: burstOrigin.y,
+      weaponCenterX: biasedBurstOrigin.x + slashDir.x * burstDistancePx,
+      weaponCenterY: biasedBurstOrigin.y + slashDir.y * burstDistancePx,
+      orbitCenterX: biasedBurstOrigin.x,
+      orbitCenterY: biasedBurstOrigin.y,
     };
   }
 
@@ -797,10 +879,10 @@ function resolveBurstPoseByFormation({
   const burstDistancePx = Math.max(8, radiusPx);
 
   return {
-    weaponCenterX: burstOrigin.x + slashDir.x * burstDistancePx,
-    weaponCenterY: burstOrigin.y + slashDir.y * burstDistancePx,
-    orbitCenterX: burstOrigin.x,
-    orbitCenterY: burstOrigin.y,
+    weaponCenterX: biasedBurstOrigin.x + slashDir.x * burstDistancePx,
+    weaponCenterY: biasedBurstOrigin.y + slashDir.y * burstDistancePx,
+    orbitCenterX: biasedBurstOrigin.x,
+    orbitCenterY: biasedBurstOrigin.y,
   };
 }
 
@@ -834,8 +916,14 @@ function updateWeaponTransform(
 ) {
   const radiusPx = resolveFormationRadiusPx(formationDefinition);
   const liveAimDir = getAimDirection(player);
-  const response = resolveBiasResponse(formationDefinition);
+  const facingDir = getFacingVector(player?.facing);
+  const tec = Math.max(0, toFiniteNumber(player?.statTotals?.tec, 0));
+  const effectiveBiasStrengthScale = clamp(1 + tec * BIAS_PER_TEC, 0, BIAS_STRENGTH_SCALE_CAP);
+  const effectiveBiasResponseScale = clamp(1 + tec * RESPONSE_PER_TEC, 0, BIAS_RESPONSE_SCALE_CAP);
+  const effectiveBiasOffsetPx = resolveBiasOffsetPx(radiusPx, formationDefinition, effectiveBiasStrengthScale);
+  const response = resolveBiasResponse(formationDefinition, effectiveBiasResponseScale);
   const formationType = resolveFormationParamString(formationDefinition, "type", "type", formationDefinition?.type ?? "circle");
+  const playerSize = getPlayerSize(player);
   const playerCenter = getPlayerCenter(player);
 
   if (formationType === "stop") {
@@ -871,7 +959,7 @@ function updateWeaponTransform(
     weapon.attackApproachStartY = currentCenterY;
 
     const startCenterMode = getFormationCenterMode(formationDefinition);
-    const startBiasOffsetPx = resolveBiasOffsetPx(radiusPx, formationDefinition);
+    const startBiasOffsetPx = effectiveBiasOffsetPx;
     const approachEndPose = resolveBurstPoseByFormation({
       weapon,
       formationDefinition,
@@ -896,7 +984,13 @@ function updateWeaponTransform(
     playerCenter,
   });
 
-  const trackingAim = motionState.phase === ATTACK_MOTION_PHASE.IDLE ? liveAimDir : motionState.lockedAim;
+  const idleTargetDir = normalizeVector(
+    lerp(facingDir.x, liveAimDir.x, ATTACK_IDLE_AIM_BLEND),
+    lerp(facingDir.y, liveAimDir.y, ATTACK_IDLE_AIM_BLEND),
+    facingDir.x,
+    facingDir.y
+  );
+  const trackingAim = motionState.phase === ATTACK_MOTION_PHASE.IDLE ? idleTargetDir : motionState.lockedAim;
   const lerpFactor = clamp(response * dt * BIAS_LERP_BASE, 0, 1);
   const baseBiasDir = normalizeVector(
     toFiniteNumber(weapon.biasDirX, trackingAim.x),
@@ -916,13 +1010,13 @@ function updateWeaponTransform(
 
   weapon.biasDirX = nextBias.x;
   weapon.biasDirY = nextBias.y;
+  const idleRearMinDistancePx = resolveIdleRearMinDistancePx(playerSize, weapon, nextBias);
 
   let pose;
   if (motionState.phase === ATTACK_MOTION_PHASE.APPROACH) {
     pose = resolveApproachPose(weapon, playerCenter, motionState.progress);
   } else if (motionState.phase === ATTACK_MOTION_PHASE.BURST) {
     const centerMode = getFormationCenterMode(formationDefinition);
-    const biasOffsetPx = resolveBiasOffsetPx(radiusPx, formationDefinition);
     pose = resolveBurstPoseByFormation({
       weapon,
       formationDefinition,
@@ -930,20 +1024,34 @@ function updateWeaponTransform(
       aimDir: motionState.lockedAim,
       radiusPx,
       centerMode,
-      biasOffsetPx,
+      biasOffsetPx: effectiveBiasOffsetPx,
       progress: motionState.progress,
     });
 
     weapon.attackBurstEndX = pose.weaponCenterX;
     weapon.attackBurstEndY = pose.weaponCenterY;
   } else if (motionState.phase === ATTACK_MOTION_PHASE.RETURN) {
-    const idleAnchor = resolveIdleHoverBaseAnchor(weapon, playerCenter, radiusPx, nextBias);
+    const idleAnchor = resolveIdleHoverBaseAnchor(
+      weapon,
+      playerCenter,
+      radiusPx,
+      nextBias,
+      effectiveBiasOffsetPx,
+      idleRearMinDistancePx
+    );
     pose = resolveReturnPose(weapon, playerCenter, idleAnchor, motionState.progress);
   } else {
-    pose = resolveIdleHoverPose(weapon, playerCenter, radiusPx, nextBias);
+    pose = resolveIdleHoverPose(
+      weapon,
+      playerCenter,
+      radiusPx,
+      nextBias,
+      effectiveBiasOffsetPx,
+      idleRearMinDistancePx
+    );
   }
 
-  const rotationOverrideDir = motionState.phase === ATTACK_MOTION_PHASE.IDLE ? nextBias : null;
+  const rotationOverrideDir = motionState.phase === ATTACK_MOTION_PHASE.IDLE ? IDLE_VERTICAL_UP_DIR : null;
   applyWeaponPose(
     weapon,
     pose.weaponCenterX,
