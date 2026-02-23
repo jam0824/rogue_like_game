@@ -4,6 +4,10 @@ const DUNGEON_DB_FALLBACK_FILE_NAMES = [
   "dungeon_id_03.json",
   "dungeon_id_04.json",
   "dungeon_id_05.json",
+  "dungeon_id_06.json",
+  "dungeon_id_07.json",
+  "dungeon_id_08.json",
+  "dungeon_id_09.json",
 ];
 
 const REQUIRED_KEYS = [
