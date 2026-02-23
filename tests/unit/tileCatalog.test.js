@@ -18,6 +18,7 @@ function createDungeonDefinition(overrides = {}) {
       J: ["right_bottom_corner.png"],
       K: ["left_bottom_01.png"],
       L: ["right_bottom_01.png"],
+      S: ["down_stair.png"],
     },
     walkableTileDecoration: [],
     ...overrides,
@@ -69,6 +70,8 @@ describe("tileCatalog", () => {
 
     const assets = await loadTileAssets(definition);
     expect(assets[" "].variants).toHaveLength(1);
+    expect(assets.S.variants).toHaveLength(1);
+    expect(assets.S.variants[0].src).toBe("graphic/dungeon_tip/dungeon_id_02/down_stair.png");
     expect(assets.walkableTileDecoration.variants).toHaveLength(2);
     expect(assets.walkableTileDecoration.variants[0].src).toBe(
       "graphic/dungeon_tip/dungeon_id_02/decoration_01.png"

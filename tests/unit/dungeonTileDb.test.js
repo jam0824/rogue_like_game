@@ -24,6 +24,7 @@ function createDungeonRecord(overrides = {}) {
       J: ["right_bottom_corner.png"],
       K: ["left_bottom_01.png"],
       L: ["right_bottom_01.png"],
+      S: ["down_stair.png"],
     },
     ...overrides,
   };
@@ -129,6 +130,7 @@ describe("dungeonTileDb", () => {
     });
     expect(definitions[0].tipSet.tile).toEqual(["tile_normal.png"]);
     expect(definitions[0].tipSet.B).toEqual(["top_01.png"]);
+    expect(definitions[0].tipSet.S).toEqual(["down_stair.png"]);
   });
 
   it("walkable_tile_decoration を正規化する", async () => {

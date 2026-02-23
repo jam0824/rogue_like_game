@@ -18,7 +18,8 @@
         "I":["bottom_01.png"],
         "J":["right_bottom_corner.png"],
         "K":["left_bottom_01.png"],
-        "L":["right_bottom_01.png"]
+        "L":["right_bottom_01.png"],
+        "S":["down_stair.png"]
     },
     "enemy_db_ids":[
         "BrownMushroom_01",

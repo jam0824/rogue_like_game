@@ -1,7 +1,7 @@
 {
-    "id": "dungeon_id_01",
-    "name_key": "name_dungeon_01",
-    "description_key": "description_dungeon_01",
+    "id": "dungeon_id_04",
+    "name_key": "name_dungeon_04",
+    "description_key": "description_dungeon_04",
     "tip_set_root_path": "graphic/dungeon_tip/dungeon_id_02",
     "bgm":"bgm_key_dungeon_001",
     "wall_height": 3,

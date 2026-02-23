@@ -1,4 +1,4 @@
-export const TALL_WALL_SYMBOLS = new Set(["B", "F", "G"]);
+export const TALL_WALL_SYMBOLS = new Set(["B", "F", "G", "S"]);
 export const STANDARD_WALL_SYMBOLS = new Set(["A", "C", "D", "E", "H", "I", "J", "K", "L"]);
 
 const SYMBOL_TO_TIP_SET_KEY = {
@@ -15,6 +15,7 @@ const SYMBOL_TO_TIP_SET_KEY = {
   J: "J",
   K: "K",
   L: "L",
+  S: "S",
 };
 
 const DEFAULT_WALKABLE_TILE_DECORATION_PROBABILITY = 0.05;

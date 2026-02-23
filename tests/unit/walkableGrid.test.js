@@ -46,5 +46,16 @@ describe("walkableGrid", () => {
     const walkableGrid = buildWalkableGrid(floorGrid, symbolGrid, { tallWallTileHeight: 3 });
     expect(walkableGrid[2][3]).toBe(true);
   });
-});
 
+  it("S は tallWallTileHeight 分をブロックする", () => {
+    const floorGrid = createFloorGrid(8, 8, true);
+    const symbolGrid = createSymbolGrid(8, 8);
+    symbolGrid[2][4] = "S";
+
+    const walkableGrid = buildWalkableGrid(floorGrid, symbolGrid, { tallWallTileHeight: 3 });
+    expect(walkableGrid[2][4]).toBe(false);
+    expect(walkableGrid[3][4]).toBe(false);
+    expect(walkableGrid[4][4]).toBe(false);
+    expect(walkableGrid[5][4]).toBe(true);
+  });
+});

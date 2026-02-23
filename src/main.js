@@ -24,6 +24,25 @@ import {
   resolveDungeonBgmSourceOrThrow,
   resolveDungeonEnemyDefinitionsOrThrow,
 } from "./dungeon/dungeonRuntimeConfig.js";
+import {
+  buildFloorSeed,
+  clampFloor,
+  MAX_FLOOR,
+  MIN_FLOOR,
+  resolveDungeonIdForFloor,
+  resolveFloorFromDungeonId,
+} from "./dungeon/floorProgression.js";
+import { isPlayerTouchingDownStair, placeDownStairSymbols } from "./dungeon/downStairSystem.js";
+import {
+  buildFloorTransitionTextState,
+  createFloorTransitionState,
+  isFloorTransitionBlocking,
+  stepFloorTransition,
+  startFloorTransition,
+  markFloorTransitionDungeonReady,
+  isFloorTransitionActive,
+  FLOOR_TRANSITION_PHASE,
+} from "./dungeon/floorTransitionState.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
 import { createPointerController } from "./input/pointerController.js";
@@ -57,6 +76,7 @@ import {
   syncPlayerStateFromRuntime,
 } from "./player/playerStateStore.js";
 import { buildDungeonBackdrop, renderFrame } from "./render/canvasRenderer.js";
+import { resolveOverlayCenterWorld } from "./render/floorTransitionOverlayPosition.js";
 import { computeCameraScroll, resolveGameViewScale } from "./render/gameViewScale.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { derivePlayerCombatStats } from "./status/derivedStats.js";
@@ -121,7 +141,7 @@ import { loadSoundEffectMap } from "./audio/soundDb.js";
 const FIXED_DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 const INITIAL_WEAPON_ID = "weapon_sword_01";
-const DEFAULT_DUNGEON_ID = "dungeon_id_02";
+const DEFAULT_DUNGEON_ID = resolveDungeonIdForFloor(MIN_FLOOR);
 const HERB_ITEM_ID = "item_herb_01";
 const HERB_HEAL_AMOUNT = 50;
 const SYSTEM_UI_TOAST_DURATION_MS = 1800;
@@ -134,10 +154,19 @@ const SE_KEY_PUT_ITEM = "se_key_put_item";
 const SE_KEY_PLAYER_GET_DAMAGE = "se_key_player_get_damage";
 const SE_KEY_ENEMY_DEATH = "se_key_enemy_death";
 const PLAYER_RENDER_SCALE = 32 / 24;
+const FLOOR_TRANSITION_FADE_OUT_SEC = 0.35;
+const FLOOR_TRANSITION_TITLE_HOLD_SEC = 1;
+const FLOOR_TRANSITION_FADE_IN_SEC = 0.35;
 
 const appState = createAppState(INITIAL_SEED);
 const dungeonBgmPlayer = createDungeonBgmPlayer();
 const soundEffectPlayer = createSoundEffectPlayer();
+const floorTransitionState = createFloorTransitionState({
+  fadeOutSec: FLOOR_TRANSITION_FADE_OUT_SEC,
+  titleHoldSec: FLOOR_TRANSITION_TITLE_HOLD_SEC,
+  fadeInSec: FLOOR_TRANSITION_FADE_IN_SEC,
+});
+let floorTransitionLoadPromise = null;
 const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
   windowMs: 1000,
   publishIntervalMs: 250,
@@ -333,6 +362,7 @@ function buildStatsRows(dungeon, player = null, debugPlayerDamagePreviewOnly = f
   return [
     { label: "seed", value: dungeon.seed },
     { label: "dungeon_id", value: dungeon.dungeonId ?? "-" },
+    { label: "floor", value: Number.isFinite(dungeon.floor) ? Math.floor(dungeon.floor) : "-" },
     { label: "wall_height", value: dungeon.wallHeightTiles ?? "-" },
     { label: "HP", value: hpValue },
     { label: "被ダメ設定", value: damageMode },
@@ -350,6 +380,21 @@ function getRunLevel(playerState) {
     return 1;
   }
   return Math.max(1, Math.round(runLevel));
+}
+
+function getRunFloor(playerState) {
+  return clampFloor(playerState?.run?.floor ?? MIN_FLOOR);
+}
+
+function setRunFloor(playerState, floor) {
+  if (!playerState || typeof playerState !== "object") {
+    return;
+  }
+
+  if (!playerState.run || typeof playerState.run !== "object") {
+    playerState.run = {};
+  }
+  playerState.run.floor = clampFloor(floor);
 }
 
 function getGold(playerState) {
@@ -1025,12 +1070,34 @@ function buildEffectTextState(effect) {
   };
 }
 
+function buildDownStairTextState(downStair) {
+  if (!downStair || typeof downStair !== "object") {
+    return null;
+  }
+
+  const triggerTiles = Array.isArray(downStair.triggerTiles) ? downStair.triggerTiles : [];
+  return {
+    anchorTileX: Number.isFinite(downStair.anchorTileX) ? Math.floor(downStair.anchorTileX) : null,
+    anchorTileY: Number.isFinite(downStair.anchorTileY) ? Math.floor(downStair.anchorTileY) : null,
+    widthTiles: Number.isFinite(downStair.widthTiles) ? Math.max(1, Math.floor(downStair.widthTiles)) : 2,
+    heightTiles: Number.isFinite(downStair.heightTiles) ? Math.max(1, Math.floor(downStair.heightTiles)) : 1,
+    isEnabled: downStair.isEnabled === true,
+    triggerTiles: triggerTiles
+      .filter((tile) => Number.isFinite(tile?.tileX) && Number.isFinite(tile?.tileY))
+      .map((tile) => ({
+        tileX: Math.floor(tile.tileX),
+        tileY: Math.floor(tile.tileY),
+      })),
+  };
+}
+
 function toTextState() {
   const hudState = buildHudTextState();
   const inventoryState = buildInventoryTextState();
   const treasureChests = Array.isArray(appState.treasureChests) ? appState.treasureChests : [];
   const groundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
   const effects = Array.isArray(appState.effects) ? appState.effects : [];
+  const floorTransitionTextState = buildFloorTransitionTextState(floorTransitionState);
 
   if (appState.error) {
     return JSON.stringify(
@@ -1045,6 +1112,7 @@ function toTextState() {
         treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
         effects: effects.map((effect) => buildEffectTextState(effect)),
+        floorTransition: floorTransitionTextState,
       },
       null,
       2
@@ -1063,6 +1131,7 @@ function toTextState() {
         treasureChests: treasureChests.map((chest) => buildTreasureChestTextState(chest)),
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
         effects: effects.map((effect) => buildEffectTextState(effect)),
+        floorTransition: floorTransitionTextState,
       },
       null,
       2
@@ -1078,11 +1147,13 @@ function toTextState() {
       mode: "dungeon",
       seed: dungeon.seed,
       dungeonId: dungeon.dungeonId ?? null,
+      floor: Number.isFinite(dungeon.floor) ? Math.floor(dungeon.floor) : null,
       wallHeightTiles: dungeon.wallHeightTiles ?? null,
       isPaused: appState.isPaused === true,
       debug: {
         playerDamagePreviewOnly: appState.debugPlayerDamagePreviewOnly === true,
       },
+      floorTransition: floorTransitionTextState,
       coordinateSystem: {
         origin: "top-left",
         xAxis: "right-positive",
@@ -1103,6 +1174,7 @@ function toTextState() {
       enemies: appState.enemies.map((enemy) => buildEnemyTextState(enemy)),
       effects: effects.map((effect) => buildEffectTextState(effect)),
       damagePopups: appState.damagePopups.map((popup) => buildDamagePopupTextState(popup)),
+      downStairs: buildDownStairTextState(dungeon.downStair),
       startRoom: startRoom
         ? {
             id: startRoom.id,
@@ -1149,6 +1221,47 @@ function renderErrorScreen(message) {
   ctx.fillStyle = "#ffb3b3";
   ctx.font = "16px monospace";
   ctx.fillText(`Generation failed: ${message}`, 20, 40);
+}
+
+function renderFloorTransitionOverlay() {
+  if (!isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
+
+  const alpha = clamp(Number(floorTransitionState.alpha) || 0, 0, 1);
+  if (alpha <= 0) {
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (floorTransitionState.phase === FLOOR_TRANSITION_PHASE.TITLE_HOLD) {
+    const titleText =
+      typeof floorTransitionState.titleText === "string" && floorTransitionState.titleText.length > 0
+        ? floorTransitionState.titleText
+        : `地下${Math.max(MIN_FLOOR, Math.floor(Number(floorTransitionState.targetFloor) || MIN_FLOOR))}階`;
+    const overlayCenter = resolveOverlayCenterWorld({
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      scrollLeft: canvasScroll?.scrollLeft,
+      scrollTop: canvasScroll?.scrollTop,
+      viewportWidth: canvasScroll?.clientWidth,
+      viewportHeight: canvasScroll?.clientHeight,
+      scale: gameViewScale,
+    });
+    ctx.globalAlpha = 1;
+    ctx.font = "bold 72px monospace";
+    ctx.fillStyle = "#f4f4f4";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(titleText, overlayCenter.x, overlayCenter.y);
+  }
+
+  ctx.restore();
 }
 
 function followPlayerInView() {
@@ -1204,9 +1317,17 @@ let effectSeq = 0;
 let dungeonDefinitions = [];
 let dungeonDefinitionsById = {};
 let selectedDungeonId = DEFAULT_DUNGEON_ID;
+let runBaseSeed = String(INITIAL_SEED);
 const tileAssetsByDungeonId = new Map();
 
-function getSelectedDungeonDefinition() {
+function getSelectedDungeonDefinition(floorOverride = null) {
+  if (Number.isFinite(floorOverride)) {
+    const byFloor = dungeonDefinitionsById[resolveDungeonIdForFloor(clampFloor(floorOverride))];
+    if (byFloor) {
+      return byFloor;
+    }
+  }
+
   if (dungeonDefinitionsById[selectedDungeonId]) {
     return dungeonDefinitionsById[selectedDungeonId];
   }
@@ -1214,6 +1335,13 @@ function getSelectedDungeonDefinition() {
 }
 
 function normalizeSelectedDungeonId() {
+  const currentFloor = clampFloor(appState.playerState?.run?.floor ?? MIN_FLOOR);
+  const preferredDungeonId = resolveDungeonIdForFloor(currentFloor);
+  if (dungeonDefinitionsById[preferredDungeonId]) {
+    selectedDungeonId = preferredDungeonId;
+    return;
+  }
+
   if (dungeonDefinitionsById[selectedDungeonId]) {
     return;
   }
@@ -2178,6 +2306,9 @@ function togglePause() {
   if (!appState.dungeon || !appState.player || appState.error) {
     return;
   }
+  if (isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
   setPaused(!appState.isPaused);
 }
 
@@ -2215,9 +2346,15 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
     if (!dungeonDefinitionsById[dungeonId]) {
       return;
     }
-    selectedDungeonId = dungeonId;
+    const nextFloor = resolveFloorFromDungeonId(dungeonId, getRunFloor(appState.playerState));
+    setRunFloor(appState.playerState, nextFloor);
+    selectedDungeonId = resolveDungeonIdForFloor(nextFloor);
     debugPanel.setDungeonId(selectedDungeonId);
-    void regenerate(appState.seed);
+    void regenerate(runBaseSeed, {
+      overrideFloor: nextFloor,
+      preserveBaseSeed: true,
+      skipRestorePlayerPosition: true,
+    });
   },
   onTogglePause: () => {
     togglePause();
@@ -2304,6 +2441,11 @@ createPointerController(canvas, {
       return;
     }
 
+    if (isFloorTransitionActive(floorTransitionState)) {
+      setPointerTarget(appState.player, false, 0, 0);
+      return;
+    }
+
     if (active === true && pointerDownFeetTileSnapshot === null) {
       pointerDownFeetTileSnapshot = getPlayerFeetTile(appState.player);
     }
@@ -2315,6 +2457,9 @@ createPointerController(canvas, {
   },
   onPointerClick: (worldX, worldY) => {
     if (!appState.player || !appState.dungeon || appState.error) {
+      return;
+    }
+    if (isFloorTransitionActive(floorTransitionState)) {
       return;
     }
 
@@ -2879,16 +3024,108 @@ function renderCurrentFrame() {
     groundItemDrawables,
     appState.damagePopups
   );
+  renderFloorTransitionOverlay();
   applyCanvasDisplayScale();
 }
 
+function isPlayerTouchingDownStairTrigger(dungeon, player) {
+  if (!dungeon?.downStair || dungeon.downStair.isEnabled !== true) {
+    return false;
+  }
+
+  const feetTile = getPlayerFeetTile(player);
+  return isPlayerTouchingDownStair(feetTile, dungeon.downStair);
+}
+
+function startDownStairFloorTransition() {
+  if (!appState.dungeon || !appState.player || !appState.playerState || isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
+
+  const currentFloor = getRunFloor(appState.playerState);
+  if (currentFloor >= MAX_FLOOR) {
+    return;
+  }
+
+  const nextFloor = currentFloor + 1;
+  setPointerTarget(appState.player, false, 0, 0);
+  pointerDownFeetTileSnapshot = null;
+  floorTransitionLoadPromise = null;
+  floorTransitionState.loadToken = null;
+  startFloorTransition(floorTransitionState, {
+    targetFloor: nextFloor,
+    titleText: `地下${nextFloor}階`,
+  });
+}
+
+function requestFloorTransitionLoadIfNeeded() {
+  if (!isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
+
+  if (floorTransitionState.phase !== FLOOR_TRANSITION_PHASE.TITLE_HOLD || floorTransitionState.didRequestLoad === true) {
+    return;
+  }
+
+  floorTransitionState.didRequestLoad = true;
+  const targetFloor = clampFloor(floorTransitionState.targetFloor ?? MIN_FLOOR);
+  const nextSeed = buildFloorSeed(runBaseSeed, targetFloor);
+  const loadToken = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+  floorTransitionState.loadToken = loadToken;
+
+  floorTransitionLoadPromise = regenerate(nextSeed, {
+    overrideFloor: targetFloor,
+    preserveBaseSeed: true,
+    skipRestorePlayerPosition: true,
+  })
+    .catch(() => {
+      // regenerate handles error state update itself.
+    })
+    .finally(() => {
+      if (floorTransitionState.loadToken === loadToken) {
+        markFloorTransitionDungeonReady(floorTransitionState);
+        floorTransitionLoadPromise = null;
+      }
+    });
+}
+
+function updateFloorTransition(dt) {
+  if (!isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
+
+  stepFloorTransition(floorTransitionState, dt);
+  requestFloorTransitionLoadIfNeeded();
+}
+
 function stepSimulation(dt) {
+  if (isFloorTransitionBlocking(floorTransitionState)) {
+    if (!appState.dungeon || !appState.player || appState.error) {
+      return;
+    }
+    updateFloorTransition(dt);
+    syncStatsPanel();
+    syncPlayerStatsWindow();
+    syncSystemHud();
+    followPlayerInView();
+    return;
+  }
+
   if (!appState.dungeon || !appState.player || appState.error || appState.isPaused) {
     return;
   }
 
   appState.effects = updateEffects(appState.effects, dt);
   updatePlayer(appState.player, appState.dungeon, dt);
+  if (isPlayerTouchingDownStairTrigger(appState.dungeon, appState.player)) {
+    startDownStairFloorTransition();
+    updateFloorTransition(dt);
+    syncStatsPanel();
+    syncPlayerStatsWindow();
+    syncSystemHud();
+    followPlayerInView();
+    return;
+  }
   syncGroundItemPickup();
   updateEnemies(appState.enemies, appState.dungeon, dt, appState.player);
 
@@ -3029,9 +3266,27 @@ function runFrame(timestamp) {
 
 let regenerateRequestId = 0;
 
-async function regenerate(seed) {
+async function regenerate(seed, options = {}) {
   const normalizedSeed = String(seed);
+  const preserveBaseSeed = options?.preserveBaseSeed === true;
+  const overrideFloor = Number.isFinite(options?.overrideFloor) ? clampFloor(options.overrideFloor) : null;
+  const skipRestorePlayerPosition = options?.skipRestorePlayerPosition === true;
   const requestId = (regenerateRequestId += 1);
+  if (!preserveBaseSeed) {
+    runBaseSeed = normalizedSeed;
+    if (isFloorTransitionActive(floorTransitionState)) {
+      floorTransitionState.active = false;
+      floorTransitionState.phase = FLOOR_TRANSITION_PHASE.IDLE;
+      floorTransitionState.timerSec = 0;
+      floorTransitionState.alpha = 0;
+      floorTransitionState.targetFloor = null;
+      floorTransitionState.titleText = "";
+      floorTransitionState.isDungeonReady = false;
+      floorTransitionState.didRequestLoad = false;
+      floorTransitionState.loadToken = null;
+      floorTransitionLoadPromise = null;
+    }
+  }
 
   try {
     await Promise.all([
@@ -3047,7 +3302,10 @@ async function regenerate(seed) {
     }
     buildEnemyAttackProfilesByDbId();
     ensurePlayerStateLoaded();
-    const dungeonDefinition = getSelectedDungeonDefinition();
+    const targetFloor = overrideFloor ?? getRunFloor(appState.playerState);
+    setRunFloor(appState.playerState, targetFloor);
+    const generationSeed = buildFloorSeed(runBaseSeed, targetFloor);
+    const dungeonDefinition = getSelectedDungeonDefinition(targetFloor);
     if (!dungeonDefinition) {
       throw new Error("Dungeon DB is empty.");
     }
@@ -3061,17 +3319,25 @@ async function regenerate(seed) {
     const tileAssets = await ensureTileAssetsForDungeon(dungeonDefinition);
 
     const dungeon = generateDungeon({
-      seed: normalizedSeed,
+      seed: generationSeed,
       wallHeightTiles: dungeonDefinition.wallHeightTiles,
     });
     dungeon.dungeonId = dungeonDefinition.id;
     dungeon.wallHeightTiles = dungeonDefinition.wallHeightTiles;
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
+    const stairPlacement = placeDownStairSymbols(dungeon.symbolGrid, dungeon, dungeonDefinition.wallHeightTiles);
+    dungeon.symbolGrid = stairPlacement.symbolGrid;
+    dungeon.downStair = stairPlacement.downStair
+      ? {
+          ...stairPlacement.downStair,
+          isEnabled: targetFloor < MAX_FLOOR,
+        }
+      : null;
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid, {
       tallWallTileHeight: dungeonDefinition.wallHeightTiles,
     });
-    dungeon.floor = Math.max(1, Math.floor(Number(appState.playerState?.run?.floor) || 1));
+    dungeon.floor = targetFloor;
 
     const player = createPlayerState(dungeon, playerDefinition);
     const playerDerived = derivePlayerCombatStats(appState.playerState, PLAYER_SPEED_PX_PER_SEC);
@@ -3086,7 +3352,7 @@ async function regenerate(seed) {
     player.ccDurationMult = playerDerived.ccDurationMult;
     player.damageSeed = deriveSeed(dungeon.seed, "player-damage");
 
-    if (appState.playerState?.run?.pos) {
+    if (!skipRestorePlayerPosition && appState.playerState?.run?.pos) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
     if (Number.isFinite(appState.playerState?.run?.hp)) {
@@ -3098,13 +3364,13 @@ async function regenerate(seed) {
     if (!herbDefinition) {
       throw new Error(`Item DB is missing required herb item: ${HERB_ITEM_ID}`);
     }
-    const treasureChests = createTreasureChests(dungeon, normalizedSeed);
+    const treasureChests = createTreasureChests(dungeon, generationSeed);
     dungeon.walkableGrid = applyChestBlockingToWalkableGrid(dungeon.walkableGrid, treasureChests);
     const blockedEnemyTiles = buildBlockedTileSetFromChests(treasureChests);
     const enemies = createEnemies(
       dungeon,
       dungeonEnemyDefinitions,
-      normalizedSeed,
+      generationSeed,
       enemyAttackProfilesByDbId,
       blockedEnemyTiles
     );
@@ -3163,7 +3429,7 @@ async function regenerate(seed) {
     const systemUi = createInitialSystemUiState();
 
     setDungeonState(appState, {
-      seed: normalizedSeed,
+      seed: runBaseSeed,
       dungeon,
       validation,
       playerState: appState.playerState,
@@ -3178,7 +3444,7 @@ async function regenerate(seed) {
       backdrop,
     });
 
-    debugPanel.setSeed(normalizedSeed);
+    debugPanel.setSeed(runBaseSeed);
     resetDebugPerfMetricsTracker(debugPerfMetricsTracker);
     lastStatsDigest = "";
     lastPlayerStatsDigest = "";
@@ -3204,9 +3470,22 @@ async function regenerate(seed) {
       return;
     }
 
+    if (isFloorTransitionActive(floorTransitionState)) {
+      floorTransitionState.active = false;
+      floorTransitionState.phase = FLOOR_TRANSITION_PHASE.IDLE;
+      floorTransitionState.timerSec = 0;
+      floorTransitionState.alpha = 0;
+      floorTransitionState.targetFloor = null;
+      floorTransitionState.titleText = "";
+      floorTransitionState.isDungeonReady = false;
+      floorTransitionState.didRequestLoad = false;
+      floorTransitionState.loadToken = null;
+      floorTransitionLoadPromise = null;
+    }
+
     dungeonBgmPlayer.stop();
-    setErrorState(appState, normalizedSeed, error);
-    debugPanel.setSeed(normalizedSeed);
+    setErrorState(appState, runBaseSeed, error);
+    debugPanel.setSeed(runBaseSeed);
     resetDebugPerfMetricsTracker(debugPerfMetricsTracker);
     lastStatsDigest = "";
     lastPlayerStatsDigest = "";
@@ -3229,7 +3508,8 @@ window.advanceTime = (ms = 0) => {
   const requestedMs = Number.isFinite(duration) && duration > 0 ? duration : FRAME_MS;
   const frames = Math.max(1, Math.round(requestedMs / FRAME_MS));
 
-  if (!appState.isPaused) {
+  const shouldStep = !appState.isPaused || isFloorTransitionActive(floorTransitionState);
+  if (shouldStep) {
     for (let index = 0; index < frames; index += 1) {
       stepSimulation(FIXED_DT);
     }

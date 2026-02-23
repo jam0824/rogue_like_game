@@ -1,4 +1,10 @@
-const DUNGEON_DB_FALLBACK_FILE_NAMES = ["dungeon_id_01.json", "dungeon_id_02.json"];
+const DUNGEON_DB_FALLBACK_FILE_NAMES = [
+  "dungeon_id_01.json",
+  "dungeon_id_02.json",
+  "dungeon_id_03.json",
+  "dungeon_id_04.json",
+  "dungeon_id_05.json",
+];
 
 const REQUIRED_KEYS = [
   "id",
@@ -11,7 +17,7 @@ const REQUIRED_KEYS = [
   "tip_set",
 ];
 
-const REQUIRED_TIP_SET_KEYS = ["tile", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+const REQUIRED_TIP_SET_KEYS = ["tile", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "S"];
 
 function assertHasRequiredKeys(rawDungeon, fileName) {
   for (const key of REQUIRED_KEYS) {

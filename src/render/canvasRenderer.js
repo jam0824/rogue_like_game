@@ -17,6 +17,11 @@ function drawSymbolLayer(ctx, assets, symbolGrid, symbols, seed) {
         continue;
       }
 
+      // Down-stair art occupies two horizontal tiles; render only on the left anchor.
+      if (symbol === "S" && symbolGrid[y][x - 1] === "S") {
+        continue;
+      }
+
       const asset = resolveTileVariantAsset(assets, symbol, seed, x, y);
       if (!asset?.image) {
         continue;
