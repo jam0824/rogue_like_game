@@ -839,25 +839,26 @@
   }
 
   function exportPng(){
-    const seq = buildFrameSequence();
-    const hasAny = seq.some(Boolean);
+    const hasAny = state.right.grid.some(c => !!c.item);
     if (!hasAny) return;
 
-    const {cellW, cellH} = state.right;
+    const {cellW, cellH, cols, rows, grid} = state.right;
     const out = document.createElement('canvas');
-    out.width = Math.round(cellW * seq.length);
-    out.height = Math.round(cellH);
+    out.width = Math.round(cellW * cols);
+    out.height = Math.round(cellH * rows);
 
     const ctx = out.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
     // transparent bg (default)
-    for(let i=0;i<seq.length;i++){
-      const item = seq[i];
+    for(let i=0;i<grid.length;i++){
+      const item = grid[i].item;
       if (!item || !state.srcImg) continue;
 
-      const x0 = i*cellW;
-      const y0 = 0;
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const x0 = c * cellW;
+      const y0 = r * cellH;
 
       ctx.save();
       ctx.beginPath();

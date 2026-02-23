@@ -18,7 +18,8 @@
         "I":["bottom_01.png","bottom_02.png","bottom_03.png","bottom_04.png"],
         "J":["right_bottom_corner.png"],
         "K":["left_bottom_01.png"],
-        "L":["right_bottom_01.png"]
+        "L":["right_bottom_01.png"],
+        "S":["down_stair.png"]
     },
     "walkable_tile_decoration":[
         "decoration_01.png",
