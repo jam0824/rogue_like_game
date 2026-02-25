@@ -4,6 +4,7 @@ import {
   getPlayerHitFlashAlpha,
   getPlayerFeetHitbox,
   getPlayerFrame,
+  isPlayerDeathAnimationFinished,
   setPointerTarget,
   tryRestorePlayerPosition,
   updatePlayer,
@@ -400,6 +401,20 @@ describe("playerSystem", () => {
 
       expect(frameCols).toEqual([0, 1, 2, 2]);
       expect(animation).toBe("death");
+    });
+
+    it("isPlayerDeathAnimationFinished は最終停止フレーム到達で true になる", () => {
+      const alive = createPlayer({ hp: 100, isDead: false, deathAnimTime: 100 });
+      expect(isPlayerDeathAnimationFinished(alive, PLAYER_ASSETS)).toBe(false);
+
+      const deadBeforeStop = createPlayer({ hp: 0, isDead: true, deathAnimTime: 0.19 });
+      expect(isPlayerDeathAnimationFinished(deadBeforeStop, PLAYER_ASSETS)).toBe(false);
+
+      const deadAtStop = createPlayer({ hp: 0, isDead: true, deathAnimTime: 0.2 });
+      expect(isPlayerDeathAnimationFinished(deadAtStop, PLAYER_ASSETS)).toBe(true);
+
+      const deadAfterStop = createPlayer({ hp: 0, isDead: true, deathAnimTime: 10 });
+      expect(isPlayerDeathAnimationFinished(deadAfterStop, PLAYER_ASSETS)).toBe(true);
     });
 
     it("defaultFacing=left に対して spriteFacing=right のときのみ flipX=true", () => {

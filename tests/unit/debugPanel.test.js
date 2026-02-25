@@ -41,6 +41,7 @@ function createDebugRoot() {
   const applySeedButton = createEventTarget({ textContent: "Apply Seed" });
   const regenerateButton = createEventTarget({ textContent: "再生成" });
   const pauseToggleButton = createEventTarget({ textContent: "一時停止", attributes: { "aria-pressed": "false" } });
+  const goSurfaceButton = createEventTarget({ textContent: "地上へ移動" });
   const showStorageButton = createEventTarget({ textContent: "Storage表示" });
   const resetStorageButton = createEventTarget({ textContent: "Storageリセット" });
   const damagePreviewToggleButton = createEventTarget({
@@ -62,6 +63,7 @@ function createDebugRoot() {
     "#apply-seed": applySeedButton,
     "#regen-random": regenerateButton,
     "#pause-toggle": pauseToggleButton,
+    "#go-surface": goSurfaceButton,
     "#show-storage": showStorageButton,
     "#reset-storage": resetStorageButton,
     "#damage-preview-toggle": damagePreviewToggleButton,
@@ -84,6 +86,7 @@ function createDebugRoot() {
     statsList,
     dungeonIdSelect,
     pauseToggleButton,
+    goSurfaceButton,
     showStorageButton,
     resetStorageButton,
     damagePreviewToggleButton,
@@ -118,6 +121,7 @@ function createHandlers(overrides = {}) {
     onApplySeed: vi.fn(),
     onRegenerate: vi.fn(),
     onTogglePause: vi.fn(),
+    onGoSurface: vi.fn(),
     onShowStorage: vi.fn(),
     onResetStorage: vi.fn(),
     onToggleDamagePreview: vi.fn(),
@@ -137,6 +141,16 @@ describe("debugPanel", () => {
     pauseToggleButton.trigger("click");
 
     expect(handlers.onTogglePause).toHaveBeenCalledTimes(1);
+  });
+
+  it("地上へ移動ボタンクリックで onGoSurface が呼ばれる", () => {
+    const { root, goSurfaceButton } = createDebugRoot();
+    const handlers = createHandlers();
+
+    createDebugPanel(root, handlers);
+    goSurfaceButton.trigger("click");
+
+    expect(handlers.onGoSurface).toHaveBeenCalledTimes(1);
   });
 
   it("setPaused でボタン文言と aria-pressed が切り替わる", () => {

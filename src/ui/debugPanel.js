@@ -34,6 +34,7 @@ export function createDebugPanel(root, handlers) {
   const applySeedButton = root.querySelector("#apply-seed");
   const regenerateButton = root.querySelector("#regen-random");
   const pauseToggleButton = root.querySelector("#pause-toggle");
+  const goSurfaceButton = root.querySelector("#go-surface");
   const showStorageButton = root.querySelector("#show-storage");
   const resetStorageButton = root.querySelector("#reset-storage");
   const damagePreviewToggleButton = root.querySelector("#damage-preview-toggle");
@@ -92,6 +93,14 @@ export function createDebugPanel(root, handlers) {
   pauseToggleButton.addEventListener("click", () => {
     handlers.onTogglePause();
   });
+
+  if (goSurfaceButton) {
+    goSurfaceButton.addEventListener("click", () => {
+      if (typeof handlers.onGoSurface === "function") {
+        handlers.onGoSurface();
+      }
+    });
+  }
 
   if (showStorageButton) {
     showStorageButton.addEventListener("click", () => {

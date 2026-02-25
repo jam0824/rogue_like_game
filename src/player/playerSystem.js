@@ -276,6 +276,17 @@ function getLoopFrameIndex(animTime, fps, frameCount) {
   return Math.floor(Math.max(0, Number(animTime) || 0) * fps) % frameCount;
 }
 
+function getDeathStopFrameIndex(playerAssets) {
+  const frameCount = getAnimationFrameCount(playerAssets, "death");
+  return Math.min(frameCount - 1, PLAYER_DEATH_STOP_FRAME_INDEX);
+}
+
+function getDeathFrameIndex(player, playerAssets) {
+  const fps = getAnimationFps(player, playerAssets);
+  const deathStopFrameIndex = getDeathStopFrameIndex(playerAssets);
+  return Math.min(deathStopFrameIndex, Math.floor(Math.max(0, Number(player?.deathAnimTime) || 0) * fps));
+}
+
 export function createPlayerState(dungeon, playerDefinition = null) {
   const startRoom = findStartRoom(dungeon);
   if (!startRoom) {
@@ -494,9 +505,8 @@ export function getPlayerFrame(player, playerAssets) {
   const animation = dead ? "death" : player.isMoving ? "walk" : "idle";
   const frameCount = getAnimationFrameCount(playerAssets, animation);
   const fps = getAnimationFps(player, playerAssets);
-  const deathStopFrameIndex = Math.min(frameCount - 1, PLAYER_DEATH_STOP_FRAME_INDEX);
   const col = dead
-    ? Math.min(deathStopFrameIndex, Math.floor(Math.max(0, Number(player.deathAnimTime) || 0) * fps))
+    ? getDeathFrameIndex(player, playerAssets)
     : getLoopFrameIndex(player.animTime, fps, frameCount);
 
   const defaultFacing = normalizeSpriteFacing(
@@ -511,6 +521,14 @@ export function getPlayerFrame(player, playerAssets) {
     animation,
     flipX: spriteFacing !== defaultFacing,
   };
+}
+
+export function isPlayerDeathAnimationFinished(player, playerAssets) {
+  if (!isPlayerDead(player)) {
+    return false;
+  }
+
+  return getDeathFrameIndex(player, playerAssets) >= getDeathStopFrameIndex(playerAssets);
 }
 
 export function getPlayerFeetHitbox(player) {

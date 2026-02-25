@@ -12,6 +12,21 @@
         <canvas id="dungeon-canvas" aria-label="Dungeon canvas"></canvas>
       </div>
 
+      <section id="surface-layer" hidden aria-label="Surface view">
+        <div id="surface-right-column" aria-label="Surface facilities">
+          <div id="surface-facility-list">
+            <button type="button" class="surface-facility-button" data-surface-facility="dungeon">ダンジョン</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="storage">保管庫</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="shop">ショップ</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="appraisal">鑑定屋</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="guild">冒険者ギルド</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="refinery">精錬所</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="dismantle">分解屋</button>
+            <button type="button" class="surface-facility-button" data-surface-facility="tailor">仕立て屋</button>
+          </div>
+        </div>
+      </section>
+
       <section id="system-ui-layer" aria-label="System HUD">
         <div id="system-hud-top-left" aria-label="Player HUD">
           <div class="system-hp-row">
@@ -246,6 +261,10 @@
         </div>
       </section>
 
+      <section id="scene-transition-overlay" hidden aria-live="polite" aria-label="Scene transition">
+        <div id="scene-transition-title"></div>
+      </section>
+
       <aside id="debug-panel" aria-label="Dungeon debug panel">
         <h1 class="debug-title">Dungeon Debug</h1>
         <p class="debug-desc">Seedを固定して同じマップを再現できます。</p>
@@ -260,6 +279,7 @@
           <button id="apply-seed" type="button">Apply Seed</button>
           <button id="regen-random" type="button">再生成</button>
           <button id="pause-toggle" type="button" aria-pressed="false">一時停止</button>
+          <button id="go-surface" type="button">地上へ移動</button>
           <button id="show-storage" type="button">Storage表示</button>
           <button id="reset-storage" type="button">Storageリセット</button>
           <button id="damage-preview-toggle" type="button" aria-pressed="true">被ダメ無効(演出のみ)</button>

@@ -61,6 +61,7 @@ import {
   getPlayerFeetHitbox,
   getPlayerFrame,
   getPlayerHitFlashAlpha,
+  isPlayerDeathAnimationFinished,
   setPointerTarget,
   tryRestorePlayerPosition,
   updatePlayer,
@@ -84,6 +85,15 @@ import { loadTileAssets } from "./tiles/tileCatalog.js";
 import { loadDungeonDefinitions } from "./tiles/dungeonTileDb.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
 import { resolveWallSymbols } from "./tiles/wallSymbolResolver.js";
+import {
+  buildSceneTransitionTextState,
+  createSceneTransitionState,
+  isSceneTransitionActive,
+  markSceneTransitionReady,
+  SCENE_TRANSITION_PHASE,
+  startSceneTransition,
+  stepSceneTransition,
+} from "./scene/sceneTransitionState.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import {
   createDebugPerfMetricsTracker,
@@ -157,6 +167,20 @@ const PLAYER_RENDER_SCALE = 32 / 24;
 const FLOOR_TRANSITION_FADE_OUT_SEC = 0.35;
 const FLOOR_TRANSITION_TITLE_HOLD_SEC = 1;
 const FLOOR_TRANSITION_FADE_IN_SEC = 0.35;
+const SCENE_TRANSITION_FADE_IN_SEC = 0.35;
+const SCENE_TRANSITION_TITLE_HOLD_SEC = 1;
+const SCENE_TRANSITION_FADE_OUT_SEC = 0.35;
+const SCENE_TRANSITION_DEATH_FADE_SEC = 0.75;
+const SCENE_TRANSITION_DEATH_TITLE_HOLD_SEC = 1.2;
+const PLAYER_DEATH_POST_ANIM_DELAY_SEC = 1.0;
+const VIEW_MODE = {
+  SURFACE: "surface",
+  DUNGEON: "dungeon",
+};
+const SCENE_TRANSITION_KIND = {
+  SURFACE_TO_DUNGEON: "surface_to_dungeon",
+  PLAYER_DEATH: "player_death",
+};
 
 const appState = createAppState(INITIAL_SEED);
 const dungeonBgmPlayer = createDungeonBgmPlayer();
@@ -166,7 +190,14 @@ const floorTransitionState = createFloorTransitionState({
   titleHoldSec: FLOOR_TRANSITION_TITLE_HOLD_SEC,
   fadeInSec: FLOOR_TRANSITION_FADE_IN_SEC,
 });
+const sceneTransitionState = createSceneTransitionState({
+  fadeInSec: SCENE_TRANSITION_FADE_IN_SEC,
+  titleHoldSec: SCENE_TRANSITION_TITLE_HOLD_SEC,
+  fadeOutSec: SCENE_TRANSITION_FADE_OUT_SEC,
+});
 let floorTransitionLoadPromise = null;
+let sceneTransitionLoadPromise = null;
+let viewMode = VIEW_MODE.SURFACE;
 const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
   windowMs: 1000,
   publishIntervalMs: 250,
@@ -174,6 +205,10 @@ const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
 });
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
+const surfaceLayer = document.querySelector("#surface-layer");
+const surfaceFacilityButtons = Array.from(document.querySelectorAll("[data-surface-facility]"));
+const sceneTransitionOverlay = document.querySelector("#scene-transition-overlay");
+const sceneTransitionTitle = document.querySelector("#scene-transition-title");
 const debugPanelRoot = document.querySelector("#debug-panel");
 const systemUiRoot = document.querySelector("#system-ui-layer");
 const gameViewScale = resolveGameViewScale(GAME_VIEW_SCALE);
@@ -184,6 +219,62 @@ function applyCanvasDisplayScale() {
 }
 
 applyCanvasDisplayScale();
+
+function syncViewModeUi() {
+  const isSurface = viewMode === VIEW_MODE.SURFACE;
+  if (surfaceLayer) {
+    surfaceLayer.hidden = !isSurface;
+  }
+  if (systemUiRoot) {
+    systemUiRoot.hidden = isSurface;
+  }
+}
+
+function setViewMode(mode) {
+  viewMode = mode === VIEW_MODE.DUNGEON ? VIEW_MODE.DUNGEON : VIEW_MODE.SURFACE;
+  syncViewModeUi();
+}
+
+function renderSceneTransitionOverlay() {
+  if (!sceneTransitionOverlay || !sceneTransitionTitle) {
+    return;
+  }
+
+  if (!isSceneTransitionActive(sceneTransitionState)) {
+    sceneTransitionOverlay.hidden = true;
+    sceneTransitionOverlay.style.backgroundColor = "rgba(0, 0, 0, 0)";
+    sceneTransitionTitle.hidden = true;
+    sceneTransitionTitle.textContent = "";
+    sceneTransitionTitle.style.color = "";
+    sceneTransitionTitle.style.fontSize = "";
+    return;
+  }
+
+  const alpha = clamp(Number(sceneTransitionState.alpha) || 0, 0, 1);
+  if (alpha <= 0) {
+    sceneTransitionOverlay.hidden = true;
+    sceneTransitionOverlay.style.backgroundColor = "rgba(0, 0, 0, 0)";
+    sceneTransitionTitle.hidden = true;
+    return;
+  }
+
+  sceneTransitionOverlay.hidden = false;
+  sceneTransitionOverlay.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+
+  if (sceneTransitionState.phase !== SCENE_TRANSITION_PHASE.TITLE_HOLD) {
+    sceneTransitionTitle.hidden = true;
+    sceneTransitionTitle.textContent = "";
+    return;
+  }
+
+  const isDeath = sceneTransitionState.kind === SCENE_TRANSITION_KIND.PLAYER_DEATH;
+  sceneTransitionTitle.hidden = false;
+  sceneTransitionTitle.textContent = sceneTransitionState.titleText || "";
+  sceneTransitionTitle.style.color = sceneTransitionState.titleColor || "#f4f4f4";
+  sceneTransitionTitle.style.fontSize = isDeath ? "clamp(78px, 12vw, 140px)" : "clamp(64px, 10vw, 120px)";
+}
+
+setViewMode(VIEW_MODE.SURFACE);
 
 function retryAudioPlayback() {
   void dungeonBgmPlayer.retryPending();
@@ -1098,6 +1189,7 @@ function toTextState() {
   const groundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
   const effects = Array.isArray(appState.effects) ? appState.effects : [];
   const floorTransitionTextState = buildFloorTransitionTextState(floorTransitionState);
+  const sceneTransitionTextState = buildSceneTransitionTextState(sceneTransitionState);
 
   if (appState.error) {
     return JSON.stringify(
@@ -1113,6 +1205,34 @@ function toTextState() {
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
         effects: effects.map((effect) => buildEffectTextState(effect)),
         floorTransition: floorTransitionTextState,
+        sceneTransition: sceneTransitionTextState,
+      },
+      null,
+      2
+    );
+  }
+
+  if (viewMode === VIEW_MODE.SURFACE) {
+    return JSON.stringify(
+      {
+        mode: "surface",
+        seed: appState.seed,
+        dungeonId: selectedDungeonId || null,
+        playerState: appState.playerState,
+        hud: hudState,
+        inventory: inventoryState,
+        floorTransition: floorTransitionTextState,
+        sceneTransition: sceneTransitionTextState,
+        facilities: [
+          "ダンジョン",
+          "保管庫",
+          "ショップ",
+          "鑑定屋",
+          "冒険者ギルド",
+          "精錬所",
+          "分解屋",
+          "仕立て屋",
+        ],
       },
       null,
       2
@@ -1132,6 +1252,7 @@ function toTextState() {
         groundItems: groundItems.map((item) => buildGroundItemTextState(item)),
         effects: effects.map((effect) => buildEffectTextState(effect)),
         floorTransition: floorTransitionTextState,
+        sceneTransition: sceneTransitionTextState,
       },
       null,
       2
@@ -1154,6 +1275,7 @@ function toTextState() {
         playerDamagePreviewOnly: appState.debugPlayerDamagePreviewOnly === true,
       },
       floorTransition: floorTransitionTextState,
+      sceneTransition: sceneTransitionTextState,
       coordinateSystem: {
         origin: "top-left",
         xAxis: "right-positive",
@@ -1642,6 +1764,10 @@ let lastStatsDigest = "";
 let lastPlayerStatsDigest = "";
 let lastSystemUiDigest = "";
 let pointerDownFeetTileSnapshot = null;
+const playerDeathSequence = {
+  active: false,
+  postAnimDelaySec: 0,
+};
 let toastAutoClearTimerId = null;
 let isPlayerStatsWindowOpen = false;
 
@@ -2303,13 +2429,36 @@ function setPaused(paused) {
 }
 
 function togglePause() {
-  if (!appState.dungeon || !appState.player || appState.error) {
+  if (viewMode !== VIEW_MODE.DUNGEON || !appState.dungeon || !appState.player || appState.error) {
     return;
   }
-  if (isFloorTransitionActive(floorTransitionState)) {
+  if (
+    isFloorTransitionActive(floorTransitionState) ||
+    isSceneTransitionActive(sceneTransitionState) ||
+    playerDeathSequence.active ||
+    isRuntimePlayerDead(appState.player)
+  ) {
     return;
   }
   setPaused(!appState.isPaused);
+}
+
+function moveToSurfaceFromDebug() {
+  if (viewMode !== VIEW_MODE.DUNGEON || appState.error) {
+    return;
+  }
+  if (isFloorTransitionActive(floorTransitionState) || isSceneTransitionActive(sceneTransitionState)) {
+    return;
+  }
+
+  resetPlayerDeathSequence();
+  if (appState.player) {
+    setPointerTarget(appState.player, false, 0, 0);
+  }
+  pointerDownFeetTileSnapshot = null;
+  setPaused(false);
+  setViewMode(VIEW_MODE.SURFACE);
+  dungeonBgmPlayer.stop();
 }
 
 function toggleDamagePreview() {
@@ -2359,6 +2508,9 @@ const debugPanel = createDebugPanel(debugPanelRoot, {
   onTogglePause: () => {
     togglePause();
   },
+  onGoSurface: () => {
+    moveToSurfaceFromDebug();
+  },
   onShowStorage: () => {
     isPlayerStatsWindowOpen = false;
     debugPanel.setPlayerStatsWindowOpen(false);
@@ -2388,6 +2540,19 @@ syncPauseUi();
 syncDamagePreviewUi();
 syncPlayerStatsWindowVisibility();
 syncSystemHud();
+
+for (const surfaceFacilityButton of surfaceFacilityButtons) {
+  surfaceFacilityButton.addEventListener("click", () => {
+    if (isSceneTransitionActive(sceneTransitionState) || isFloorTransitionActive(floorTransitionState)) {
+      return;
+    }
+
+    const facility = surfaceFacilityButton.dataset.surfaceFacility;
+    if (facility === "dungeon") {
+      startSurfaceToDungeonTransition();
+    }
+  });
+}
 
 function buildStatsDigest(dungeon, player, debugPlayerDamagePreviewOnly, perfSnapshot = null) {
   if (!dungeon) {
@@ -2441,7 +2606,12 @@ createPointerController(canvas, {
       return;
     }
 
-    if (isFloorTransitionActive(floorTransitionState)) {
+    if (
+      viewMode !== VIEW_MODE.DUNGEON ||
+      isFloorTransitionActive(floorTransitionState) ||
+      isSceneTransitionActive(sceneTransitionState) ||
+      playerDeathSequence.active
+    ) {
       setPointerTarget(appState.player, false, 0, 0);
       return;
     }
@@ -2456,10 +2626,10 @@ createPointerController(canvas, {
     setPointerTarget(appState.player, active, worldX, worldY);
   },
   onPointerClick: (worldX, worldY) => {
-    if (!appState.player || !appState.dungeon || appState.error) {
+    if (viewMode !== VIEW_MODE.DUNGEON || !appState.player || !appState.dungeon || appState.error) {
       return;
     }
-    if (isFloorTransitionActive(floorTransitionState)) {
+    if (isFloorTransitionActive(floorTransitionState) || isSceneTransitionActive(sceneTransitionState) || playerDeathSequence.active) {
       return;
     }
 
@@ -2937,10 +3107,17 @@ function countPlayerDamageEvents(events) {
 function renderCurrentFrame() {
   if (appState.error) {
     renderErrorScreen(appState.error);
+    renderSceneTransitionOverlay();
+    return;
+  }
+
+  if (viewMode !== VIEW_MODE.DUNGEON) {
+    renderSceneTransitionOverlay();
     return;
   }
 
   if (!appState.backdrop || !appState.player) {
+    renderSceneTransitionOverlay();
     return;
   }
 
@@ -3026,6 +3203,7 @@ function renderCurrentFrame() {
   );
   renderFloorTransitionOverlay();
   applyCanvasDisplayScale();
+  renderSceneTransitionOverlay();
 }
 
 function isPlayerTouchingDownStairTrigger(dungeon, player) {
@@ -3038,7 +3216,14 @@ function isPlayerTouchingDownStairTrigger(dungeon, player) {
 }
 
 function startDownStairFloorTransition() {
-  if (!appState.dungeon || !appState.player || !appState.playerState || isFloorTransitionActive(floorTransitionState)) {
+  if (
+    viewMode !== VIEW_MODE.DUNGEON ||
+    !appState.dungeon ||
+    !appState.player ||
+    !appState.playerState ||
+    isFloorTransitionActive(floorTransitionState) ||
+    isSceneTransitionActive(sceneTransitionState)
+  ) {
     return;
   }
 
@@ -3098,7 +3283,223 @@ function updateFloorTransition(dt) {
   requestFloorTransitionLoadIfNeeded();
 }
 
+function isRuntimePlayerDead(player) {
+  return Number.isFinite(player?.hp) && player.hp <= 0;
+}
+
+function resetPlayerDeathSequence() {
+  playerDeathSequence.active = false;
+  playerDeathSequence.postAnimDelaySec = 0;
+}
+
+function startPlayerDeathSequenceIfNeeded() {
+  if (
+    playerDeathSequence.active ||
+    viewMode !== VIEW_MODE.DUNGEON ||
+    isSceneTransitionActive(sceneTransitionState) ||
+    !appState.player
+  ) {
+    return false;
+  }
+
+  if (!isRuntimePlayerDead(appState.player)) {
+    return false;
+  }
+
+  playerDeathSequence.active = true;
+  playerDeathSequence.postAnimDelaySec = 0;
+  if (appState.isPaused) {
+    setPaused(false);
+  }
+  setPointerTarget(appState.player, false, 0, 0);
+  pointerDownFeetTileSnapshot = null;
+  return true;
+}
+
+function stepPlayerDeathSequence(dt, { updateAnimation = true } = {}) {
+  if (!playerDeathSequence.active || !appState.player || !appState.dungeon) {
+    return false;
+  }
+
+  if (updateAnimation) {
+    updatePlayer(appState.player, appState.dungeon, dt);
+  }
+
+  if (!isRuntimePlayerDead(appState.player)) {
+    resetPlayerDeathSequence();
+    return false;
+  }
+
+  if (isPlayerDeathAnimationFinished(appState.player, playerAssets)) {
+    playerDeathSequence.postAnimDelaySec += dt;
+    if (playerDeathSequence.postAnimDelaySec >= PLAYER_DEATH_POST_ANIM_DELAY_SEC) {
+      startPlayerDeathSceneTransition();
+      updateSceneTransition(dt);
+      return true;
+    }
+  } else {
+    playerDeathSequence.postAnimDelaySec = 0;
+  }
+
+  syncStatsPanel();
+  syncPlayerStatsWindow();
+  syncSystemHud();
+  followPlayerInView();
+  return true;
+}
+
+function startSurfaceToDungeonTransition() {
+  if (viewMode !== VIEW_MODE.SURFACE || isSceneTransitionActive(sceneTransitionState)) {
+    return;
+  }
+
+  resetPlayerDeathSequence();
+  sceneTransitionState.config.fadeInSec = FLOOR_TRANSITION_FADE_OUT_SEC;
+  sceneTransitionState.config.titleHoldSec = FLOOR_TRANSITION_TITLE_HOLD_SEC;
+  sceneTransitionState.config.fadeOutSec = FLOOR_TRANSITION_FADE_IN_SEC;
+  ensurePlayerStateLoaded();
+  setRunFloor(appState.playerState, MIN_FLOOR);
+  sceneTransitionLoadPromise = null;
+  sceneTransitionState.loadToken = null;
+  startSceneTransition(sceneTransitionState, {
+    kind: SCENE_TRANSITION_KIND.SURFACE_TO_DUNGEON,
+    targetMode: VIEW_MODE.DUNGEON,
+    targetFloor: MIN_FLOOR,
+    titleText: `地下${MIN_FLOOR}階`,
+    titleColor: "#f4f4f4",
+    ready: false,
+  });
+}
+
+function startPlayerDeathSceneTransition() {
+  if (
+    viewMode !== VIEW_MODE.DUNGEON ||
+    !appState.player ||
+    !appState.playerState ||
+    isSceneTransitionActive(sceneTransitionState)
+  ) {
+    return;
+  }
+
+  setPointerTarget(appState.player, false, 0, 0);
+  pointerDownFeetTileSnapshot = null;
+  setRunFloor(appState.playerState, MIN_FLOOR);
+  if (!appState.playerState.run || typeof appState.playerState.run !== "object") {
+    appState.playerState.run = {};
+  }
+
+  const playerMaxHp = Number(appState.player.maxHp);
+  if (Number.isFinite(playerMaxHp) && playerMaxHp > 0) {
+    appState.playerState.run.hp = playerMaxHp;
+  } else {
+    delete appState.playerState.run.hp;
+  }
+
+  sceneTransitionState.config.fadeInSec = SCENE_TRANSITION_DEATH_FADE_SEC;
+  sceneTransitionState.config.titleHoldSec = SCENE_TRANSITION_DEATH_TITLE_HOLD_SEC;
+  sceneTransitionState.config.fadeOutSec = SCENE_TRANSITION_DEATH_FADE_SEC;
+  startSceneTransition(sceneTransitionState, {
+    kind: SCENE_TRANSITION_KIND.PLAYER_DEATH,
+    targetMode: VIEW_MODE.SURFACE,
+    targetFloor: MIN_FLOOR,
+    titleText: "YOU DIED",
+    titleColor: "#d22c2c",
+    ready: true,
+  });
+  resetPlayerDeathSequence();
+  persistPlayerState();
+}
+
+function requestSceneTransitionLoadIfNeeded() {
+  if (!isSceneTransitionActive(sceneTransitionState)) {
+    return;
+  }
+
+  if (
+    sceneTransitionState.kind !== SCENE_TRANSITION_KIND.SURFACE_TO_DUNGEON ||
+    sceneTransitionState.phase !== SCENE_TRANSITION_PHASE.TITLE_HOLD ||
+    sceneTransitionState.didRequestLoad === true
+  ) {
+    return;
+  }
+
+  sceneTransitionState.didRequestLoad = true;
+  const targetFloor = clampFloor(sceneTransitionState.targetFloor ?? MIN_FLOOR);
+  const nextSeed = buildFloorSeed(runBaseSeed, targetFloor);
+  const loadToken = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+  sceneTransitionState.loadToken = loadToken;
+
+  sceneTransitionLoadPromise = regenerate(nextSeed, {
+    overrideFloor: targetFloor,
+    preserveBaseSeed: true,
+    skipRestorePlayerPosition: true,
+    forceFullHp: true,
+  })
+    .catch(() => {
+      // regenerate handles error state update itself.
+    })
+    .finally(() => {
+      if (sceneTransitionState.loadToken === loadToken) {
+        markSceneTransitionReady(sceneTransitionState);
+        sceneTransitionLoadPromise = null;
+      }
+    });
+}
+
+function applySceneTransitionTargetIfNeeded() {
+  if (
+    !isSceneTransitionActive(sceneTransitionState) ||
+    sceneTransitionState.phase !== SCENE_TRANSITION_PHASE.FADE_OUT ||
+    sceneTransitionState.didApplyTarget === true
+  ) {
+    return;
+  }
+
+  sceneTransitionState.didApplyTarget = true;
+  if (sceneTransitionState.targetMode === VIEW_MODE.DUNGEON) {
+    setViewMode(VIEW_MODE.DUNGEON);
+    return;
+  }
+
+  setViewMode(VIEW_MODE.SURFACE);
+  appState.isPaused = false;
+}
+
+function updateSceneTransition(dt) {
+  if (!isSceneTransitionActive(sceneTransitionState)) {
+    return;
+  }
+
+  const wasActive = sceneTransitionState.active === true;
+  const transitionKind = sceneTransitionState.kind;
+  stepSceneTransition(sceneTransitionState, dt);
+  requestSceneTransitionLoadIfNeeded();
+  applySceneTransitionTargetIfNeeded();
+
+  if (wasActive && !isSceneTransitionActive(sceneTransitionState) && transitionKind === SCENE_TRANSITION_KIND.PLAYER_DEATH) {
+    dungeonBgmPlayer.stop();
+  }
+}
+
 function stepSimulation(dt) {
+  if (isSceneTransitionActive(sceneTransitionState)) {
+    updateSceneTransition(dt);
+    syncStatsPanel();
+    syncPlayerStatsWindow();
+    syncSystemHud();
+    if (viewMode === VIEW_MODE.DUNGEON) {
+      followPlayerInView();
+    }
+    return;
+  }
+
+  if (viewMode !== VIEW_MODE.DUNGEON) {
+    syncStatsPanel();
+    syncPlayerStatsWindow();
+    syncSystemHud();
+    return;
+  }
+
   if (isFloorTransitionBlocking(floorTransitionState)) {
     if (!appState.dungeon || !appState.player || appState.error) {
       return;
@@ -3111,12 +3512,31 @@ function stepSimulation(dt) {
     return;
   }
 
-  if (!appState.dungeon || !appState.player || appState.error || appState.isPaused) {
+  if (!appState.dungeon || !appState.player || appState.error) {
+    return;
+  }
+
+  if (playerDeathSequence.active) {
+    stepPlayerDeathSequence(dt, { updateAnimation: true });
+    return;
+  }
+
+  if (startPlayerDeathSequenceIfNeeded()) {
+    stepPlayerDeathSequence(dt, { updateAnimation: true });
+    return;
+  }
+
+  if (appState.isPaused) {
     return;
   }
 
   appState.effects = updateEffects(appState.effects, dt);
   updatePlayer(appState.player, appState.dungeon, dt);
+  if (startPlayerDeathSequenceIfNeeded()) {
+    stepPlayerDeathSequence(dt, { updateAnimation: false });
+    return;
+  }
+
   if (isPlayerTouchingDownStairTrigger(appState.dungeon, appState.player)) {
     startDownStairFloorTransition();
     updateFloorTransition(dt);
@@ -3179,6 +3599,11 @@ function stepSimulation(dt) {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
   });
   appState.effects = enemySkillChainResult.effects;
+  if (startPlayerDeathSequenceIfNeeded()) {
+    stepPlayerDeathSequence(dt, { updateAnimation: false });
+    return;
+  }
+
   const playerDamageEventCount = countPlayerDamageEvents([
     ...enemyCombatEvents,
     ...enemySkillChainResult.events,
@@ -3215,6 +3640,12 @@ function stepSimulation(dt) {
     [...appState.damagePopups, ...spawnedPopups],
     dt
   );
+
+  if (startPlayerDeathSequenceIfNeeded()) {
+    stepPlayerDeathSequence(dt, { updateAnimation: false });
+    return;
+  }
+
   appState.enemies = removeEnemiesAfterDeathAnimation(appState.enemies, enemyAssets);
   syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
   syncStatsPanel();
@@ -3271,7 +3702,9 @@ async function regenerate(seed, options = {}) {
   const preserveBaseSeed = options?.preserveBaseSeed === true;
   const overrideFloor = Number.isFinite(options?.overrideFloor) ? clampFloor(options.overrideFloor) : null;
   const skipRestorePlayerPosition = options?.skipRestorePlayerPosition === true;
+  const forceFullHp = options?.forceFullHp === true;
   const requestId = (regenerateRequestId += 1);
+  resetPlayerDeathSequence();
   if (!preserveBaseSeed) {
     runBaseSeed = normalizedSeed;
     if (isFloorTransitionActive(floorTransitionState)) {
@@ -3285,6 +3718,22 @@ async function regenerate(seed, options = {}) {
       floorTransitionState.didRequestLoad = false;
       floorTransitionState.loadToken = null;
       floorTransitionLoadPromise = null;
+    }
+    if (isSceneTransitionActive(sceneTransitionState)) {
+      sceneTransitionState.active = false;
+      sceneTransitionState.phase = SCENE_TRANSITION_PHASE.IDLE;
+      sceneTransitionState.timerSec = 0;
+      sceneTransitionState.alpha = 0;
+      sceneTransitionState.titleText = "";
+      sceneTransitionState.titleColor = "";
+      sceneTransitionState.kind = "";
+      sceneTransitionState.targetMode = "";
+      sceneTransitionState.targetFloor = null;
+      sceneTransitionState.isReady = false;
+      sceneTransitionState.didRequestLoad = false;
+      sceneTransitionState.loadToken = null;
+      sceneTransitionState.didApplyTarget = false;
+      sceneTransitionLoadPromise = null;
     }
   }
 
@@ -3355,7 +3804,9 @@ async function regenerate(seed, options = {}) {
     if (!skipRestorePlayerPosition && appState.playerState?.run?.pos) {
       tryRestorePlayerPosition(player, dungeon, appState.playerState.run.pos);
     }
-    if (Number.isFinite(appState.playerState?.run?.hp)) {
+    if (forceFullHp) {
+      player.hp = player.maxHp;
+    } else if (Number.isFinite(appState.playerState?.run?.hp)) {
       player.hp = clamp(appState.playerState.run.hp, 0, player.maxHp);
     } else {
       player.hp = player.maxHp;
@@ -3508,7 +3959,11 @@ window.advanceTime = (ms = 0) => {
   const requestedMs = Number.isFinite(duration) && duration > 0 ? duration : FRAME_MS;
   const frames = Math.max(1, Math.round(requestedMs / FRAME_MS));
 
-  const shouldStep = !appState.isPaused || isFloorTransitionActive(floorTransitionState);
+  const shouldStep =
+    !appState.isPaused ||
+    playerDeathSequence.active ||
+    isFloorTransitionActive(floorTransitionState) ||
+    isSceneTransitionActive(sceneTransitionState);
   if (shouldStep) {
     for (let index = 0; index < frames; index += 1) {
       stepSimulation(FIXED_DT);
@@ -3539,5 +3994,7 @@ window.addEventListener("beforeunload", () => {
   dungeonBgmPlayer.stop();
 });
 
-void regenerate(INITIAL_SEED);
+ensurePlayerStateLoaded();
+debugPanel.setSeed(runBaseSeed);
+renderCurrentFrame();
 requestAnimationFrame(runFrame);

@@ -48,6 +48,73 @@ body {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
 }
 
+#surface-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  background:
+    linear-gradient(rgba(10, 8, 6, 0.2), rgba(10, 8, 6, 0.35)),
+    url("../graphic/surface/surface.png") center / cover no-repeat;
+  pointer-events: auto;
+}
+
+#surface-right-column {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 18px 18px 18px 0;
+}
+
+#surface-facility-list {
+  width: min(320px, 36vw);
+  display: grid;
+  gap: 10px;
+}
+
+.surface-facility-button {
+  min-height: 54px;
+  border: 3px solid #4f341f;
+  border-radius: 4px;
+  background: rgba(70, 44, 27, 0.88);
+  color: #f5e3c3;
+  font-family: inherit;
+  font-size: 21px;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 244, 219, 0.12),
+    0 3px 0 rgba(0, 0, 0, 0.28);
+}
+
+.surface-facility-button:hover {
+  filter: brightness(1.08);
+}
+
+#scene-transition-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0);
+}
+
+#scene-transition-title {
+  color: #f4f4f4;
+  font-size: clamp(64px, 10vw, 120px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.9),
+    0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
 #debug-panel {
   position: absolute;
   top: 16px;
@@ -1136,6 +1203,27 @@ body {
 }
 
 @media (max-width: 900px) {
+  #surface-right-column {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 12px 14px;
+  }
+
+  #surface-facility-list {
+    width: min(560px, 92vw);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .surface-facility-button {
+    min-height: 50px;
+    font-size: 18px;
+  }
+
+  #scene-transition-title {
+    font-size: clamp(42px, 12vw, 84px);
+  }
+
   #canvas-scroll {
     padding: 10px 10px 220px;
   }
