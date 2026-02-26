@@ -180,6 +180,7 @@ const FLOOR_TRANSITION_FADE_IN_SEC = 0.35;
 const SCENE_TRANSITION_FADE_IN_SEC = 0.35;
 const SCENE_TRANSITION_TITLE_HOLD_SEC = 1;
 const SCENE_TRANSITION_FADE_OUT_SEC = 0.35;
+const STORAGE_SCENE_TRANSITION_TITLE_HOLD_SEC = 0;
 const SCENE_TRANSITION_DEATH_FADE_SEC = 0.75;
 const SCENE_TRANSITION_DEATH_TITLE_HOLD_SEC = 1.2;
 const PLAYER_DEATH_POST_ANIM_DELAY_SEC = 1.0;
@@ -193,6 +194,8 @@ const SURFACE_SCREEN = {
 };
 const SCENE_TRANSITION_KIND = {
   SURFACE_TO_DUNGEON: "surface_to_dungeon",
+  SURFACE_HUB_TO_STORAGE: "surface_hub_to_storage",
+  SURFACE_STORAGE_TO_HUB: "surface_storage_to_hub",
   PLAYER_DEATH: "player_death",
 };
 
@@ -282,6 +285,7 @@ function renderSceneTransitionOverlay() {
 
   if (!isSceneTransitionActive(sceneTransitionState)) {
     sceneTransitionOverlay.hidden = true;
+    sceneTransitionOverlay.style.pointerEvents = "none";
     sceneTransitionOverlay.style.backgroundColor = "rgba(0, 0, 0, 0)";
     sceneTransitionTitle.hidden = true;
     sceneTransitionTitle.textContent = "";
@@ -293,12 +297,14 @@ function renderSceneTransitionOverlay() {
   const alpha = clamp(Number(sceneTransitionState.alpha) || 0, 0, 1);
   if (alpha <= 0) {
     sceneTransitionOverlay.hidden = true;
+    sceneTransitionOverlay.style.pointerEvents = "none";
     sceneTransitionOverlay.style.backgroundColor = "rgba(0, 0, 0, 0)";
     sceneTransitionTitle.hidden = true;
     return;
   }
 
   sceneTransitionOverlay.hidden = false;
+  sceneTransitionOverlay.style.pointerEvents = "auto";
   sceneTransitionOverlay.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
 
   if (sceneTransitionState.phase !== SCENE_TRANSITION_PHASE.TITLE_HOLD) {
@@ -1609,6 +1615,7 @@ let itemDefinitionsById = {};
 let itemAssetsById = {};
 let treasureChestAssets = {};
 let soundEffectMap = {};
+let storageReferenceDataLoadPromise = null;
 let damagePopupSeq = 0;
 let effectSeq = 0;
 let dungeonDefinitions = [];
@@ -1867,6 +1874,53 @@ async function refreshEffectResources() {
 async function refreshSoundResources() {
   soundEffectMap = await loadSoundEffectMap();
   soundEffectPlayer.setSoundEffectMap(soundEffectMap);
+}
+
+function hasDefinitionMapEntries(definitionsById) {
+  return definitionsById && typeof definitionsById === "object" && Object.keys(definitionsById).length > 0;
+}
+
+async function ensureStorageReferenceDataLoaded() {
+  const needsItemDefinitions = !hasDefinitionMapEntries(itemDefinitionsById);
+  const needsWeaponDefinitions = !hasDefinitionMapEntries(weaponDefinitionsById);
+  if (!needsItemDefinitions && !needsWeaponDefinitions) {
+    return;
+  }
+
+  if (storageReferenceDataLoadPromise) {
+    await storageReferenceDataLoadPromise;
+    return;
+  }
+
+  storageReferenceDataLoadPromise = (async () => {
+    if (needsItemDefinitions) {
+      try {
+        const definitions = await loadItemDefinitions();
+        itemDefinitions = definitions;
+        itemDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+      } catch (error) {
+        console.warn(
+          `[Storage] Failed to load item definitions: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    if (needsWeaponDefinitions) {
+      try {
+        const definitions = await loadWeaponDefinitions();
+        weaponDefinitions = definitions;
+        weaponDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+      } catch (error) {
+        console.warn(
+          `[Storage] Failed to load weapon definitions: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  })().finally(() => {
+    storageReferenceDataLoadPromise = null;
+  });
+
+  await storageReferenceDataLoadPromise;
 }
 
 function ensurePlayerStateLoaded() {
@@ -2523,24 +2577,58 @@ function resetStorageFacilitySelectionAndSellMode() {
   storageFacilityUiState.transferAmount = 1;
 }
 
+function startSurfaceStorageSceneTransition(targetScreen) {
+  if (
+    viewMode !== VIEW_MODE.SURFACE ||
+    isSceneTransitionActive(sceneTransitionState) ||
+    isFloorTransitionActive(floorTransitionState)
+  ) {
+    return false;
+  }
+
+  const normalizedTargetScreen = targetScreen === SURFACE_SCREEN.STORAGE ? SURFACE_SCREEN.STORAGE : SURFACE_SCREEN.HUB;
+  sceneTransitionState.config.fadeInSec = SCENE_TRANSITION_FADE_IN_SEC;
+  sceneTransitionState.config.titleHoldSec = STORAGE_SCENE_TRANSITION_TITLE_HOLD_SEC;
+  sceneTransitionState.config.fadeOutSec = SCENE_TRANSITION_FADE_OUT_SEC;
+  sceneTransitionLoadPromise = null;
+  sceneTransitionState.loadToken = null;
+  startSceneTransition(sceneTransitionState, {
+    kind:
+      normalizedTargetScreen === SURFACE_SCREEN.STORAGE
+        ? SCENE_TRANSITION_KIND.SURFACE_HUB_TO_STORAGE
+        : SCENE_TRANSITION_KIND.SURFACE_STORAGE_TO_HUB,
+    targetMode: VIEW_MODE.SURFACE,
+    targetFloor: null,
+    titleText: "",
+    titleColor: "#f4f4f4",
+    ready: true,
+  });
+  return true;
+}
+
 function openStorageFacility() {
   if (viewMode !== VIEW_MODE.SURFACE || isSceneTransitionActive(sceneTransitionState) || isFloorTransitionActive(floorTransitionState)) {
     return;
   }
   ensurePlayerStateLoaded();
-  storageFacilityUiState.open = true;
   clearStorageFacilityToast();
   resetStorageFacilitySelectionAndSellMode();
-  setSurfaceScreen(SURFACE_SCREEN.STORAGE);
-  syncStorageFacilityHud();
+  if (!startSurfaceStorageSceneTransition(SURFACE_SCREEN.STORAGE)) {
+    return;
+  }
+  void ensureStorageReferenceDataLoaded().then(() => {
+    if (
+      viewMode === VIEW_MODE.SURFACE &&
+      surfaceScreen === SURFACE_SCREEN.STORAGE &&
+      storageFacilityUiState.open === true
+    ) {
+      syncStorageFacilityHud();
+    }
+  });
 }
 
 function closeStorageFacility() {
-  storageFacilityUiState.open = false;
-  clearStorageFacilityToast();
-  resetStorageFacilitySelectionAndSellMode();
-  setSurfaceScreen(SURFACE_SCREEN.HUB);
-  syncStorageFacilityHud();
+  void startSurfaceStorageSceneTransition(SURFACE_SCREEN.HUB);
 }
 
 function ensureRunStartedForStorageWithdraw() {
@@ -3990,6 +4078,25 @@ function applySceneTransitionTargetIfNeeded() {
     return;
   }
 
+  const kind = sceneTransitionState.kind;
+  if (kind === SCENE_TRANSITION_KIND.SURFACE_HUB_TO_STORAGE) {
+    setViewMode(VIEW_MODE.SURFACE);
+    storageFacilityUiState.open = true;
+    setSurfaceScreen(SURFACE_SCREEN.STORAGE);
+    syncStorageFacilityHud();
+    return;
+  }
+
+  if (kind === SCENE_TRANSITION_KIND.SURFACE_STORAGE_TO_HUB) {
+    storageFacilityUiState.open = false;
+    clearStorageFacilityToast();
+    resetStorageFacilitySelectionAndSellMode();
+    setSurfaceScreen(SURFACE_SCREEN.HUB);
+    setViewMode(VIEW_MODE.SURFACE);
+    syncStorageFacilityHud();
+    return;
+  }
+
   storageFacilityUiState.open = false;
   clearStorageFacilityToast();
   resetStorageFacilitySelectionAndSellMode();
@@ -4538,6 +4645,7 @@ window.addEventListener("beforeunload", () => {
 });
 
 ensurePlayerStateLoaded();
+void ensureStorageReferenceDataLoaded();
 debugPanel.setSeed(runBaseSeed);
 renderCurrentFrame();
 requestAnimationFrame(runFrame);

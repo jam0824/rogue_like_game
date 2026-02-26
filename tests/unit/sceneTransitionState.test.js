@@ -85,4 +85,24 @@ describe("sceneTransitionState", () => {
       isReady: true,
     });
   });
+
+  it("titleHoldSec=0 のときは待機せず fade_out に遷移できる", () => {
+    const state = createSceneTransitionState({
+      fadeInSec: 0.35,
+      titleHoldSec: 0,
+      fadeOutSec: 0.35,
+    });
+    startSceneTransition(state, {
+      kind: "surface_hub_to_storage",
+      targetMode: "surface",
+      ready: true,
+    });
+
+    stepSceneTransition(state, 0.35);
+    expect(state.phase).toBe(SCENE_TRANSITION_PHASE.TITLE_HOLD);
+    expect(state.alpha).toBe(1);
+
+    stepSceneTransition(state, 0);
+    expect(state.phase).toBe(SCENE_TRANSITION_PHASE.FADE_OUT);
+  });
 });

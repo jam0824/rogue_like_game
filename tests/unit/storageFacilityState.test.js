@@ -285,6 +285,45 @@ describe("storageFacilityState", () => {
     });
   });
 
+  it("itemDefinitionsがある場合はitem idではなく定義ベースの名称/説明を使う", () => {
+    const state = createPlayerState();
+    state.base.stash.items = [{ type: "item", item_def_id: "item_herb_01", count: 1 }];
+    const uiState = createStorageFacilityUiState();
+    uiState.selectedPane = "stash";
+    uiState.selectedIndex = 0;
+
+    const t = (key, fallback) => {
+      if (key === "name_item_herb_01") {
+        return "薬草";
+      }
+      if (key === "desc_item_herb_01") {
+        return "HPを回復する";
+      }
+      return fallback;
+    };
+
+    const vmWithDefinitions = buildStorageFacilityViewModel({
+      playerState: state,
+      uiState,
+      itemDefinitionsById: createItemDefinitionsById(),
+      weaponDefinitionsById: {},
+      t,
+    });
+
+    const vmWithoutDefinitions = buildStorageFacilityViewModel({
+      playerState: state,
+      uiState,
+      itemDefinitionsById: {},
+      weaponDefinitionsById: {},
+      t,
+    });
+
+    expect(vmWithDefinitions.selected?.name).toBe("薬草");
+    expect(vmWithDefinitions.selected?.description).toBe("HPを回復する");
+    expect(vmWithoutDefinitions.selected?.name).toBe("item_herb_01");
+    expect(vmWithoutDefinitions.selected?.description).toBe("item_herb_01");
+  });
+
   it("viewModel snapshotにsurface用の要約情報を返す", () => {
     const state = createPlayerState();
     state.base.wallet.gold = 777;

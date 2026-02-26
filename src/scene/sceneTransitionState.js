@@ -22,10 +22,17 @@ function toPositiveDuration(value, fallback) {
   return Number(value);
 }
 
+function toNonNegativeDuration(value, fallback) {
+  if (!Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Number(value);
+}
+
 function normalizeConfig(options = {}) {
   return {
     fadeInSec: toPositiveDuration(options.fadeInSec, DEFAULT_DURATIONS.fadeInSec),
-    titleHoldSec: toPositiveDuration(options.titleHoldSec, DEFAULT_DURATIONS.titleHoldSec),
+    titleHoldSec: toNonNegativeDuration(options.titleHoldSec, DEFAULT_DURATIONS.titleHoldSec),
     fadeOutSec: toPositiveDuration(options.fadeOutSec, DEFAULT_DURATIONS.fadeOutSec),
   };
 }
@@ -117,7 +124,7 @@ export function stepSceneTransition(state, dt) {
   if (state.phase === SCENE_TRANSITION_PHASE.TITLE_HOLD) {
     state.timerSec += delta;
     state.alpha = 1;
-    if (state.timerSec >= toPositiveDuration(config.titleHoldSec, DEFAULT_DURATIONS.titleHoldSec) && state.isReady) {
+    if (state.timerSec >= toNonNegativeDuration(config.titleHoldSec, DEFAULT_DURATIONS.titleHoldSec) && state.isReady) {
       state.phase = SCENE_TRANSITION_PHASE.FADE_OUT;
       state.timerSec = 0;
     }
