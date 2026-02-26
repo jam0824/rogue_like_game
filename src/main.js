@@ -68,9 +68,11 @@ import {
 } from "./player/playerSystem.js";
 import {
   applySavedWeaponRuntime,
+  beginNewRun,
   buildWeaponDefinitionsFromPlayerState,
   createDefaultPlayerState,
   loadPlayerStateFromStorage,
+  markRunLostByDeath,
   PLAYER_STATE_LEGACY_STORAGE_KEYS,
   PLAYER_STATE_STORAGE_KEY,
   savePlayerStateToStorage,
@@ -1718,7 +1720,13 @@ function persistPlayerState() {
   }
 
   if (appState.player && !appState.error) {
-    syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
+    syncPlayerStateFromRuntime(
+      appState.playerState,
+      appState.player,
+      appState.weapons,
+      getSystemUiState(),
+      nowUnixSec()
+    );
   } else {
     appState.playerState.saved_at = nowUnixSec();
   }
@@ -2061,6 +2069,68 @@ function toRuntimeInventoryItem(itemDefinition, itemAsset, count = 1) {
     effectKey: itemDefinition.id === HERB_ITEM_ID ? "item_effect_herb_01" : "ui_label_inventory_effect_placeholder",
     iconImageSrc: itemAsset?.src ?? "",
   };
+}
+
+function toRuntimeInventoryItemFromSavedState(itemDefId, count = 1) {
+  const normalizedItemDefId = typeof itemDefId === "string" ? itemDefId.trim() : "";
+  if (normalizedItemDefId.length <= 0) {
+    return null;
+  }
+
+  const itemDefinition = itemDefinitionsById?.[normalizedItemDefId];
+  const fromDefinition = toRuntimeInventoryItem(itemDefinition, itemAssetsById?.[normalizedItemDefId], count);
+  if (fromDefinition) {
+    return fromDefinition;
+  }
+
+  return {
+    id: normalizedItemDefId,
+    type: "consumable",
+    count: Math.max(1, Math.floor(Number(count) || 1)),
+    quickSlot: null,
+    iconKey: normalizedItemDefId === HERB_ITEM_ID ? "herb" : "item",
+    nameKey: normalizedItemDefId,
+    descriptionKey: "ui_label_inventory_placeholder",
+    effectKey: "ui_label_inventory_effect_placeholder",
+    iconImageSrc: "",
+  };
+}
+
+function buildSystemUiStateFromPlayerState(playerState) {
+  const systemUi = createInitialSystemUiState();
+  const savedInventoryEntries = Array.isArray(playerState?.run?.inventory) ? playerState.run.inventory : [];
+  const runtimeItems = savedInventoryEntries
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        entry.type === "item" &&
+        typeof entry.item_def_id === "string" &&
+        entry.item_def_id.length > 0 &&
+        Number.isFinite(entry.count) &&
+        Number(entry.count) > 0
+    )
+    .map((entry) => toRuntimeInventoryItemFromSavedState(entry.item_def_id, entry.count))
+    .filter((entry) => entry !== null);
+
+  const savedQuickslots = Array.isArray(playerState?.run?.quickslots) ? playerState.run.quickslots : [];
+  for (let slot = 0; slot < QUICK_SLOT_COUNT; slot += 1) {
+    const itemDefId = typeof savedQuickslots[slot] === "string" ? savedQuickslots[slot] : "";
+    if (itemDefId.length <= 0) {
+      continue;
+    }
+
+    const target = runtimeItems.find((item) => item.id === itemDefId && !Number.isInteger(item.quickSlot));
+    if (target) {
+      target.quickSlot = slot;
+    }
+  }
+
+  const inventorySlotMax = Math.max(1, Math.floor(Number(playerState?.base?.unlocks?.inventory_slot_max) || 10));
+  systemUi.inventory.capacity = inventorySlotMax;
+  systemUi.inventory.items = runtimeItems;
+  systemUi.inventory.selectedItemId = runtimeItems[0]?.id ?? null;
+  return systemUi;
 }
 
 function syncGroundItemPickup() {
@@ -3358,14 +3428,19 @@ function startSurfaceToDungeonTransition() {
   sceneTransitionState.config.titleHoldSec = FLOOR_TRANSITION_TITLE_HOLD_SEC;
   sceneTransitionState.config.fadeOutSec = FLOOR_TRANSITION_FADE_IN_SEC;
   ensurePlayerStateLoaded();
-  setRunFloor(appState.playerState, MIN_FLOOR);
+  const starterWeaponDefId = resolveStarterWeaponDefId();
+  if (appState.playerState?.in_run === false) {
+    beginNewRun(appState.playerState, weaponDefinitionsById, starterWeaponDefId, nowUnixSec());
+  }
+  const targetFloor = getRunFloor(appState.playerState);
+  setRunFloor(appState.playerState, targetFloor);
   sceneTransitionLoadPromise = null;
   sceneTransitionState.loadToken = null;
   startSceneTransition(sceneTransitionState, {
     kind: SCENE_TRANSITION_KIND.SURFACE_TO_DUNGEON,
     targetMode: VIEW_MODE.DUNGEON,
-    targetFloor: MIN_FLOOR,
-    titleText: `地下${MIN_FLOOR}階`,
+    targetFloor,
+    titleText: `地下${targetFloor}階`,
     titleColor: "#f4f4f4",
     ready: false,
   });
@@ -3383,17 +3458,7 @@ function startPlayerDeathSceneTransition() {
 
   setPointerTarget(appState.player, false, 0, 0);
   pointerDownFeetTileSnapshot = null;
-  setRunFloor(appState.playerState, MIN_FLOOR);
-  if (!appState.playerState.run || typeof appState.playerState.run !== "object") {
-    appState.playerState.run = {};
-  }
-
-  const playerMaxHp = Number(appState.player.maxHp);
-  if (Number.isFinite(playerMaxHp) && playerMaxHp > 0) {
-    appState.playerState.run.hp = playerMaxHp;
-  } else {
-    delete appState.playerState.run.hp;
-  }
+  markRunLostByDeath(appState.playerState, nowUnixSec());
 
   sceneTransitionState.config.fadeInSec = SCENE_TRANSITION_DEATH_FADE_SEC;
   sceneTransitionState.config.titleHoldSec = SCENE_TRANSITION_DEATH_TITLE_HOLD_SEC;
@@ -3647,7 +3712,13 @@ function stepSimulation(dt) {
   }
 
   appState.enemies = removeEnemiesAfterDeathAnimation(appState.enemies, enemyAssets);
-  syncPlayerStateFromRuntime(appState.playerState, appState.player, appState.weapons, nowUnixSec());
+  syncPlayerStateFromRuntime(
+    appState.playerState,
+    appState.player,
+    appState.weapons,
+    getSystemUiState(),
+    nowUnixSec()
+  );
   syncStatsPanel();
   syncPlayerStatsWindow();
   syncSystemHud();
@@ -3751,6 +3822,13 @@ async function regenerate(seed, options = {}) {
     }
     buildEnemyAttackProfilesByDbId();
     ensurePlayerStateLoaded();
+    const starterWeaponDefId = resolveStarterWeaponDefId();
+    if (!starterWeaponDefId) {
+      throw new Error("Weapon DB is empty.");
+    }
+    if (appState.playerState?.in_run === false) {
+      beginNewRun(appState.playerState, weaponDefinitionsById, starterWeaponDefId, nowUnixSec());
+    }
     const targetFloor = overrideFloor ?? getRunFloor(appState.playerState);
     setRunFloor(appState.playerState, targetFloor);
     const generationSeed = buildFloorSeed(runBaseSeed, targetFloor);
@@ -3826,10 +3904,6 @@ async function regenerate(seed, options = {}) {
       blockedEnemyTiles
     );
     const groundItems = [];
-    const starterWeaponDefId = resolveStarterWeaponDefId();
-    if (!starterWeaponDefId) {
-      throw new Error("Weapon DB is empty.");
-    }
     const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(
       appState.playerState,
       weaponDefinitionsById,
@@ -3876,8 +3950,8 @@ async function regenerate(seed, options = {}) {
     const backdrop = buildDungeonBackdrop(tileAssets, dungeon);
     damagePopupSeq = 0;
     effectSeq = 0;
-    syncPlayerStateFromRuntime(appState.playerState, player, weapons, nowUnixSec());
-    const systemUi = createInitialSystemUiState();
+    const systemUi = buildSystemUiStateFromPlayerState(appState.playerState);
+    syncPlayerStateFromRuntime(appState.playerState, player, weapons, systemUi, nowUnixSec());
 
     setDungeonState(appState, {
       seed: runBaseSeed,

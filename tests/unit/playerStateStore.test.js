@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applySavedWeaponRuntime,
+  beginNewRun,
   buildWeaponDefinitionsFromPlayerState,
   createDefaultPlayerState,
   loadPlayerStateFromStorage,
+  markRunLostByDeath,
   PLAYER_STATE_SCHEMA_VERSION,
   PLAYER_STATE_STORAGE_KEY,
   savePlayerStateToStorage,
@@ -72,65 +74,68 @@ function createMemoryStorage(initial = {}) {
   };
 }
 
+function expectAllQuickslotsEmpty(quickslots) {
+  expect(quickslots).toHaveLength(8);
+  for (const value of quickslots) {
+    expect(value).toBeNull();
+  }
+}
+
 describe("playerStateStore", () => {
-  it("createDefaultPlayerState が instance形の武器保存を作る", () => {
+  it("createDefaultPlayerState が v3 既定構造を作る", () => {
     const starter = createStarterWeaponDef();
     const state = createDefaultPlayerState(starter, 1760000000);
 
     expect(state.schema_version).toBe(PLAYER_STATE_SCHEMA_VERSION);
     expect(state.saved_at).toBe(1760000000);
-    expect(state.base.base_stats).toEqual({ vit: 0, for: 0, agi: 0, pow: 0, tec: 0, arc: 0 });
+    expect(state.base.base_stats).toEqual({ vit: 1, for: 1, agi: 1, pow: 1, tec: 1, arc: 1 });
+    expect(state.base.unlocks).toEqual({ weapon_slot_max: 1, inventory_slot_max: 10 });
+
+    expect(state.in_run).toBe(true);
+    expect(state.run.equipped_armor).toBeNull();
+    expect(state.run.equipped_accessories).toEqual([]);
+    expect(state.run.inventory).toEqual([]);
+    expectAllQuickslotsEmpty(state.run.quickslots);
+
     expect(state.run.equipped_weapons).toHaveLength(1);
     expect(state.run.equipped_weapons[0].weapon).toEqual({
       weapon_def_id: "weapon_sword_01",
       rarity: "rare",
       weapon_plus: 0,
+      chip_slot_count: 3,
       formation_id: "formation_id_circle01",
       skills: [
         { id: "skill_id_fire01", plus: 0 },
         { id: "skill_id_poison01", plus: 3 },
       ],
+      identified: true,
     });
     expect("weapon_file_name" in state.run.equipped_weapons[0].weapon).toBe(false);
     expect("base_damage" in state.run.equipped_weapons[0].weapon).toBe(false);
   });
 
-  it("旧形式（Def丸ごと保存）を検出したらデフォルト再初期化する", () => {
+  it("旧スキーマ(v2)を読み込んだ場合は v3 デフォルトへ再初期化する", () => {
     const weaponDefs = createWeaponDefinitionsById();
-    const brokenPayload = JSON.stringify({
-      schema_version: PLAYER_STATE_SCHEMA_VERSION,
+    const v2Payload = JSON.stringify({
+      schema_version: "player_state_v2",
+      in_run: true,
       run: {
-        floor: 1,
-        run_level: 1,
-        xp: 0,
-        stat_run: { vit: 0, for: 0, agi: 0, pow: 0, tec: 0, arc: 0 },
-        hp: 100,
-        pos: { x: 0, y: 0 },
         equipped_weapons: [
           {
             slot: 0,
             weapon: {
-              name_key: "name_weapon_sword_01",
-              description_key: "description_weapon_sword_01",
-              weapon_file_name: "weapon_sword_01.png",
-              width: 32,
-              height: 64,
+              weapon_def_id: "weapon_spear_01",
               rarity: "rare",
-              weapon_plus: 0,
-              base_damage: 12,
-              attack_cooldown_sec: 2,
-              hit_num: 1,
-              pierce_count: 10,
-              chip_slot_count: 3,
-              formation_id: "formation_id_circle01",
-              skills: [{ id: "skill_id_fire01", plus: 0 }],
+              weapon_plus: 9,
+              formation_id: "formation_id_line_front01",
+              skills: [{ id: "skill_id_ice01", plus: 2 }],
             },
-            runtime: { attack_seq: 2, cooldown_remaining_sec: 0.5 },
+            runtime: { attack_seq: 7, cooldown_remaining_sec: 0.4 },
           },
         ],
       },
     });
-    const storage = createMemoryStorage({ [PLAYER_STATE_STORAGE_KEY]: brokenPayload });
+    const storage = createMemoryStorage({ [PLAYER_STATE_STORAGE_KEY]: v2Payload });
 
     const state = loadPlayerStateFromStorage(
       storage,
@@ -141,12 +146,13 @@ describe("playerStateStore", () => {
     );
 
     expect(state.schema_version).toBe(PLAYER_STATE_SCHEMA_VERSION);
+    expect(state.base.base_stats).toEqual({ vit: 1, for: 1, agi: 1, pow: 1, tec: 1, arc: 1 });
     expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
-    expect("weapon_file_name" in state.run.equipped_weapons[0].weapon).toBe(false);
     expect(state.run.equipped_weapons[0].runtime).toEqual({ attack_seq: 0, cooldown_remaining_sec: 0 });
+    expectAllQuickslotsEmpty(state.run.quickslots);
   });
 
-  it("buildWeaponDefinitionsFromPlayerState が weapon_def_id解決+formation_id上書きを行う", () => {
+  it("buildWeaponDefinitionsFromPlayerState が weapon_def_id解決+instance上書きを行う", () => {
     const weaponDefs = createWeaponDefinitionsById();
     const starter = weaponDefs.weapon_sword_01;
     const state = createDefaultPlayerState(starter, 1700000000);
@@ -155,8 +161,10 @@ describe("playerStateStore", () => {
       weapon_def_id: "weapon_spear_01",
       rarity: "rare",
       weapon_plus: 7,
+      chip_slot_count: 5,
       formation_id: "formation_id_circle01",
       skills: [{ id: "skill_id_ice01", plus: 2 }],
+      identified: false,
     };
 
     const resolved = buildWeaponDefinitionsFromPlayerState(state, weaponDefs, "weapon_sword_01");
@@ -167,25 +175,69 @@ describe("playerStateStore", () => {
     expect(resolved[0].formationId).toBe("formation_id_circle01");
     expect(resolved[0].baseDamage).toBe(8);
     expect(resolved[0].weaponPlus).toBe(7);
+    expect(resolved[0].chipSlotCount).toBe(5);
     expect(resolved[0].skills).toEqual([{ id: "skill_id_ice01", plus: 2 }]);
   });
 
-  it("sync/save/apply runtime が instanceを壊さずruntimeを更新する", () => {
+  it("sync/save/apply runtime が instanceを維持しつつ runtimeSystemUi を run へ反映する", () => {
     const starter = createStarterWeaponDef();
     const state = createDefaultPlayerState(starter, 1700000000);
-    state.run.equipped_weapons[0].weapon.weapon_plus = 9;
 
-    const runtimePlayer = { x: 12.5, y: 34.25 };
+    state.run.inventory = [
+      {
+        type: "weapon",
+        weapon_def_id: "weapon_spear_01",
+        rarity: "common",
+        weapon_plus: 1,
+        chip_slot_count: 2,
+        formation_id: "formation_id_line_front01",
+        skills: [],
+        identified: false,
+      },
+    ];
+    state.run.quickslots = ["item_old_01", null, null, null, null, null, null, null];
+
+    const runtimePlayer = { x: 12.5, y: 34.25, hp: 77 };
     const runtimeWeapons = [{ attackSeq: 7, cooldownRemainingSec: 0.75 }];
-    syncPlayerStateFromRuntime(state, runtimePlayer, runtimeWeapons, 1700001111);
+    const runtimeSystemUi = {
+      inventory: {
+        items: [
+          { id: "item_buff_wind_01", count: 1, quickSlot: 0 },
+          { id: "item_herb_01", count: 3, quickSlot: 2 },
+          { id: "item_zero_ignored", count: 0, quickSlot: 1 },
+        ],
+      },
+    };
+
+    syncPlayerStateFromRuntime(state, runtimePlayer, runtimeWeapons, runtimeSystemUi, 1700001111);
 
     expect(state.saved_at).toBe(1700001111);
     expect(state.run.pos).toEqual({ x: 12.5, y: 34.25 });
-    expect(state.run.equipped_weapons[0].weapon.weapon_plus).toBe(9);
+    expect(state.run.hp).toBe(77);
     expect(state.run.equipped_weapons[0].runtime).toEqual({
       attack_seq: 7,
       cooldown_remaining_sec: 0.75,
     });
+
+    const nonItemEntries = state.run.inventory.filter((entry) => entry.type !== "item");
+    expect(nonItemEntries).toHaveLength(1);
+    expect(nonItemEntries[0].type).toBe("weapon");
+
+    const itemEntries = state.run.inventory.filter((entry) => entry.type === "item");
+    expect(itemEntries).toEqual([
+      { type: "item", item_def_id: "item_buff_wind_01", count: 1 },
+      { type: "item", item_def_id: "item_herb_01", count: 3 },
+    ]);
+    expect(state.run.quickslots).toEqual([
+      "item_buff_wind_01",
+      null,
+      "item_herb_01",
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
 
     const storage = createMemoryStorage();
     const saved = savePlayerStateToStorage(storage, PLAYER_STATE_STORAGE_KEY, state);
@@ -206,7 +258,15 @@ describe("playerStateStore", () => {
     syncPlayerStateFromRuntime(
       state,
       { x: 0, y: 0 },
-      [{ weaponDefId: "weapon_spear_01", formationId: "formation_id_line_front01", attackSeq: 2, cooldownRemainingSec: 0.3 }],
+      [
+        {
+          weaponDefId: "weapon_spear_01",
+          formationId: "formation_id_line_front01",
+          attackSeq: 2,
+          cooldownRemainingSec: 0.3,
+        },
+      ],
+      null,
       1700002222
     );
 
@@ -226,9 +286,46 @@ describe("playerStateStore", () => {
       state,
       { x: 0, y: 0 },
       [{ weaponDefId: "", formationId: "formation_id_line_front01", attackSeq: 1, cooldownRemainingSec: 0.1 }],
+      null,
       1700003333
     );
 
     expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
+  });
+
+  it("markRunLostByDeath は run をロスト状態へリセットする", () => {
+    const state = createDefaultPlayerState(createStarterWeaponDef(), 1700000000);
+    state.run.stat_run = { vit: 2, for: 3, agi: 1, pow: 4, tec: 5, arc: 6 };
+    state.run.inventory = [{ type: "item", item_def_id: "item_herb_01", count: 2 }];
+    state.run.quickslots = ["item_herb_01", null, null, null, null, null, null, null];
+
+    markRunLostByDeath(state, 1700004444);
+
+    expect(state.in_run).toBe(false);
+    expect(state.saved_at).toBe(1700004444);
+    expect(state.run.equipped_weapons).toEqual([]);
+    expect(state.run.equipped_armor).toBeNull();
+    expect(state.run.equipped_accessories).toEqual([]);
+    expect(state.run.inventory).toEqual([]);
+    expectAllQuickslotsEmpty(state.run.quickslots);
+    expect(state.run.stat_run).toEqual({ vit: 0, for: 0, agi: 0, pow: 0, tec: 0, arc: 0 });
+  });
+
+  it("beginNewRun は in_run を再開し run を初期化する", () => {
+    const weaponDefs = createWeaponDefinitionsById();
+    const state = createDefaultPlayerState(weaponDefs.weapon_sword_01, 1700000000);
+
+    markRunLostByDeath(state, 1700001111);
+    beginNewRun(state, weaponDefs, "weapon_sword_01", 1700005555);
+
+    expect(state.in_run).toBe(true);
+    expect(state.saved_at).toBe(1700005555);
+    expect(state.run.floor).toBe(1);
+    expect(state.run.run_level).toBe(1);
+    expect(state.run.xp).toBe(0);
+    expect(state.run.equipped_weapons).toHaveLength(1);
+    expect(state.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
+    expect(state.run.inventory).toEqual([]);
+    expectAllQuickslotsEmpty(state.run.quickslots);
   });
 });
