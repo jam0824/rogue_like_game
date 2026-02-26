@@ -12,7 +12,7 @@
         <canvas id="dungeon-canvas" aria-label="Dungeon canvas"></canvas>
       </div>
 
-      <section id="surface-layer" hidden aria-label="Surface view">
+      <section id="surface-layer" data-surface-screen="hub" hidden aria-label="Surface view">
         <div id="surface-right-column" aria-label="Surface facilities">
           <div id="surface-facility-list">
             <button type="button" class="surface-facility-button" data-surface-facility="dungeon">ダンジョン</button>
@@ -25,6 +25,80 @@
             <button type="button" class="surface-facility-button" data-surface-facility="tailor">仕立て屋</button>
           </div>
         </div>
+
+        <section id="surface-storage-root" hidden aria-label="Storage facility">
+          <header class="surface-storage-header">
+            <button id="surface-storage-back" type="button">戻る</button>
+            <h2>保管庫</h2>
+            <p class="surface-storage-gold">所持金: <span id="surface-storage-gold">0G</span></p>
+          </header>
+
+          <section class="surface-storage-topbar">
+            <nav class="surface-storage-tabs" aria-label="Storage tabs">
+              <button type="button" data-storage-tab="all" class="is-active">ALL</button>
+              <button type="button" data-storage-tab="item">ITEM</button>
+              <button type="button" data-storage-tab="weapon">WEAPON</button>
+              <button type="button" data-storage-tab="armor">ARMOR</button>
+              <button type="button" data-storage-tab="accessory">ACCESSORY</button>
+            </nav>
+
+            <div class="surface-storage-controls">
+              <label class="surface-storage-sort">
+                整頓:
+                <select id="surface-storage-sort-key" aria-label="Storage sort key">
+                  <option value="type">種別</option>
+                  <option value="name">名前</option>
+                  <option value="rarity">レア度</option>
+                </select>
+              </label>
+              <button id="surface-storage-arrange-run" type="button">手持ち整頓</button>
+              <button id="surface-storage-arrange-stash" type="button">保管庫整頓</button>
+            </div>
+          </section>
+
+          <section class="surface-storage-main">
+            <section class="surface-storage-pane">
+              <h3>手持ち <span id="surface-storage-run-cap">0 / 0</span></h3>
+              <div id="surface-storage-run-list" class="surface-storage-entry-list" aria-label="Run inventory"></div>
+            </section>
+
+            <section class="surface-storage-center">
+              <section class="surface-storage-details">
+                <h3 id="surface-storage-detail-name">未選択</h3>
+                <p id="surface-storage-detail-meta">-</p>
+                <p id="surface-storage-detail-desc">アイテムを選択してください。</p>
+                <p>売却価格: <span id="surface-storage-detail-price">-</span></p>
+              </section>
+
+              <section class="surface-storage-transfer">
+                <label for="surface-storage-transfer-amount">移動数</label>
+                <input id="surface-storage-transfer-amount" type="number" min="1" step="1" value="1" />
+                <div class="surface-storage-transfer-actions">
+                  <button id="surface-storage-deposit" type="button">預ける</button>
+                  <button id="surface-storage-withdraw" type="button">引き出す</button>
+                </div>
+              </section>
+
+              <section class="surface-storage-sell">
+                <button id="surface-storage-sell-mode" type="button">売却モードOFF</button>
+                <p id="surface-storage-sell-summary">選択: 0 / 合計: 0G</p>
+                <button id="surface-storage-sell-exec" type="button">売却</button>
+              </section>
+
+              <section class="surface-storage-upgrades">
+                <button id="surface-storage-upgrade-stash" type="button">保管庫拡張</button>
+                <button id="surface-storage-upgrade-inventory" type="button">手持ち拡張</button>
+              </section>
+            </section>
+
+            <section class="surface-storage-pane">
+              <h3>保管庫 <span id="surface-storage-stash-cap">0 / 0</span></h3>
+              <div id="surface-storage-stash-list" class="surface-storage-entry-list" aria-label="Base stash"></div>
+            </section>
+          </section>
+
+          <p id="surface-storage-toast" class="surface-storage-toast" hidden></p>
+        </section>
       </section>
 
       <section id="system-ui-layer" aria-label="System HUD">

@@ -20,7 +20,6 @@ const LEGACY_WEAPON_DEF_KEYS = [
   "attack_cooldown_sec",
   "hit_num",
   "pierce_count",
-  "chip_slot_count",
 ];
 const STAT_KEYS = ["vit", "for", "agi", "pow", "tec", "arc"];
 
@@ -53,6 +52,10 @@ function deepClone(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasAnyWeaponDefinitions(weaponDefinitionsById) {
+  return isPlainObject(weaponDefinitionsById) && Object.keys(weaponDefinitionsById).length > 0;
 }
 
 function createEmptyQuickslots() {
@@ -205,7 +208,7 @@ function isValidWeaponInstanceShape(rawWeaponInstance, weaponDefinitionsById) {
     return false;
   }
 
-  if (!weaponDefinitionsById?.[rawWeaponInstance.weapon_def_id]) {
+  if (hasAnyWeaponDefinitions(weaponDefinitionsById) && !weaponDefinitionsById?.[rawWeaponInstance.weapon_def_id]) {
     return false;
   }
 
@@ -563,6 +566,7 @@ function sanitizeBaseSection(rawBase, weaponDefinitionsById, starterWeaponDefId)
 
 function sanitizeRunSection(rawRun, weaponDefinitionsById, starterWeaponDefId, inRun) {
   const run = isPlainObject(rawRun) ? rawRun : {};
+  const allowUnknownWeaponDef = !hasAnyWeaponDefinitions(weaponDefinitionsById);
   const inventory = sanitizeStoredInventoryEntries(run.inventory, weaponDefinitionsById, starterWeaponDefId, {
     allowUnknownWeaponDef: true,
   });
@@ -579,6 +583,7 @@ function sanitizeRunSection(rawRun, weaponDefinitionsById, starterWeaponDefId, i
     },
     equipped_weapons: sanitizeEquippedWeapons(run.equipped_weapons, weaponDefinitionsById, starterWeaponDefId, {
       fallbackToStarter: inRun,
+      allowUnknownWeaponDef,
     }),
     equipped_armor: sanitizeStoredArmorEntry(run.equipped_armor),
     equipped_accessories: Array.isArray(run.equipped_accessories)
@@ -768,6 +773,15 @@ export function syncPlayerStateFromRuntime(playerState, runtimePlayer, runtimeWe
     playerState.run = getDefaultRunSection(null, DEFAULT_STARTER_WEAPON_DEF_ID, {
       includeStarterWeapon: playerState.in_run,
     });
+  }
+
+  // Lost runs must remain empty; never rebuild run inventory/equipment from runtime sources.
+  if (playerState.in_run === false) {
+    playerState.run = getDefaultRunSection(null, DEFAULT_STARTER_WEAPON_DEF_ID, {
+      includeStarterWeapon: false,
+    });
+    playerState.run.hp = 0;
+    return;
   }
 
   playerState.run.floor = Math.max(1, toNonNegativeInt(playerState.run.floor, 1));

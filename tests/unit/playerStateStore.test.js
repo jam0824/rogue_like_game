@@ -152,6 +152,104 @@ describe("playerStateStore", () => {
     expectAllQuickslotsEmpty(state.run.quickslots);
   });
 
+  it("v3保存データを読み込んだとき stash と run 状態を保持する", () => {
+    const weaponDefs = createWeaponDefinitionsById();
+    const saved = createDefaultPlayerState(weaponDefs.weapon_sword_01, 1700000000);
+    saved.base.wallet.gold = 321;
+    saved.base.stash.items = [{ type: "item", item_def_id: "item_herb_01", count: 7 }];
+    saved.run.floor = 8;
+
+    const storage = createMemoryStorage({
+      [PLAYER_STATE_STORAGE_KEY]: JSON.stringify(saved),
+    });
+    const loaded = loadPlayerStateFromStorage(
+      storage,
+      PLAYER_STATE_STORAGE_KEY,
+      weaponDefs,
+      "weapon_sword_01",
+      1700000001
+    );
+
+    expect(loaded.base.wallet.gold).toBe(321);
+    expect(loaded.base.stash.items).toEqual([{ type: "item", item_def_id: "item_herb_01", count: 7 }]);
+    expect(loaded.run.floor).toBe(8);
+    expect(loaded.run.equipped_weapons[0].weapon.chip_slot_count).toBe(3);
+  });
+
+  it("weaponDefinitions 未ロード時でも v3保存データの stash と weapon_def_id を保持する", () => {
+    const saved = createDefaultPlayerState(createStarterWeaponDef(), 1700000000);
+    saved.base.stash.items = [{ type: "item", item_def_id: "item_herb_01", count: 9 }];
+    saved.run.equipped_weapons[0].weapon = {
+      ...saved.run.equipped_weapons[0].weapon,
+      weapon_def_id: "weapon_unknown_99",
+      chip_slot_count: 4,
+    };
+
+    const storage = createMemoryStorage({
+      [PLAYER_STATE_STORAGE_KEY]: JSON.stringify(saved),
+    });
+    const loaded = loadPlayerStateFromStorage(
+      storage,
+      PLAYER_STATE_STORAGE_KEY,
+      {},
+      "weapon_sword_01",
+      1700000001
+    );
+
+    expect(loaded.base.stash.items).toEqual([{ type: "item", item_def_id: "item_herb_01", count: 9 }]);
+    expect(loaded.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_unknown_99");
+    expect(loaded.run.equipped_weapons[0].weapon.chip_slot_count).toBe(4);
+  });
+
+  it("weaponDefinitions 未ロード + starterWeaponDefId=null でも v3保存データの stash を保持する", () => {
+    const saved = createDefaultPlayerState(createStarterWeaponDef(), 1700000000);
+    saved.base.wallet.gold = 77;
+    saved.base.stash.items = [{ type: "item", item_def_id: "item_herb_01", count: 1 }];
+
+    const storage = createMemoryStorage({
+      [PLAYER_STATE_STORAGE_KEY]: JSON.stringify(saved),
+    });
+    const loaded = loadPlayerStateFromStorage(
+      storage,
+      PLAYER_STATE_STORAGE_KEY,
+      {},
+      null,
+      1700000001
+    );
+
+    expect(loaded.base.wallet.gold).toBe(77);
+    expect(loaded.base.stash.items).toEqual([{ type: "item", item_def_id: "item_herb_01", count: 1 }]);
+    expect(loaded.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
+  });
+
+  it("legacy weapon key を含むデータは v3 でも再初期化する", () => {
+    const weaponDefs = createWeaponDefinitionsById();
+    const saved = createDefaultPlayerState(weaponDefs.weapon_sword_01, 1700000000);
+    saved.base.wallet.gold = 999;
+    saved.base.stash.items = [{ type: "item", item_def_id: "item_herb_01", count: 5 }];
+    saved.run.floor = 6;
+    saved.run.equipped_weapons[0].weapon = {
+      ...saved.run.equipped_weapons[0].weapon,
+      weapon_file_name: "weapon_sword_01.png",
+    };
+
+    const storage = createMemoryStorage({
+      [PLAYER_STATE_STORAGE_KEY]: JSON.stringify(saved),
+    });
+    const loaded = loadPlayerStateFromStorage(
+      storage,
+      PLAYER_STATE_STORAGE_KEY,
+      weaponDefs,
+      "weapon_sword_01",
+      1700000001
+    );
+
+    expect(loaded.base.wallet.gold).toBe(0);
+    expect(loaded.base.stash.items).toEqual([]);
+    expect(loaded.run.floor).toBe(1);
+    expect(loaded.run.equipped_weapons[0].weapon.weapon_def_id).toBe("weapon_sword_01");
+  });
+
   it("buildWeaponDefinitionsFromPlayerState が weapon_def_id解決+instance上書きを行う", () => {
     const weaponDefs = createWeaponDefinitionsById();
     const starter = weaponDefs.weapon_sword_01;
@@ -309,6 +407,33 @@ describe("playerStateStore", () => {
     expect(state.run.inventory).toEqual([]);
     expectAllQuickslotsEmpty(state.run.quickslots);
     expect(state.run.stat_run).toEqual({ vit: 0, for: 0, agi: 0, pow: 0, tec: 0, arc: 0 });
+  });
+
+  it("in_run=false では runtime UI同期で手持ちが再注入されない", () => {
+    const state = createDefaultPlayerState(createStarterWeaponDef(), 1700000000);
+    markRunLostByDeath(state, 1700004444);
+
+    syncPlayerStateFromRuntime(
+      state,
+      { x: 120, y: 80, hp: 99 },
+      [{ weaponDefId: "weapon_spear_01", formationId: "formation_id_line_front01", attackSeq: 9, cooldownRemainingSec: 0.2 }],
+      {
+        inventory: {
+          items: [
+            { id: "item_herb_01", count: 2, quickSlot: 0 },
+            { id: "item_buff_wind_01", count: 1, quickSlot: 1 },
+          ],
+        },
+      },
+      1700005555
+    );
+
+    expect(state.in_run).toBe(false);
+    expect(state.saved_at).toBe(1700005555);
+    expect(state.run.equipped_weapons).toEqual([]);
+    expect(state.run.inventory).toEqual([]);
+    expectAllQuickslotsEmpty(state.run.quickslots);
+    expect(state.run.hp).toBe(0);
   });
 
   it("beginNewRun は in_run を再開し run を初期化する", () => {

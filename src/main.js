@@ -70,7 +70,6 @@ import {
   applySavedWeaponRuntime,
   beginNewRun,
   buildWeaponDefinitionsFromPlayerState,
-  createDefaultPlayerState,
   loadPlayerStateFromStorage,
   markRunLostByDeath,
   PLAYER_STATE_LEGACY_STORAGE_KEYS,
@@ -96,6 +95,14 @@ import {
   startSceneTransition,
   stepSceneTransition,
 } from "./scene/sceneTransitionState.js";
+import {
+  autoArrangeStorage,
+  buildStorageFacilityViewModel,
+  createStorageFacilityUiState,
+  purchaseStorageUpgrade,
+  sellSelectedStorageEntries,
+  transferStorageEntry,
+} from "./surface/storageFacilityState.js";
 import { createDebugPanel } from "./ui/debugPanel.js";
 import {
   createDebugPerfMetricsTracker,
@@ -124,6 +131,7 @@ import {
   useQuickSlotItem,
 } from "./ui/systemUiState.js";
 import { createSystemHud } from "./ui/systemHud.js";
+import { createSurfaceStorageHud } from "./ui/surfaceStorageHud.js";
 import { getIconLabelForKey, tJa } from "./ui/uiTextJa.js";
 import { loadPlayerAsset } from "./player/playerAsset.js";
 import { loadDefaultPlayerDefinition } from "./player/playerDb.js";
@@ -179,6 +187,10 @@ const VIEW_MODE = {
   SURFACE: "surface",
   DUNGEON: "dungeon",
 };
+const SURFACE_SCREEN = {
+  HUB: "hub",
+  STORAGE: "storage",
+};
 const SCENE_TRANSITION_KIND = {
   SURFACE_TO_DUNGEON: "surface_to_dungeon",
   PLAYER_DEATH: "player_death",
@@ -200,6 +212,9 @@ const sceneTransitionState = createSceneTransitionState({
 let floorTransitionLoadPromise = null;
 let sceneTransitionLoadPromise = null;
 let viewMode = VIEW_MODE.SURFACE;
+let surfaceScreen = SURFACE_SCREEN.HUB;
+const storageFacilityUiState = createStorageFacilityUiState();
+let surfaceStorageHud = null;
 const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
   windowMs: 1000,
   publishIntervalMs: 250,
@@ -208,6 +223,7 @@ const debugPerfMetricsTracker = createDebugPerfMetricsTracker({
 const canvas = document.querySelector("#dungeon-canvas");
 const canvasScroll = document.querySelector("#canvas-scroll");
 const surfaceLayer = document.querySelector("#surface-layer");
+const surfaceStorageRoot = document.querySelector("#surface-storage-root");
 const surfaceFacilityButtons = Array.from(document.querySelectorAll("[data-surface-facility]"));
 const sceneTransitionOverlay = document.querySelector("#scene-transition-overlay");
 const sceneTransitionTitle = document.querySelector("#scene-transition-title");
@@ -222,6 +238,17 @@ function applyCanvasDisplayScale() {
 
 applyCanvasDisplayScale();
 
+function syncSurfaceScreenUi() {
+  if (!surfaceLayer) {
+    return;
+  }
+  const nextScreen = surfaceScreen === SURFACE_SCREEN.STORAGE ? SURFACE_SCREEN.STORAGE : SURFACE_SCREEN.HUB;
+  surfaceLayer.dataset.surfaceScreen = nextScreen;
+  if (surfaceStorageRoot) {
+    surfaceStorageRoot.hidden = !(viewMode === VIEW_MODE.SURFACE && nextScreen === SURFACE_SCREEN.STORAGE);
+  }
+}
+
 function syncViewModeUi() {
   const isSurface = viewMode === VIEW_MODE.SURFACE;
   if (surfaceLayer) {
@@ -230,10 +257,21 @@ function syncViewModeUi() {
   if (systemUiRoot) {
     systemUiRoot.hidden = isSurface;
   }
+  syncSurfaceScreenUi();
+  syncStorageFacilityHud();
+}
+
+function setSurfaceScreen(screen) {
+  surfaceScreen = screen === SURFACE_SCREEN.STORAGE ? SURFACE_SCREEN.STORAGE : SURFACE_SCREEN.HUB;
+  syncSurfaceScreenUi();
 }
 
 function setViewMode(mode) {
   viewMode = mode === VIEW_MODE.DUNGEON ? VIEW_MODE.DUNGEON : VIEW_MODE.SURFACE;
+  if (viewMode !== VIEW_MODE.SURFACE) {
+    surfaceScreen = SURFACE_SCREEN.HUB;
+    storageFacilityUiState.open = false;
+  }
   syncViewModeUi();
 }
 
@@ -502,6 +540,101 @@ function getSystemUiState() {
   return appState.systemUi ?? createInitialSystemUiState();
 }
 
+function toStorageSelectionKey(pane, index) {
+  const normalizedPane = pane === "stash" ? "stash" : "run";
+  const normalizedIndex = Math.max(0, Math.floor(Number(index) || 0));
+  return `${normalizedPane}:${normalizedIndex}`;
+}
+
+function parseStorageSelectionKey(rawKey) {
+  if (typeof rawKey !== "string") {
+    return null;
+  }
+  const [paneText, indexText] = rawKey.split(":");
+  const pane = paneText === "stash" ? "stash" : paneText === "run" ? "run" : "";
+  const index = Number(indexText);
+  if (!pane || !Number.isFinite(index)) {
+    return null;
+  }
+  return {
+    pane,
+    index: Math.max(0, Math.floor(index)),
+  };
+}
+
+function resolveStoragePaneEntries(playerState, pane) {
+  if (pane === "stash") {
+    const stash = Array.isArray(playerState?.base?.stash?.items) ? playerState.base.stash.items : [];
+    return stash;
+  }
+  return Array.isArray(playerState?.run?.inventory) ? playerState.run.inventory : [];
+}
+
+function isValidStorageSelectionKey(playerState, rawKey) {
+  const parsed = parseStorageSelectionKey(rawKey);
+  if (!parsed) {
+    return false;
+  }
+  const entries = resolveStoragePaneEntries(playerState, parsed.pane);
+  return parsed.index >= 0 && parsed.index < entries.length;
+}
+
+function sanitizeStorageSelectionState(playerState) {
+  if (!playerState || typeof playerState !== "object") {
+    storageFacilityUiState.selectedPane = "run";
+    storageFacilityUiState.selectedIndex = -1;
+    storageFacilityUiState.sellSelection = [];
+    return;
+  }
+
+  const selectedPane = storageFacilityUiState.selectedPane === "stash" ? "stash" : "run";
+  const selectedIndex = Number.isInteger(storageFacilityUiState.selectedIndex)
+    ? storageFacilityUiState.selectedIndex
+    : -1;
+  const selectedEntries = resolveStoragePaneEntries(playerState, selectedPane);
+  if (selectedIndex < 0 || selectedIndex >= selectedEntries.length) {
+    storageFacilityUiState.selectedPane = "run";
+    storageFacilityUiState.selectedIndex = -1;
+  } else {
+    storageFacilityUiState.selectedPane = selectedPane;
+    storageFacilityUiState.selectedIndex = selectedIndex;
+  }
+
+  const nextSellSelection = [];
+  for (const rawKey of Array.isArray(storageFacilityUiState.sellSelection) ? storageFacilityUiState.sellSelection : []) {
+    if (!isValidStorageSelectionKey(playerState, rawKey)) {
+      continue;
+    }
+    nextSellSelection.push(rawKey);
+  }
+  storageFacilityUiState.sellSelection = Array.from(new Set(nextSellSelection));
+}
+
+function buildStorageFacilityVm(playerState) {
+  const targetPlayerState = playerState && typeof playerState === "object" ? playerState : appState.playerState;
+  if (!targetPlayerState) {
+    return null;
+  }
+
+  sanitizeStorageSelectionState(targetPlayerState);
+  return buildStorageFacilityViewModel({
+    playerState: targetPlayerState,
+    uiState: storageFacilityUiState,
+    itemDefinitionsById,
+    weaponDefinitionsById,
+    resolveEntryIconSrc: resolveStorageEntryIconSrc,
+    t: tJa,
+  });
+}
+
+function setStorageFacilityToast(message) {
+  storageFacilityUiState.toastMessage = typeof message === "string" ? message : "";
+}
+
+function clearStorageFacilityToast() {
+  storageFacilityUiState.toastMessage = "";
+}
+
 function resolveGraphicAssetSrc(relativePath) {
   if (typeof relativePath !== "string" || relativePath.length <= 0) {
     return "";
@@ -514,6 +647,33 @@ function resolveGraphicAssetSrc(relativePath) {
   } catch {
     return "";
   }
+}
+
+function resolveStorageEntryIconSrc(entry) {
+  const type = typeof entry?.type === "string" ? entry.type : "";
+  if (type === "item") {
+    const itemDefId = typeof entry?.item_def_id === "string" ? entry.item_def_id : "";
+    const iconFileName = typeof itemDefinitionsById?.[itemDefId]?.iconFileName === "string"
+      ? itemDefinitionsById[itemDefId].iconFileName.trim()
+      : "";
+    if (!iconFileName) {
+      return "";
+    }
+    if (iconFileName.includes("/") || iconFileName.startsWith("graphic/")) {
+      return resolveGraphicAssetSrc(iconFileName);
+    }
+    return resolveGraphicAssetSrc(`item/${iconFileName}`);
+  }
+
+  if (type === "weapon") {
+    const weaponDefId = typeof entry?.weapon_def_id === "string" ? entry.weapon_def_id : "";
+    const iconFileName = typeof weaponDefinitionsById?.[weaponDefId]?.iconFileName === "string"
+      ? weaponDefinitionsById[weaponDefId].iconFileName.trim()
+      : "";
+    return resolveGraphicAssetSrc(iconFileName);
+  }
+
+  return "";
 }
 
 function getSkillTypeLabel(skillType) {
@@ -1184,6 +1344,17 @@ function buildDownStairTextState(downStair) {
   };
 }
 
+function buildStorageFacilityTextState() {
+  if (!appState.playerState) {
+    return null;
+  }
+  const vm = buildStorageFacilityVm(appState.playerState);
+  if (!vm) {
+    return null;
+  }
+  return vm.snapshot;
+}
+
 function toTextState() {
   const hudState = buildHudTextState();
   const inventoryState = buildInventoryTextState();
@@ -1218,11 +1389,13 @@ function toTextState() {
     return JSON.stringify(
       {
         mode: "surface",
+        surfaceScreen,
         seed: appState.seed,
         dungeonId: selectedDungeonId || null,
         playerState: appState.playerState,
         hud: hudState,
         inventory: inventoryState,
+        storageFacility: buildStorageFacilityTextState(),
         floorTransition: floorTransitionTextState,
         sceneTransition: sceneTransitionTextState,
         facilities: [
@@ -1701,17 +1874,43 @@ function ensurePlayerStateLoaded() {
     return;
   }
   const starterWeaponDefId = resolveStarterWeaponDefId();
-  if (starterWeaponDefId) {
-    appState.playerState = loadPlayerStateFromStorage(
-      appStorage,
-      PLAYER_STATE_STORAGE_KEY,
-      weaponDefinitionsById,
-      starterWeaponDefId,
-      nowUnixSec()
-    );
+  appState.playerState = loadPlayerStateFromStorage(
+    appStorage,
+    PLAYER_STATE_STORAGE_KEY,
+    weaponDefinitionsById,
+    starterWeaponDefId,
+    nowUnixSec()
+  );
+}
+
+function savePlayerStateImmediatelyWithoutRuntimeSync() {
+  if (!appState.playerState) {
     return;
   }
-  appState.playerState = createDefaultPlayerState(null, nowUnixSec());
+  appState.playerState.saved_at = nowUnixSec();
+  savePlayerStateToStorage(appStorage, PLAYER_STATE_STORAGE_KEY, appState.playerState);
+}
+
+function syncStorageFacilityHud() {
+  if (!surfaceStorageHud) {
+    return;
+  }
+  ensurePlayerStateLoaded();
+  const vm = buildStorageFacilityVm(appState.playerState);
+  if (!vm) {
+    surfaceStorageHud.setOpen(false);
+    return;
+  }
+  surfaceStorageHud.setOpen(
+    viewMode === VIEW_MODE.SURFACE &&
+      surfaceScreen === SURFACE_SCREEN.STORAGE &&
+      storageFacilityUiState.open === true
+  );
+  surfaceStorageHud.setViewModel({
+    ...vm,
+    sortKey: storageFacilityUiState.sortKey,
+  });
+  surfaceStorageHud.setToast(storageFacilityUiState.toastMessage);
 }
 
 function persistPlayerState() {
@@ -1719,7 +1918,7 @@ function persistPlayerState() {
     return;
   }
 
-  if (appState.player && !appState.error) {
+  if (viewMode === VIEW_MODE.DUNGEON && appState.player && !appState.error && appState.playerState.in_run !== false) {
     syncPlayerStateFromRuntime(
       appState.playerState,
       appState.player,
@@ -2316,6 +2515,256 @@ function handleSkillSlotDrop(payload) {
   applySystemUiState(setHeldSkillSource(beforeSystemUi, null));
 }
 
+function resetStorageFacilitySelectionAndSellMode() {
+  storageFacilityUiState.selectedPane = "run";
+  storageFacilityUiState.selectedIndex = -1;
+  storageFacilityUiState.sellMode = false;
+  storageFacilityUiState.sellSelection = [];
+  storageFacilityUiState.transferAmount = 1;
+}
+
+function openStorageFacility() {
+  if (viewMode !== VIEW_MODE.SURFACE || isSceneTransitionActive(sceneTransitionState) || isFloorTransitionActive(floorTransitionState)) {
+    return;
+  }
+  ensurePlayerStateLoaded();
+  storageFacilityUiState.open = true;
+  clearStorageFacilityToast();
+  resetStorageFacilitySelectionAndSellMode();
+  setSurfaceScreen(SURFACE_SCREEN.STORAGE);
+  syncStorageFacilityHud();
+}
+
+function closeStorageFacility() {
+  storageFacilityUiState.open = false;
+  clearStorageFacilityToast();
+  resetStorageFacilitySelectionAndSellMode();
+  setSurfaceScreen(SURFACE_SCREEN.HUB);
+  syncStorageFacilityHud();
+}
+
+function ensureRunStartedForStorageWithdraw() {
+  if (!appState.playerState || appState.playerState.in_run !== false) {
+    return false;
+  }
+  const starterWeaponDefId = resolveStarterWeaponDefId();
+  beginNewRun(appState.playerState, weaponDefinitionsById, starterWeaponDefId, nowUnixSec());
+  return true;
+}
+
+function handleStorageTransfer(direction, amount) {
+  ensurePlayerStateLoaded();
+  if (!appState.playerState) {
+    return;
+  }
+  sanitizeStorageSelectionState(appState.playerState);
+
+  const selectedPane = storageFacilityUiState.selectedPane === "stash" ? "stash" : "run";
+  const selectedIndex = Number.isInteger(storageFacilityUiState.selectedIndex) ? storageFacilityUiState.selectedIndex : -1;
+  if (selectedIndex < 0) {
+    setStorageFacilityToast("移動対象を選択してください。");
+    syncStorageFacilityHud();
+    return;
+  }
+
+  const normalizedDirection = direction === "withdraw" ? "withdraw" : "deposit";
+  if (normalizedDirection === "deposit") {
+    if (selectedPane !== "run") {
+      setStorageFacilityToast("手持ち側のアイテムを選択してください。");
+      syncStorageFacilityHud();
+      return;
+    }
+    if (appState.playerState.in_run === false) {
+      setStorageFacilityToast("run未開始のため預け入れできません。");
+      syncStorageFacilityHud();
+      return;
+    }
+  } else {
+    if (selectedPane !== "stash") {
+      setStorageFacilityToast("保管庫側のアイテムを選択してください。");
+      syncStorageFacilityHud();
+      return;
+    }
+    ensureRunStartedForStorageWithdraw();
+  }
+
+  const fromPane = normalizedDirection === "withdraw" ? "stash" : "run";
+  const transferResult = transferStorageEntry(appState.playerState, {
+    fromPane,
+    entryIndex: selectedIndex,
+    amount,
+    itemDefinitionsById,
+  });
+  if (!transferResult.ok) {
+    if (transferResult.reason === "target_full") {
+      setStorageFacilityToast("容量不足のため移動できません。");
+    } else {
+      setStorageFacilityToast("移動に失敗しました。");
+    }
+    syncStorageFacilityHud();
+    return;
+  }
+
+  setStorageFacilityToast(normalizedDirection === "withdraw" ? "引き出しました。" : "預けました。");
+  sanitizeStorageSelectionState(appState.playerState);
+  savePlayerStateImmediatelyWithoutRuntimeSync();
+  syncStorageFacilityHud();
+}
+
+function toggleStorageSellSelection(payload) {
+  ensurePlayerStateLoaded();
+  if (!appState.playerState) {
+    return;
+  }
+  const pane = payload?.pane === "stash" ? "stash" : "run";
+  const index = Math.max(0, Math.floor(Number(payload?.index) || 0));
+  const key = toStorageSelectionKey(pane, index);
+  const current = Array.isArray(storageFacilityUiState.sellSelection) ? storageFacilityUiState.sellSelection : [];
+  const set = new Set(current);
+  if (set.has(key)) {
+    set.delete(key);
+  } else {
+    set.add(key);
+  }
+  storageFacilityUiState.sellSelection = Array.from(set);
+}
+
+function handleStorageSell() {
+  ensurePlayerStateLoaded();
+  if (!appState.playerState) {
+    return;
+  }
+  sanitizeStorageSelectionState(appState.playerState);
+
+  const selectedEntries = Array.isArray(storageFacilityUiState.sellSelection) ? storageFacilityUiState.sellSelection : [];
+  let sellResult = sellSelectedStorageEntries(appState.playerState, {
+    selectedEntries,
+    itemDefinitionsById,
+    confirmHighValue: false,
+  });
+  if (sellResult.reason === "confirm_required" && sellResult.requiresConfirm === true) {
+    const shouldSell =
+      typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(`高価値アイテムを含みます。売却しますか？\n合計: ${sellResult.totalPrice}G`)
+        : false;
+    if (!shouldSell) {
+      setStorageFacilityToast("売却をキャンセルしました。");
+      syncStorageFacilityHud();
+      return;
+    }
+    sellResult = sellSelectedStorageEntries(appState.playerState, {
+      selectedEntries,
+      itemDefinitionsById,
+      confirmHighValue: true,
+    });
+  }
+
+  if (!sellResult.ok) {
+    setStorageFacilityToast("売却できる対象がありません。");
+    syncStorageFacilityHud();
+    return;
+  }
+
+  storageFacilityUiState.sellSelection = [];
+  setStorageFacilityToast(`${sellResult.soldCount}件を売却しました。（+${sellResult.totalPrice}G）`);
+  sanitizeStorageSelectionState(appState.playerState);
+  savePlayerStateImmediatelyWithoutRuntimeSync();
+  syncStorageFacilityHud();
+}
+
+function handleStorageUpgrade(kind) {
+  ensurePlayerStateLoaded();
+  if (!appState.playerState) {
+    return;
+  }
+  const result = purchaseStorageUpgrade(appState.playerState, kind);
+  if (!result.ok) {
+    if (result.reason === "not_enough_gold") {
+      setStorageFacilityToast("所持金が不足しています。");
+    } else {
+      setStorageFacilityToast("拡張に失敗しました。");
+    }
+    syncStorageFacilityHud();
+    return;
+  }
+
+  if (result.kind === "stash") {
+    setStorageFacilityToast(`保管庫容量を拡張しました。（${result.newCapacity}）`);
+  } else {
+    setStorageFacilityToast(`手持ち容量を拡張しました。（${result.newCapacity}）`);
+  }
+  savePlayerStateImmediatelyWithoutRuntimeSync();
+  syncStorageFacilityHud();
+}
+
+function handleStorageAutoArrange(pane, sortKey) {
+  ensurePlayerStateLoaded();
+  if (!appState.playerState) {
+    return;
+  }
+  const result = autoArrangeStorage(appState.playerState, pane, sortKey, {
+    itemDefinitionsById,
+    weaponDefinitionsById,
+  });
+  if (!result.ok) {
+    setStorageFacilityToast("整頓に失敗しました。");
+    syncStorageFacilityHud();
+    return;
+  }
+  setStorageFacilityToast("整頓しました。");
+  savePlayerStateImmediatelyWithoutRuntimeSync();
+  syncStorageFacilityHud();
+}
+
+surfaceStorageHud = surfaceStorageRoot
+  ? createSurfaceStorageHud(surfaceStorageRoot, {
+      onClose: () => {
+        closeStorageFacility();
+      },
+      onSelectTab: (tab) => {
+        storageFacilityUiState.activeTab = tab;
+        syncStorageFacilityHud();
+      },
+      onSelectEntry: ({ pane, index }) => {
+        storageFacilityUiState.selectedPane = pane === "stash" ? "stash" : "run";
+        storageFacilityUiState.selectedIndex = Math.max(0, Math.floor(Number(index) || 0));
+        syncStorageFacilityHud();
+      },
+      onChangeTransferAmount: (amount) => {
+        storageFacilityUiState.transferAmount = Math.max(1, Math.floor(Number(amount) || 1));
+      },
+      onTransfer: ({ direction, amount }) => {
+        handleStorageTransfer(direction, amount);
+      },
+      onToggleSellMode: () => {
+        storageFacilityUiState.sellMode = storageFacilityUiState.sellMode !== true;
+        if (!storageFacilityUiState.sellMode) {
+          storageFacilityUiState.sellSelection = [];
+        }
+        syncStorageFacilityHud();
+      },
+      onToggleSellEntry: (payload) => {
+        if (storageFacilityUiState.sellMode !== true) {
+          return;
+        }
+        toggleStorageSellSelection(payload);
+        syncStorageFacilityHud();
+      },
+      onExecuteSell: () => {
+        handleStorageSell();
+      },
+      onChangeSortKey: (sortKey) => {
+        storageFacilityUiState.sortKey = sortKey === "name" || sortKey === "rarity" ? sortKey : "type";
+      },
+      onAutoArrange: ({ pane, sortKey }) => {
+        handleStorageAutoArrange(pane, sortKey);
+      },
+      onPurchaseUpgrade: (kind) => {
+        handleStorageUpgrade(kind);
+      },
+    })
+  : null;
+
 const systemHud = systemUiRoot
   ? createSystemHud(systemUiRoot, {
       onUseQuickSlot: (slotIndex) => {
@@ -2527,7 +2976,12 @@ function moveToSurfaceFromDebug() {
   }
   pointerDownFeetTileSnapshot = null;
   setPaused(false);
+  storageFacilityUiState.open = false;
+  clearStorageFacilityToast();
+  resetStorageFacilitySelectionAndSellMode();
+  setSurfaceScreen(SURFACE_SCREEN.HUB);
   setViewMode(VIEW_MODE.SURFACE);
+  syncStorageFacilityHud();
   dungeonBgmPlayer.stop();
 }
 
@@ -2610,6 +3064,7 @@ syncPauseUi();
 syncDamagePreviewUi();
 syncPlayerStatsWindowVisibility();
 syncSystemHud();
+syncStorageFacilityHud();
 
 for (const surfaceFacilityButton of surfaceFacilityButtons) {
   surfaceFacilityButton.addEventListener("click", () => {
@@ -2620,6 +3075,10 @@ for (const surfaceFacilityButton of surfaceFacilityButtons) {
     const facility = surfaceFacilityButton.dataset.surfaceFacility;
     if (facility === "dungeon") {
       startSurfaceToDungeonTransition();
+      return;
+    }
+    if (facility === "storage") {
+      openStorageFacility();
     }
   });
 }
@@ -3423,6 +3882,10 @@ function startSurfaceToDungeonTransition() {
     return;
   }
 
+  storageFacilityUiState.open = false;
+  clearStorageFacilityToast();
+  resetStorageFacilitySelectionAndSellMode();
+  setSurfaceScreen(SURFACE_SCREEN.HUB);
   resetPlayerDeathSequence();
   sceneTransitionState.config.fadeInSec = FLOOR_TRANSITION_FADE_OUT_SEC;
   sceneTransitionState.config.titleHoldSec = FLOOR_TRANSITION_TITLE_HOLD_SEC;
@@ -3523,11 +3986,17 @@ function applySceneTransitionTargetIfNeeded() {
   sceneTransitionState.didApplyTarget = true;
   if (sceneTransitionState.targetMode === VIEW_MODE.DUNGEON) {
     setViewMode(VIEW_MODE.DUNGEON);
+    syncStorageFacilityHud();
     return;
   }
 
+  storageFacilityUiState.open = false;
+  clearStorageFacilityToast();
+  resetStorageFacilitySelectionAndSellMode();
+  setSurfaceScreen(SURFACE_SCREEN.HUB);
   setViewMode(VIEW_MODE.SURFACE);
   appState.isPaused = false;
+  syncStorageFacilityHud();
 }
 
 function updateSceneTransition(dt) {
