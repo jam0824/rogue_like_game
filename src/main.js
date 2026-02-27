@@ -173,6 +173,7 @@ const SE_KEY_GET_ITEM = "se_key_get_item";
 const SE_KEY_PUT_ITEM = "se_key_put_item";
 const SE_KEY_PLAYER_GET_DAMAGE = "se_key_player_get_damage";
 const SE_KEY_ENEMY_DEATH = "se_key_enemy_death";
+const SURFACE_BGM_KEY = "bgm_key_surface_01";
 const PLAYER_RENDER_SCALE = 32 / 24;
 const FLOOR_TRANSITION_FADE_OUT_SEC = 0.35;
 const FLOOR_TRANSITION_TITLE_HOLD_SEC = 1;
@@ -214,6 +215,7 @@ const sceneTransitionState = createSceneTransitionState({
 });
 let floorTransitionLoadPromise = null;
 let sceneTransitionLoadPromise = null;
+let soundEffectMap = {};
 let viewMode = VIEW_MODE.SURFACE;
 let surfaceScreen = SURFACE_SCREEN.HUB;
 const storageFacilityUiState = createStorageFacilityUiState();
@@ -269,6 +271,19 @@ function setSurfaceScreen(screen) {
   syncSurfaceScreenUi();
 }
 
+function playSurfaceBgmIfReady() {
+  if (!soundEffectMap || typeof soundEffectMap !== "object" || Array.isArray(soundEffectMap)) {
+    return false;
+  }
+  const surfaceBgmSourceRaw = soundEffectMap[SURFACE_BGM_KEY];
+  const surfaceBgmSource = typeof surfaceBgmSourceRaw === "string" ? surfaceBgmSourceRaw.trim() : "";
+  if (!surfaceBgmSource) {
+    return false;
+  }
+  void dungeonBgmPlayer.playLoop(surfaceBgmSource);
+  return true;
+}
+
 function setViewMode(mode) {
   viewMode = mode === VIEW_MODE.DUNGEON ? VIEW_MODE.DUNGEON : VIEW_MODE.SURFACE;
   if (viewMode !== VIEW_MODE.SURFACE) {
@@ -276,6 +291,9 @@ function setViewMode(mode) {
     storageFacilityUiState.open = false;
   }
   syncViewModeUi();
+  if (viewMode === VIEW_MODE.SURFACE) {
+    playSurfaceBgmIfReady();
+  }
 }
 
 function renderSceneTransitionOverlay() {
@@ -1614,7 +1632,6 @@ let itemDefinitions = [];
 let itemDefinitionsById = {};
 let itemAssetsById = {};
 let treasureChestAssets = {};
-let soundEffectMap = {};
 let storageReferenceDataLoadPromise = null;
 let damagePopupSeq = 0;
 let effectSeq = 0;
@@ -1874,6 +1891,9 @@ async function refreshEffectResources() {
 async function refreshSoundResources() {
   soundEffectMap = await loadSoundEffectMap();
   soundEffectPlayer.setSoundEffectMap(soundEffectMap);
+  if (viewMode === VIEW_MODE.SURFACE && !isSceneTransitionActive(sceneTransitionState)) {
+    playSurfaceBgmIfReady();
+  }
 }
 
 function hasDefinitionMapEntries(definitionsById) {
@@ -3070,7 +3090,6 @@ function moveToSurfaceFromDebug() {
   setSurfaceScreen(SURFACE_SCREEN.HUB);
   setViewMode(VIEW_MODE.SURFACE);
   syncStorageFacilityHud();
-  dungeonBgmPlayer.stop();
 }
 
 function toggleDamagePreview() {
@@ -3970,6 +3989,7 @@ function startSurfaceToDungeonTransition() {
     return;
   }
 
+  dungeonBgmPlayer.stop();
   storageFacilityUiState.open = false;
   clearStorageFacilityToast();
   resetStorageFacilitySelectionAndSellMode();
@@ -4111,15 +4131,9 @@ function updateSceneTransition(dt) {
     return;
   }
 
-  const wasActive = sceneTransitionState.active === true;
-  const transitionKind = sceneTransitionState.kind;
   stepSceneTransition(sceneTransitionState, dt);
   requestSceneTransitionLoadIfNeeded();
   applySceneTransitionTargetIfNeeded();
-
-  if (wasActive && !isSceneTransitionActive(sceneTransitionState) && transitionKind === SCENE_TRANSITION_KIND.PLAYER_DEATH) {
-    dungeonBgmPlayer.stop();
-  }
 }
 
 function stepSimulation(dt) {
@@ -4584,7 +4598,11 @@ async function regenerate(seed, options = {}) {
       floorTransitionLoadPromise = null;
     }
 
-    dungeonBgmPlayer.stop();
+    if (viewMode === VIEW_MODE.SURFACE) {
+      playSurfaceBgmIfReady();
+    } else {
+      dungeonBgmPlayer.stop();
+    }
     setErrorState(appState, runBaseSeed, error);
     debugPanel.setSeed(runBaseSeed);
     resetDebugPerfMetricsTracker(debugPerfMetricsTracker);
@@ -4646,6 +4664,9 @@ window.addEventListener("beforeunload", () => {
 
 ensurePlayerStateLoaded();
 void ensureStorageReferenceDataLoaded();
+void refreshSoundResources().catch((error) => {
+  console.warn(`[Sound] Failed to load sound resources: ${error instanceof Error ? error.message : String(error)}`);
+});
 debugPanel.setSeed(runBaseSeed);
 renderCurrentFrame();
 requestAnimationFrame(runFrame);
