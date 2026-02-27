@@ -11,6 +11,7 @@
         "se_key_small_heal": "sounds/se/決定ボタンを押す25.mp3"
     },
     "bgm":{
+        "bgm_key_surface_01" : "sounds/bgm/REACH_FOR_the_FATE.mp3", 
         "bgm_key_dungeon_001":"sounds/bgm/洞窟の奥で光り輝くもの_M313.mp3",
         "bgm_key_dungeon_002":"sounds/bgm/KIRI.mp3"
     }
