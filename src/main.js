@@ -45,7 +45,10 @@ import {
 } from "./dungeon/floorTransitionState.js";
 import { generateDungeon } from "./generation/dungeonGenerator.js";
 import { validateDungeon } from "./generation/layoutValidator.js";
+import { loadInputBindings } from "./input/inputConfigDb.js";
+import { createInputController } from "./input/inputController.js";
 import { createPointerController } from "./input/pointerController.js";
+import { collectFocusableCandidates, createUiNavigator } from "./input/uiNavigator.js";
 import { loadItemAssets } from "./item/itemAsset.js";
 import { loadItemDefinitions } from "./item/itemDb.js";
 import {
@@ -62,6 +65,7 @@ import {
   getPlayerFrame,
   getPlayerHitFlashAlpha,
   isPlayerDeathAnimationFinished,
+  setDirectionalMoveInput,
   setPointerTarget,
   tryRestorePlayerPosition,
   updatePlayer,
@@ -168,6 +172,15 @@ const SYSTEM_UI_TOAST_DURATION_MS = 1800;
 const PLAYER_STATE_SAVE_INTERVAL_MS = 1000;
 const MIN_ENEMY_ATTACK_COOLDOWN_SEC = 0.05;
 const WEAPON_SLOT_UI_COUNT = 8;
+const QUICKSLOT_INPUT_ACTIONS = Object.freeze(
+  Array.from({ length: QUICK_SLOT_COUNT }, (_, index) => `quickslot_${index + 1}`)
+);
+const INPUT_UI_MOVE_ACTIONS = Object.freeze([
+  { action: "ui_up", direction: "up" },
+  { action: "ui_down", direction: "down" },
+  { action: "ui_left", direction: "left" },
+  { action: "ui_right", direction: "right" },
+]);
 const SE_KEY_OPEN_CHEST = "se_key_open_chest";
 const SE_KEY_GET_ITEM = "se_key_get_item";
 const SE_KEY_PUT_ITEM = "se_key_put_item";
@@ -235,6 +248,11 @@ const sceneTransitionTitle = document.querySelector("#scene-transition-title");
 const debugPanelRoot = document.querySelector("#debug-panel");
 const systemUiRoot = document.querySelector("#system-ui-layer");
 const gameViewScale = resolveGameViewScale(GAME_VIEW_SCALE);
+const inputController = createInputController();
+const uiNavigator = createUiNavigator({
+  focusClassName: "is-pad-focused",
+});
+let uiNavigationContextKey = "";
 
 function applyCanvasDisplayScale() {
   canvas.style.width = `${canvas.width * gameViewScale}px`;
@@ -357,6 +375,11 @@ function getStorage() {
 }
 
 const appStorage = getStorage();
+
+async function initializeInputBindings() {
+  const bindings = await loadInputBindings();
+  inputController.setBindings(bindings);
+}
 
 function purgeLegacyPlayerStateStorage(storage) {
   if (!storage || typeof storage.removeItem !== "function") {
@@ -2243,6 +2266,119 @@ function getQuickSlotItemId(systemUi, slotIndex) {
   return typeof found?.id === "string" ? found.id : null;
 }
 
+function triggerQuickSlotUse(slotIndex) {
+  const normalizedSlotIndex = Math.floor(Number(slotIndex));
+  if (!Number.isInteger(normalizedSlotIndex) || normalizedSlotIndex < 0 || normalizedSlotIndex >= QUICK_SLOT_COUNT) {
+    return;
+  }
+
+  const beforeSystemUi = getSystemUiState();
+  const quickSlotItemId = getQuickSlotItemId(beforeSystemUi, normalizedSlotIndex);
+  const afterSystemUi = useQuickSlotItem(beforeSystemUi, normalizedSlotIndex);
+  applySystemUiState(afterSystemUi);
+  playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
+  applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
+}
+
+function triggerUseSelectedInventoryItem() {
+  const beforeSystemUi = getSystemUiState();
+  const selectedItemId = beforeSystemUi.inventory?.selectedItemId;
+  const afterSystemUi = useInventoryItem(beforeSystemUi, selectedItemId);
+  applySystemUiState(afterSystemUi);
+  playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
+  applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
+}
+
+function isInventoryWindowOpen() {
+  return getSystemUiState().inventory?.isWindowOpen === true;
+}
+
+function isWeaponSkillEditorOpen() {
+  return getSystemUiState().inventory?.weaponUi?.skillEditor?.isOpen === true;
+}
+
+function closeWeaponSkillEditorByInput() {
+  applySystemUiState(closeWeaponSkillEditor(getSystemUiState()));
+}
+
+function openInventoryWindowByInput() {
+  applySystemUiState(setInventoryWindowOpen(getSystemUiState(), true));
+}
+
+function closeInventoryWindowByInput() {
+  applySystemUiState(setInventoryWindowOpen(getSystemUiState(), false));
+}
+
+function toggleInventoryWindowByInput() {
+  if (viewMode !== VIEW_MODE.DUNGEON || appState.error) {
+    return;
+  }
+  if (isFloorTransitionActive(floorTransitionState) || isSceneTransitionActive(sceneTransitionState) || playerDeathSequence.active) {
+    return;
+  }
+  if (!appState.player || isRuntimePlayerDead(appState.player)) {
+    return;
+  }
+
+  if (isWeaponSkillEditorOpen()) {
+    closeWeaponSkillEditorByInput();
+    return;
+  }
+
+  if (isInventoryWindowOpen()) {
+    closeInventoryWindowByInput();
+    return;
+  }
+
+  openInventoryWindowByInput();
+}
+
+function cycleSurfaceStorageTab(step) {
+  if (viewMode !== VIEW_MODE.SURFACE || surfaceScreen !== SURFACE_SCREEN.STORAGE || storageFacilityUiState.open !== true) {
+    return false;
+  }
+
+  const tabButtons = Array.from(document.querySelectorAll("#surface-storage-root [data-storage-tab]"));
+  return uiNavigator.cycleTabs(tabButtons, step);
+}
+
+function cycleInventoryTab(step) {
+  if (viewMode !== VIEW_MODE.DUNGEON || !isInventoryWindowOpen() || isWeaponSkillEditorOpen()) {
+    return false;
+  }
+
+  const tabButtons = Array.from(document.querySelectorAll("#system-ui-layer [data-ui-inventory-tab]"));
+  return uiNavigator.cycleTabs(tabButtons, step);
+}
+
+function cycleCurrentUiTab(step) {
+  if (cycleInventoryTab(step)) {
+    return true;
+  }
+  return cycleSurfaceStorageTab(step);
+}
+
+function handleUiCancelAction() {
+  if (viewMode === VIEW_MODE.DUNGEON) {
+    if (isWeaponSkillEditorOpen()) {
+      closeWeaponSkillEditorByInput();
+      return true;
+    }
+    if (isInventoryWindowOpen()) {
+      closeInventoryWindowByInput();
+      return true;
+    }
+    return false;
+  }
+
+  if (viewMode === VIEW_MODE.SURFACE && surfaceScreen === SURFACE_SCREEN.STORAGE && storageFacilityUiState.open === true) {
+    closeStorageFacility();
+    return true;
+  }
+
+  return false;
+}
+
 function playSeByKey(soundKey, repeat = 1) {
   void soundEffectPlayer.playByKey(soundKey, repeat);
 }
@@ -2876,18 +3012,13 @@ surfaceStorageHud = surfaceStorageRoot
 const systemHud = systemUiRoot
   ? createSystemHud(systemUiRoot, {
       onUseQuickSlot: (slotIndex) => {
-        const beforeSystemUi = getSystemUiState();
-        const quickSlotItemId = getQuickSlotItemId(beforeSystemUi, slotIndex);
-        const afterSystemUi = useQuickSlotItem(beforeSystemUi, slotIndex);
-        applySystemUiState(afterSystemUi);
-        playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
-        applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, quickSlotItemId);
+        triggerQuickSlotUse(slotIndex);
       },
       onOpenInventoryWindow: () => {
-        applySystemUiState(setInventoryWindowOpen(getSystemUiState(), true));
+        openInventoryWindowByInput();
       },
       onCloseInventoryWindow: () => {
-        applySystemUiState(setInventoryWindowOpen(getSystemUiState(), false));
+        closeInventoryWindowByInput();
       },
       onSelectInventoryTab: (tab) => {
         applySystemUiState(setInventoryTab(getSystemUiState(), tab));
@@ -2939,7 +3070,7 @@ const systemHud = systemUiRoot
         applySystemUiState(openWeaponSkillEditor(beforeSystemUi, resolvedSlot));
       },
       onCloseWeaponSkillEditor: () => {
-        applySystemUiState(closeWeaponSkillEditor(getSystemUiState()));
+        closeWeaponSkillEditorByInput();
       },
       onSkillSlotClick: (payload) => {
         handleSkillSlotClick(payload);
@@ -2962,12 +3093,7 @@ const systemHud = systemUiRoot
         applySystemUiState(setHeldSkillSource(beforeSystemUi, null));
       },
       onUseSelectedItem: () => {
-        const beforeSystemUi = getSystemUiState();
-        const selectedItemId = beforeSystemUi.inventory?.selectedItemId;
-        const afterSystemUi = useInventoryItem(beforeSystemUi, selectedItemId);
-        applySystemUiState(afterSystemUi);
-        playItemUseSeIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
-        applyHerbHealIfConsumed(beforeSystemUi, afterSystemUi, selectedItemId);
+        triggerUseSelectedInventoryItem();
       },
       onDropSelectedItem: () => {
         if (!appState.dungeon || !appState.player) {
@@ -3048,6 +3174,298 @@ function syncSystemHud() {
   });
 
   lastSystemUiDigest = digest;
+}
+
+function hasUiNavigationContext() {
+  if (viewMode === VIEW_MODE.SURFACE) {
+    return true;
+  }
+  return viewMode === VIEW_MODE.DUNGEON && isInventoryWindowOpen();
+}
+
+function resolveUiNavigationContext() {
+  if (viewMode === VIEW_MODE.SURFACE) {
+    if (surfaceScreen === SURFACE_SCREEN.STORAGE && storageFacilityUiState.open === true) {
+      return {
+        key: `surface-storage:${storageFacilityUiState.activeTab}:${storageFacilityUiState.sellMode ? 1 : 0}`,
+        selectors: [
+          "#surface-storage-back",
+          "#surface-storage-root [data-storage-tab]",
+          "#surface-storage-run-list [data-storage-pane][data-storage-index]",
+          "#surface-storage-stash-list [data-storage-pane][data-storage-index]",
+          "#surface-storage-deposit",
+          "#surface-storage-withdraw",
+          "#surface-storage-sell-mode",
+          "#surface-storage-sell-exec",
+          "#surface-storage-arrange-run",
+          "#surface-storage-arrange-stash",
+          "#surface-storage-upgrade-stash",
+          "#surface-storage-upgrade-inventory",
+        ],
+      };
+    }
+
+    return {
+      key: "surface-hub",
+      selectors: [
+        "#surface-layer[data-surface-screen=\"hub\"] [data-surface-facility]",
+      ],
+    };
+  }
+
+  if (viewMode !== VIEW_MODE.DUNGEON || !isInventoryWindowOpen()) {
+    return {
+      key: "",
+      selectors: [],
+    };
+  }
+
+  if (isWeaponSkillEditorOpen()) {
+    return {
+      key: "dungeon-inventory-skill-editor",
+      selectors: [
+        "#weapon-skill-close",
+        "#weapon-skill-chain-row [data-ui-skill-row][data-ui-skill-index]",
+        "#weapon-skill-formation-slot [data-ui-formation-id]",
+      ],
+    };
+  }
+
+  const activeTab = getSystemUiState().inventory?.activeTab ?? "item";
+  if (activeTab === "weapon") {
+    return {
+      key: "dungeon-inventory-weapon",
+      selectors: [
+        "#inventory-close",
+        "#inventory-window [data-ui-inventory-tab]",
+        "#inventory-window [data-ui-weapon-slot]",
+        "#inventory-weapon-equip",
+      ],
+    };
+  }
+
+  if (activeTab === "chip") {
+    return {
+      key: "dungeon-inventory-chip",
+      selectors: [
+        "#inventory-close",
+        "#inventory-window [data-ui-inventory-tab]",
+        "#inventory-chip-list [data-ui-chip-key]",
+      ],
+    };
+  }
+
+  return {
+    key: "dungeon-inventory-item",
+    selectors: [
+      "#inventory-close",
+      "#inventory-window [data-ui-inventory-tab]",
+      "#inventory-grid [data-ui-inventory-slot]",
+      "#inventory-use",
+      "#inventory-drop",
+    ],
+  };
+}
+
+function syncUiNavigationContext(preferFirst = false) {
+  const context = resolveUiNavigationContext();
+  if (context.key.length <= 0 || context.selectors.length <= 0) {
+    uiNavigationContextKey = "";
+    uiNavigator.clearFocus();
+    return;
+  }
+
+  const contextChanged = uiNavigationContextKey !== context.key;
+  uiNavigationContextKey = context.key;
+  const candidates = collectFocusableCandidates(document, context.selectors);
+  uiNavigator.setCandidates(candidates, {
+    preferFirst: preferFirst || contextChanged,
+  });
+}
+
+function canUseQuickslotInput() {
+  return (
+    viewMode === VIEW_MODE.DUNGEON &&
+    !appState.error &&
+    appState.player &&
+    !appState.isPaused &&
+    !isInventoryWindowOpen() &&
+    !isWeaponSkillEditorOpen() &&
+    !playerDeathSequence.active &&
+    !isFloorTransitionActive(floorTransitionState) &&
+    !isSceneTransitionActive(sceneTransitionState)
+  );
+}
+
+function canUseInteractInput() {
+  return (
+    viewMode === VIEW_MODE.DUNGEON &&
+    !appState.error &&
+    appState.player &&
+    appState.dungeon &&
+    !appState.isPaused &&
+    !isInventoryWindowOpen() &&
+    !isWeaponSkillEditorOpen() &&
+    !playerDeathSequence.active &&
+    !isFloorTransitionActive(floorTransitionState) &&
+    !isSceneTransitionActive(sceneTransitionState)
+  );
+}
+
+function applyDirectionalInputBySnapshot(snapshot) {
+  if (!appState.player) {
+    return;
+  }
+
+  const canMoveByDirectionalInput =
+    viewMode === VIEW_MODE.DUNGEON &&
+    !appState.error &&
+    !appState.isPaused &&
+    !isInventoryWindowOpen() &&
+    !isWeaponSkillEditorOpen() &&
+    !playerDeathSequence.active &&
+    !isFloorTransitionActive(floorTransitionState) &&
+    !isSceneTransitionActive(sceneTransitionState);
+
+  if (!canMoveByDirectionalInput) {
+    setDirectionalMoveInput(appState.player, 0, 0);
+    return;
+  }
+
+  const moveX = Number(snapshot?.move?.x) || 0;
+  const moveY = Number(snapshot?.move?.y) || 0;
+  setDirectionalMoveInput(appState.player, moveX, moveY);
+}
+
+function tryOpenNearbyChestByInteract() {
+  if (!canUseInteractInput()) {
+    return false;
+  }
+
+  const playerFeetTile = getPlayerFeetTile(appState.player);
+  if (!playerFeetTile) {
+    return false;
+  }
+
+  const unopenedChests = Array.isArray(appState.treasureChests)
+    ? appState.treasureChests.filter((chest) => chest && chest.isOpened !== true)
+    : [];
+  if (unopenedChests.length <= 0) {
+    return false;
+  }
+
+  let targetChest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const chest of unopenedChests) {
+    if (!Number.isFinite(chest.tileX) || !Number.isFinite(chest.tileY)) {
+      continue;
+    }
+    const distance = Math.abs(Math.floor(chest.tileX) - playerFeetTile.tileX) + Math.abs(Math.floor(chest.tileY) - playerFeetTile.tileY);
+    if (distance > 1 || distance >= nearestDistance) {
+      continue;
+    }
+    nearestDistance = distance;
+    targetChest = chest;
+  }
+
+  if (!targetChest) {
+    return false;
+  }
+
+  const worldX = Math.floor(targetChest.tileX) * TILE_SIZE + TILE_SIZE / 2;
+  const worldY = Math.floor(targetChest.tileY) * TILE_SIZE + TILE_SIZE / 2;
+  const openResult = tryOpenChestByClick(
+    appState.treasureChests,
+    appState.groundItems,
+    appState.player,
+    worldX,
+    worldY,
+    {
+      dropItemId: HERB_ITEM_ID,
+      interactRangeTiles: 1,
+      playerFeetTileOverride: playerFeetTile,
+      dungeon: appState.dungeon,
+    }
+  );
+  if (!openResult.opened) {
+    return false;
+  }
+
+  playSeByKey(SE_KEY_OPEN_CHEST, 1);
+  appState.treasureChests = openResult.treasureChests;
+  appState.groundItems = openResult.groundItems;
+  return true;
+}
+
+function processInputFrame() {
+  const snapshot = inputController.update();
+  const transitionsActive = isFloorTransitionActive(floorTransitionState) || isSceneTransitionActive(sceneTransitionState);
+
+  if (!transitionsActive && snapshot.pressed.pause) {
+    togglePause();
+  }
+
+  if (!transitionsActive && snapshot.pressed.inventory_toggle) {
+    toggleInventoryWindowByInput();
+  }
+
+  applyDirectionalInputBySnapshot(snapshot);
+
+  if (transitionsActive) {
+    uiNavigationContextKey = "";
+    uiNavigator.clearFocus();
+    return snapshot;
+  }
+
+  if (hasUiNavigationContext()) {
+    syncUiNavigationContext();
+
+    if (snapshot.pressed.ui_tab_prev) {
+      cycleCurrentUiTab(-1);
+      syncUiNavigationContext();
+    }
+    if (snapshot.pressed.ui_tab_next) {
+      cycleCurrentUiTab(1);
+      syncUiNavigationContext();
+    }
+
+    for (const actionInfo of INPUT_UI_MOVE_ACTIONS) {
+      if (snapshot.pressed[actionInfo.action]) {
+        uiNavigator.move(actionInfo.direction);
+      }
+    }
+
+    if (snapshot.pressed.ui_confirm) {
+      uiNavigator.confirm();
+      syncUiNavigationContext();
+    }
+
+    if (snapshot.pressed.ui_cancel) {
+      if (handleUiCancelAction()) {
+        syncUiNavigationContext(true);
+      }
+    }
+
+    return snapshot;
+  }
+
+  uiNavigationContextKey = "";
+  uiNavigator.clearFocus();
+
+  if (canUseQuickslotInput()) {
+    for (let index = 0; index < QUICKSLOT_INPUT_ACTIONS.length; index += 1) {
+      const action = QUICKSLOT_INPUT_ACTIONS[index];
+      if (snapshot.pressed[action]) {
+        triggerQuickSlotUse(index);
+      }
+    }
+  }
+
+  if (snapshot.pressed.interact) {
+    tryOpenNearbyChestByInteract();
+  }
+
+  return snapshot;
 }
 
 function setPaused(paused) {
@@ -4137,6 +4555,8 @@ function updateSceneTransition(dt) {
 }
 
 function stepSimulation(dt) {
+  processInputFrame();
+
   if (isSceneTransitionActive(sceneTransitionState)) {
     updateSceneTransition(dt);
     syncStatsPanel();
@@ -4659,9 +5079,14 @@ window.addEventListener("beforeunload", () => {
   persistPlayerState();
   window.removeEventListener("pointerdown", retryAudioPlayback);
   window.removeEventListener("keydown", retryAudioPlayback);
+  inputController.destroy();
+  uiNavigator.clearFocus();
   dungeonBgmPlayer.stop();
 });
 
+void initializeInputBindings().catch((error) => {
+  console.warn(`[Input] Failed to initialize input bindings: ${error instanceof Error ? error.message : String(error)}`);
+});
 ensurePlayerStateLoaded();
 void ensureStorageReferenceDataLoaded();
 void refreshSoundResources().catch((error) => {

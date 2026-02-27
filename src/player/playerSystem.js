@@ -16,6 +16,13 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function clampUnit(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return clamp(Number(value), -1, 1);
+}
+
 function round2(value) {
   return Math.round(value * 100) / 100;
 }
@@ -331,6 +338,8 @@ export function createPlayerState(dungeon, playerDefinition = null) {
     spriteFacingSwitchMarginPx: PLAYER_SPRITE_SWITCH_MARGIN_DEFAULT,
     pointerActive: false,
     target: null,
+    moveInputX: 0,
+    moveInputY: 0,
     isMoving: false,
     isDead: false,
     animTime: 0,
@@ -401,6 +410,26 @@ export function setPointerTarget(player, active, worldX, worldY) {
   };
 }
 
+export function setDirectionalMoveInput(player, x, y) {
+  if (!player) {
+    return;
+  }
+
+  let moveInputX = Number.isFinite(x) ? Number(x) : 0;
+  let moveInputY = Number.isFinite(y) ? Number(y) : 0;
+  const length = Math.hypot(moveInputX, moveInputY);
+  if (length > 1) {
+    moveInputX /= length;
+    moveInputY /= length;
+  }
+
+  moveInputX = clampUnit(moveInputX);
+  moveInputY = clampUnit(moveInputY);
+
+  player.moveInputX = moveInputX;
+  player.moveInputY = moveInputY;
+}
+
 export function updatePlayer(player, dungeon, dt) {
   if (!Number.isFinite(dt) || dt <= 0) {
     return;
@@ -413,6 +442,8 @@ export function updatePlayer(player, dungeon, dt) {
     player.isDead = true;
     player.pointerActive = false;
     player.target = null;
+    player.moveInputX = 0;
+    player.moveInputY = 0;
     player.isMoving = false;
     player.deathAnimTime = Math.max(0, Number(player.deathAnimTime) || 0) + dt;
     return;
@@ -421,6 +452,58 @@ export function updatePlayer(player, dungeon, dt) {
   if (player.isDead === true) {
     player.isDead = false;
     player.deathAnimTime = 0;
+  }
+
+  const directionalInputX = clampUnit(player.moveInputX);
+  const directionalInputY = clampUnit(player.moveInputY);
+  const directionalLength = Math.hypot(directionalInputX, directionalInputY);
+  if (directionalLength > MOVE_EPSILON) {
+    const normalizedInputX = directionalInputX / directionalLength;
+    const normalizedInputY = directionalInputY / directionalLength;
+    const speedPxPerSec = Number.isFinite(player.moveSpeedPxPerSec)
+      ? Math.max(0, player.moveSpeedPxPerSec)
+      : PLAYER_SPEED_PX_PER_SEC;
+    const travelDistance = speedPxPerSec * dt;
+    const moveX = normalizedInputX * travelDistance;
+    const moveY = normalizedInputY * travelDistance;
+    const substeps = Math.max(1, Math.ceil(Math.hypot(moveX, moveY) / MAX_SUBSTEP_PIXELS));
+    const stepX = moveX / substeps;
+    const stepY = moveY / substeps;
+    const walkableGrid = getWalkableGrid(dungeon);
+
+    let movedX = 0;
+    let movedY = 0;
+    for (let index = 0; index < substeps; index += 1) {
+      const prevX = player.x;
+      const prevY = player.y;
+      const candidate = resolveMoveStep(player, dungeon, walkableGrid, stepX, stepY);
+      if (!candidate) {
+        break;
+      }
+
+      player.x = candidate.x;
+      player.y = candidate.y;
+      const deltaX = player.x - prevX;
+      const deltaY = player.y - prevY;
+      movedX += deltaX;
+      movedY += deltaY;
+      if (Math.abs(deltaX) <= MOVE_EPSILON && Math.abs(deltaY) <= MOVE_EPSILON) {
+        break;
+      }
+    }
+
+    const movedDistance = Math.hypot(movedX, movedY);
+    if (movedDistance <= MOVE_EPSILON) {
+      player.isMoving = false;
+      player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
+      return;
+    }
+
+    player.isMoving = true;
+    updateFacing(player, movedX, movedY);
+    updateSpriteFacing(player, directionalInputX * speedPxPerSec);
+    player.animTime = Math.max(0, Number(player.animTime) || 0) + dt;
+    return;
   }
 
   if (!player.pointerActive || !player.target) {

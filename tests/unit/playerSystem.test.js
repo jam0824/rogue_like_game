@@ -5,6 +5,7 @@ import {
   getPlayerFeetHitbox,
   getPlayerFrame,
   isPlayerDeathAnimationFinished,
+  setDirectionalMoveInput,
   setPointerTarget,
   tryRestorePlayerPosition,
   updatePlayer,
@@ -58,6 +59,8 @@ function createPlayer(overrides = {}) {
     spriteFacingSwitchMarginPx: 6,
     pointerActive: true,
     target: { x: 200, y: 80 },
+    moveInputX: 0,
+    moveInputY: 0,
     isMoving: false,
     isDead: false,
     animTime: 0,
@@ -166,6 +169,21 @@ describe("playerSystem", () => {
 
       expect(player.pointerActive).toBe(false);
       expect(player.target).toBeNull();
+    });
+  });
+
+  describe("setDirectionalMoveInput", () => {
+    it("入力を -1..1 に正規化して保持する", () => {
+      const player = createPlayer({ moveInputX: 0, moveInputY: 0 });
+
+      setDirectionalMoveInput(player, 3, 4);
+
+      expect(player.moveInputX).toBeCloseTo(0.6, 5);
+      expect(player.moveInputY).toBeCloseTo(0.8, 5);
+
+      setDirectionalMoveInput(player, Number.NaN, Number.POSITIVE_INFINITY);
+      expect(player.moveInputX).toBe(0);
+      expect(player.moveInputY).toBe(0);
     });
   });
 
@@ -282,6 +300,49 @@ describe("playerSystem", () => {
       expect(player.animTime).toBeGreaterThan(0);
     });
 
+    it("方向入力がある間はポインターターゲットより方向入力を優先する", () => {
+      const dungeon = createDungeon({
+        walkableGrid: createGrid(16, 16, true),
+        rooms: [{ id: 0, x: 1, y: 1, w: 12, h: 12, centerX: 6, centerY: 6 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({
+        x: 64,
+        y: 64,
+        pointerActive: true,
+        target: { x: 0, y: 64 },
+      });
+
+      setDirectionalMoveInput(player, 1, 0);
+      updatePlayer(player, dungeon, 1 / 60);
+
+      expect(player.x).toBeGreaterThan(64);
+      expect(player.facing).toBe("right");
+    });
+
+    it("方向入力解除後は既存のポインター追従へ戻る", () => {
+      const dungeon = createDungeon({
+        walkableGrid: createGrid(16, 16, true),
+        rooms: [{ id: 0, x: 1, y: 1, w: 12, h: 12, centerX: 6, centerY: 6 }],
+        startRoomId: 0,
+      });
+      const player = createPlayer({
+        x: 96,
+        y: 96,
+        pointerActive: true,
+        target: { x: 0, y: 96 },
+      });
+
+      setDirectionalMoveInput(player, 1, 0);
+      updatePlayer(player, dungeon, 1 / 60);
+      const afterDirectionalX = player.x;
+
+      setDirectionalMoveInput(player, 0, 0);
+      updatePlayer(player, dungeon, 1 / 60);
+
+      expect(player.x).toBeLessThan(afterDirectionalX);
+    });
+
     it("上下移動中の小さな横ズレでは spriteFacing を切り替えない（6pxマージン）", () => {
       const dungeon = createDungeon({
         walkableGrid: createGrid(12, 12, true),
@@ -367,6 +428,8 @@ describe("playerSystem", () => {
       expect(player.isDead).toBe(true);
       expect(player.pointerActive).toBe(false);
       expect(player.target).toBeNull();
+      expect(player.moveInputX).toBe(0);
+      expect(player.moveInputY).toBe(0);
       expect(player.isMoving).toBe(false);
       expect(player.deathAnimTime).toBeCloseTo(0.3, 6);
     });
