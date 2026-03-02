@@ -4,7 +4,7 @@ export const GRID_WIDTH = 96;
 export const GRID_HEIGHT = 96;
 
 export const INITIAL_SEED = "20260208";
-export const GAME_VIEW_SCALE = 1.5;
+export const GAME_VIEW_SCALE = 2.0;
 
 export const ROOM_COUNT_MIN = 9;
 export const ROOM_COUNT_MAX = 12;
