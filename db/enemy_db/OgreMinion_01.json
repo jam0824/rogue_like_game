@@ -1,0 +1,33 @@
+{
+  "name_key": "name_OgreMinion",
+  "description_key": "description_OgreMinion",
+
+  "type": "walk",
+  "walk_png_file_path": "graphic/enemy/BrownMushroom/walk_BrownMushroom.png",
+  "idle_png_file_path": "graphic/enemy/BrownMushroom/idle_BrownMushroom.png",
+  "attack_png_file_path": "graphic/enemy/BrownMushroom/attack_BrownMushroom.png",
+  "death_png_file_path": "graphic/enemy/BrownMushroom/death_BrownMushroom.png",
+  "width": 32,
+  "height": 32,
+  "fps": 12,
+  "png_facing_direction": "right",
+  "image_magnification": 1.5,
+  "notice_distance": 6,
+  "giveup_distance": 999,
+
+  "rank": "normal",
+  "role": "swarm",
+  "spawn": { "min": 1, "max": 1 },
+
+  "vit": 6,
+  "for": 4,
+  "agi": 3,
+  "pow": 8,
+  "tec": 1,
+  "arc": 1,
+
+  "tags": ["summoned", "minion"],
+
+  "ai_profile_id": "ai_profile_swarm_v1",
+  "weapon_loadout_id": "enemy_loadout_ogre_minion_claw_01"
+}

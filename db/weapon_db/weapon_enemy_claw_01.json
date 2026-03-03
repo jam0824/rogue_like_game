@@ -1,0 +1,28 @@
+{
+    "id": "weapon_enemy_claw_01",
+    "name_key": "name_weapon_enemy_claw_01",
+    "description_key": "description_weapon_enemy_claw_01",
+
+    "weapon_file_name": null,
+    "width": 0,
+    "height": 0,
+    "icon_file_name": null,
+
+    "sound_key_start_attack": "",
+    "sound_key_hit_attack": "",
+
+    "effect_id_start_attack": "",
+    "effect_id_hit_attack": "",
+
+    "rarity": "common",
+    "weapon_plus": 0,
+    "base_damage": 4,
+    "attack_cooldown_sec": 1.50,
+    "hit_num": 1,
+    "pierce_count": 0,
+    "chip_slot_count": 0,
+    "formation_id": "formation_id_stop01",
+    "skills": [
+        {"id": "skill_id_bite_01", "plus": 0}
+    ]
+}

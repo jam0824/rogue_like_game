@@ -1,0 +1,31 @@
+{
+    "id": "skill_ogre_hammer_press_01",
+    "name_key": "name_skill_ogre_hammer_press_01",
+    "description_key": "desc_skill_ogre_hammer_press_01",
+    "skill_type": "attack",
+    "rarity": "boss",
+    "max_plus": 0,
+    "unique_per_weapon": true,
+    "tags": ["skill_type:attack", "attack:aoe", "element:physical"],
+    "ui": { "icon_file_name": null, "sort_order": 201 },
+    "params": {
+      "attack_kind": "aoe",
+      "base_damage": 25,
+      "damage_element": "physical",
+      "start_spawn_timing": "start",
+      "chain_trigger": "on_hit",
+      "aoe": {
+        "sprite_effect_id": "effect_ogre_hammer_press_01",
+        "hit_box_per": 0.8,
+        "hit_interval_sec": 0.0,
+        "target_position": "target_locked",
+        "position_lock_timing": "on_windup_start",
+        "telegraph_style": "circle_red_translucent",
+        "telegraph_radius_tiles": 2.0
+      }
+    },
+    "se_key_fire": "",
+    "se_key_hit": "",
+    "effect_id_fire": "",
+    "effect_id_hit": ""
+}

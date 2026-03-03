@@ -1,0 +1,28 @@
+{
+    "id": "weapon_ogre_stone_hammer_01",
+    "name_key": "name_weapon_ogre_stone_hammer_01",
+    "description_key": "description_weapon_ogre_stone_hammer_01",
+
+    "weapon_file_name": null,
+    "width": 0,
+    "height": 0,
+    "icon_file_name": null,
+
+    "sound_key_start_attack": "",
+    "sound_key_hit_attack": "",
+
+    "effect_id_start_attack": "",
+    "effect_id_hit_attack": "",
+
+    "rarity": "boss",
+    "weapon_plus": 0,
+    "base_damage": 25,
+    "attack_cooldown_sec": 4.00,
+    "hit_num": 1,
+    "pierce_count": 0,
+    "chip_slot_count": 0,
+    "formation_id": "formation_id_stop01",
+    "skills": [
+        {"id": "skill_ogre_hammer_press_01", "plus": 0}
+    ]
+}

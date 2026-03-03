@@ -1,0 +1,11 @@
+{
+    "id": "effect_ogre_hammer_press_01",
+    "effect_file_name": "graphic/effect/effect_ogre_hammer_press_01.png",
+    "width": 192,
+    "height": 192,
+    "animation_fps": 30,
+    "animation_direction": "horizontal",
+    "scale": 1.0,
+    "blend_mode": "normal",
+    "loop": false
+}

@@ -1,0 +1,79 @@
+{
+  "id": "ai_profile_boss_ogre_v1",
+  "role": "boss",
+
+  "weapon_aim_mode": "to_target",
+  "weapon_visibility_mode": "burst",
+  "weapon_attack_cycles": 1,
+  "weapon_active_range_tiles": 4.0,
+  "weapon_cooldown_mul": 1.0,
+  "los_required": true,
+
+  "phases": [
+    {
+      "phase": 1,
+      "hp_ratio_min": 0.60,
+      "hp_ratio_max": 1.01,
+      "summon_count": { "min": 2, "max": 2 },
+      "charge_micro_correct_deg": 0,
+      "press_chain_count": 1
+    },
+    {
+      "phase": 2,
+      "hp_ratio_min": 0.30,
+      "hp_ratio_max": 0.60,
+      "summon_count": { "min": 2, "max": 3 },
+      "charge_micro_correct_deg": 12,
+      "press_chain_count": 1
+    },
+    {
+      "phase": 3,
+      "hp_ratio_min": 0.00,
+      "hp_ratio_max": 0.30,
+      "summon_count": { "min": 3, "max": 4 },
+      "charge_micro_correct_deg": 12,
+      "press_chain_count": 2
+    }
+  ],
+
+  "action_priority": [
+    { "action": "summon", "when": "minion_count_lt && cooldown_ready" },
+    { "action": "charge", "when": "target_distance_gte && cooldown_ready" },
+    { "action": "press",  "when": "target_distance_lte && cooldown_ready" },
+    { "action": "chase",  "when": "always" }
+  ],
+
+  "actions": {
+    "summon": {
+      "weapon_index": 2,
+      "cooldown_sec": 9.0,
+      "minion_count_lt": 3,
+      "windup_sec": 1.0,
+      "recover_sec": 0.5
+    },
+    "charge": {
+      "weapon_index": 0,
+      "cooldown_sec": 6.0,
+      "target_distance_gte": 5.0,
+      "windup_sec": 0.8,
+      "recover_sec": 0.6,
+      "recover_on_wall_hit_sec": 1.2
+    },
+    "press": {
+      "weapon_index": 1,
+      "cooldown_sec": 4.0,
+      "target_distance_lte": 3.0,
+      "windup_sec": 1.0,
+      "recover_sec": 0.8
+    },
+    "chase": {
+      "repath_interval_sec": 0.40
+    }
+  },
+
+  "summon_rules": {
+    "max_alive_in_room": 8,
+    "max_alive_per_summoner": 6,
+    "vanish_on_summoner_death": true
+  }
+}
