@@ -267,6 +267,16 @@ export function buildDungeonBackdrop(assets, dungeon) {
   };
 }
 
+function drawEntityShadow(ctx, centerX, feetY, radiusX, radiusY) {
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#000000";
+  ctx.beginPath();
+  ctx.ellipse(centerX, feetY, radiusX, radiusY, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawSprite(ctx, asset, frame, entity, options = {}) {
   const sx = frame.col * asset.frameWidth;
   const sy = frame.row * asset.frameHeight;
@@ -284,6 +294,12 @@ function drawSprite(ctx, asset, frame, entity, options = {}) {
     const feetY = entity.y + entityHeight;
     dx = Math.round(feetX - drawWidth / 2);
     dy = Math.round(feetY - drawHeight);
+  }
+
+  if (options.shadow === true) {
+    const shadowCenterX = dx + drawWidth / 2;
+    const shadowFeetY = dy + drawHeight;
+    drawEntityShadow(ctx, shadowCenterX, shadowFeetY, drawWidth * 0.35, drawWidth * 0.10);
   }
 
   const rotationRad = Number.isFinite(options.rotationRad) ? options.rotationRad : 0;
@@ -646,6 +662,7 @@ export function renderFrame(
           flipX: drawable.frame.flipX === true,
           drawScale: Number(drawable.frame.drawScale) || 1,
           anchorFeet: true,
+          shadow: true,
           flashAlpha: drawable.flashAlpha ?? 0,
           flashColor: drawable.flashColor ?? "#ffffff",
           telegraphAlpha: drawable.telegraphAlpha ?? 0,
@@ -724,6 +741,7 @@ export function renderFrame(
           drawScale: Number(playerFrame.drawScale) || 1,
           anchorFeet: playerFrame.anchorFeet === true,
           flipX: playerFrame.flipX === true,
+          shadow: true,
           flashAlpha: playerFlashAlpha,
           flashColor: playerFlashColor,
         });
