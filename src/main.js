@@ -1099,6 +1099,23 @@ function buildInventoryQuickSlotTextState(slot) {
   };
 }
 
+function buildPlayerAilmentDebuffs(player) {
+  if (!player?.ailments) {
+    return [];
+  }
+  const result = [];
+  for (const [id, state] of Object.entries(player.ailments)) {
+    if (state?.stacks > 0) {
+      result.push({
+        id: `ailment-${id}`,
+        iconKey: id,
+        nameKey: `ailment_name_${id}`,
+      });
+    }
+  }
+  return result;
+}
+
 function buildHudTextState() {
   const bossEnemy = Array.isArray(appState.enemies)
     ? appState.enemies.find((enemy) => enemy?.role === "boss" && enemy?.isDead !== true) ?? null
@@ -1122,7 +1139,10 @@ function buildHudTextState() {
     xpToNext: calcXpToNextLevel(runLevel),
     gold: getGold(appState.playerState),
     buffs: [...(getSystemUiState().statusEffects?.buffs ?? [])],
-    debuffs: [...(getSystemUiState().statusEffects?.debuffs ?? [])],
+    debuffs: [
+      ...(getSystemUiState().statusEffects?.debuffs ?? []),
+      ...buildPlayerAilmentDebuffs(appState.player),
+    ],
   };
 }
 

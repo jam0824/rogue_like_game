@@ -10,6 +10,7 @@ import {
 import { rollHitDamage } from "../combat/damageRoll.js";
 import { createRng, deriveSeed } from "../core/rng.js";
 import { deriveEnemyCombatStats } from "../status/derivedStats.js";
+import { tickCcState, getChillSpeedMult } from "../status/ailmentSystem.js";
 
 const MOVE_EPSILON = 0.001;
 const MAX_SUBSTEP_PIXELS = 4;
@@ -986,6 +987,8 @@ function createEnemyState(
     isSummoned: spawnMeta?.isSummoned === true || derived.tags.includes("summoned"),
     roomId: typeof spawnMeta?.roomId === "string" && spawnMeta.roomId.length > 0 ? spawnMeta.roomId : null,
     attack: createEnemyAttackRuntime(attackProfile, enemyId, x, y, definition.width, definition.height),
+    ailments: {},
+    ccState: { id: null, timerSec: 0, immunitySec: 0, pendingImmunitySec: 0 },
   };
 }
 
@@ -1273,6 +1276,14 @@ function updateEnemy(enemy, dungeon, dt, player) {
   }
   updateBehaviorMode(enemy, dungeon, player);
 
+  // CC中（凍結・麻痺）は移動・行動をスキップ
+  const isCcActive = tickCcState(enemy, dt);
+  if (isCcActive) {
+    enemy.isMoving = false;
+    enemy.animTime += dt;
+    return;
+  }
+
   const isBossActionLock =
     enemy.attack?.isBoss === true &&
     enemy.attack.activeActionKey !== "chase" &&
@@ -1283,7 +1294,9 @@ function updateEnemy(enemy, dungeon, dt, player) {
     return;
   }
 
-  const speedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
+  const chillMult = getChillSpeedMult(enemy);
+  const rawSpeedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
+  const speedPxPerSec = rawSpeedPxPerSec * chillMult;
   const travelDistance = speedPxPerSec * dt;
   const substeps = Math.max(1, Math.ceil(travelDistance / MAX_SUBSTEP_PIXELS));
   const stepDistance = travelDistance / substeps;

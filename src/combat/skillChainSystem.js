@@ -2,15 +2,19 @@ import { TILE_SIZE } from "../config/constants.js";
 import { getEnemyCombatHitbox } from "../enemy/enemySystem.js";
 import { getPlayerCombatHitbox } from "../player/playerSystem.js";
 import { rollHitDamage } from "./damageRoll.js";
+import {
+  applyAilmentOnHit,
+  tickAilments,
+  applyCcToEntity,
+  isEntityCcImmune,
+  getBrittleDamageTakenMult,
+  getShockBonusDmgMult,
+} from "../status/ailmentSystem.js";
+import { CC_DB } from "../status/ailmentDb.js";
 
 export const MAX_CHAIN_SPAWN = 16;
 
 const SKILL_CHAIN_RUNTIME_KEY = "skillChainRuntime";
-const POISON_APPLY_PLUS_MAX = 3;
-const POISON_APPLY_PLUS_HALF = 25;
-const POISON_MAX_STACKS = 12;
-const POISON_DURATION_SEC = 8;
-const POISON_DOT_COEF = 0.05;
 const MIN_DAMAGE = 1;
 
 function toFiniteNumber(value, fallback) {
@@ -382,80 +386,6 @@ function pruneChainSpawnCounters(runtime, latestAttackSeq) {
   }
 }
 
-function ensurePoisonRuntime(enemy) {
-  if (!enemy || typeof enemy !== "object") {
-    return null;
-  }
-
-  if (!enemy.ailments || typeof enemy.ailments !== "object") {
-    enemy.ailments = {};
-  }
-
-  if (!enemy.ailments.poison || typeof enemy.ailments.poison !== "object") {
-    enemy.ailments.poison = {
-      stacks: 0,
-      applyRemainder: 0,
-      decayTimerSec: 0,
-      dotTimerSec: 0,
-      dotPerStack: 0,
-    };
-  }
-
-  const poison = enemy.ailments.poison;
-  poison.stacks = Math.max(0, toNonNegativeInt(poison.stacks, 0));
-  poison.applyRemainder = Math.max(0, toFiniteNumber(poison.applyRemainder, 0));
-  poison.decayTimerSec = Math.max(0, toFiniteNumber(poison.decayTimerSec, 0));
-  poison.dotTimerSec = Math.max(0, toFiniteNumber(poison.dotTimerSec, 0));
-  poison.dotPerStack = Math.max(0, toFiniteNumber(poison.dotPerStack, 0));
-
-  return poison;
-}
-
-function calcPoisonApplyMult(plus) {
-  const safePlus = Math.max(0, toFiniteNumber(plus, 0));
-  return 1 + POISON_APPLY_PLUS_MAX * safePlus / (safePlus + POISON_APPLY_PLUS_HALF);
-}
-
-function applyPoisonOnHit(enemy, ailment, player, baseHitNonCrit) {
-  if (!enemy || ailment?.ailmentId !== "poison") {
-    return;
-  }
-
-  const poison = ensurePoisonRuntime(enemy);
-  if (!poison) {
-    return;
-  }
-
-  const applyBase = Math.max(0, toFiniteNumber(ailment.applyBase, 0));
-  const applyMult = calcPoisonApplyMult(ailment.plus);
-  const ailmentTakenMult = Math.max(0, toFiniteNumber(enemy.ailmentTakenMult, 1));
-  const apply = applyBase * applyMult * ailmentTakenMult;
-
-  poison.applyRemainder += apply;
-  const addStacksRaw = Math.floor(poison.applyRemainder);
-  const addStacks = Math.max(0, addStacksRaw);
-  poison.applyRemainder = Math.max(0, poison.applyRemainder - addStacks);
-
-  if (addStacks <= 0) {
-    return;
-  }
-
-  const previousStacks = poison.stacks;
-  const nextStacks = clamp(previousStacks + addStacks, 0, POISON_MAX_STACKS);
-  const addedStacks = Math.max(0, nextStacks - previousStacks);
-
-  if (addedStacks <= 0) {
-    return;
-  }
-
-  poison.stacks = nextStacks;
-  poison.decayTimerSec = POISON_DURATION_SEC;
-
-  const arc = Math.max(0, toFiniteNumber(player?.statTotals?.arc, 0));
-  const addedDotPerStack = Math.max(0, baseHitNonCrit) * POISON_DOT_COEF * (1 + arc * 0);
-  const weightedTotal = poison.dotPerStack * previousStacks + addedDotPerStack * addedStacks;
-  poison.dotPerStack = weightedTotal / nextStacks;
-}
 
 function applyDamageToEnemy(enemy, damage) {
   if (!enemy || enemy.isDead === true) {
@@ -501,22 +431,6 @@ function buildSkillDamageEvent({
   };
 }
 
-function buildPoisonDotEvent(enemy, damage) {
-  return {
-    kind: "damage",
-    targetType: "enemy",
-    sourceType: "ailment",
-    ailmentId: "poison",
-    weaponId: "",
-    weaponDefId: "",
-    enemyId: enemy?.id ?? "",
-    damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
-    isCritical: false,
-    worldX: toFiniteNumber(enemy?.x, 0) + toFiniteNumber(enemy?.width, 0) / 2,
-    worldY: toFiniteNumber(enemy?.y, 0) + toFiniteNumber(enemy?.height, 0) / 2,
-    suppressWeaponHitEffect: true,
-  };
-}
 
 function resolveAttackRoll(attacker, weaponRuntime, attack, enemyId, attackSeq, hitSeedSuffix = "") {
   const canUseDerivedRoll =
@@ -578,7 +492,18 @@ function applyAttackHitToEnemy({
   hitSeedSuffix,
 }) {
   const roll = resolveAttackRoll(player, weaponRuntime, attack, enemy?.id ?? "enemy", attackSeq, hitSeedSuffix);
-  const totalDamage = Math.max(MIN_DAMAGE, roll.damagePerHit * Math.max(1, toNonNegativeInt(attack.hitNum, 1)));
+
+  // 感電ボーナス（雷属性攻撃）
+  const isLightning = Array.isArray(attack.tags) && attack.tags.includes("lightning");
+  const shockMult = isLightning ? getShockBonusDmgMult(enemy) : 1;
+
+  // 脆化ボーナス
+  const brittleMult = getBrittleDamageTakenMult(enemy);
+
+  const totalDamage = Math.max(
+    MIN_DAMAGE,
+    Math.round(roll.damagePerHit * Math.max(1, toNonNegativeInt(attack.hitNum, 1)) * shockMult * brittleMult)
+  );
 
   if (!applyDamageToEnemy(enemy, totalDamage)) {
     return false;
@@ -595,8 +520,32 @@ function applyAttackHitToEnemy({
   );
 
   if (Array.isArray(attack.applyAilments) && attack.applyAilments.length > 0) {
+    const arc = Math.max(0, toFiniteNumber(player?.statTotals?.arc, 0));
     for (const ailment of attack.applyAilments) {
-      applyPoisonOnHit(enemy, ailment, player, roll.baseHitNonCrit);
+      const ailmentTakenMult = Math.max(0, toFiniteNumber(enemy.ailmentTakenMult, 1));
+      const result = applyAilmentOnHit(
+        enemy,
+        ailment.ailmentId,
+        ailment.applyBase,
+        ailment.plus,
+        arc,
+        ailmentTakenMult,
+        roll.baseHitNonCrit
+      );
+      if (result.escalated && result.escalatesTo && !isEntityCcImmune(enemy)) {
+        const ccDef = CC_DB[result.escalatesTo];
+        if (ccDef) {
+          const ccDurationMult = Math.max(0, toFiniteNumber(enemy.ccDurationMult, 1));
+          const isBoss = enemy.rank === "boss";
+          const immunitySec = isBoss ? ccDef.immunityBoss : ccDef.immunityNormal;
+          applyCcToEntity(enemy, result.escalatesTo, ccDef.durationSec * ccDurationMult, immunitySec);
+          // 昇格時に元スタックをリセット（すぐ再昇格しないように）
+          if (enemy.ailments?.[ailment.ailmentId]) {
+            enemy.ailments[ailment.ailmentId].stacks = 0;
+            enemy.ailments[ailment.ailmentId].decayTimerSec = 0;
+          }
+        }
+      }
     }
   }
 
@@ -1097,54 +1046,6 @@ function updateProjectiles({
   return removeEffectsById(effects, effectIdsToRemove);
 }
 
-function updatePoisonDots(enemies, dt, events) {
-  if (!Array.isArray(enemies) || enemies.length <= 0 || !Number.isFinite(dt) || dt <= 0) {
-    return;
-  }
-
-  for (const enemy of enemies) {
-    if (!enemy || enemy.isDead === true) {
-      continue;
-    }
-
-    const poison = ensurePoisonRuntime(enemy);
-    if (!poison || poison.stacks <= 0) {
-      if (poison) {
-        poison.decayTimerSec = 0;
-        poison.dotTimerSec = 0;
-      }
-      continue;
-    }
-
-    poison.decayTimerSec -= dt;
-    while (poison.decayTimerSec <= 0 && poison.stacks > 0) {
-      poison.stacks -= 1;
-      if (poison.stacks > 0) {
-        poison.decayTimerSec += POISON_DURATION_SEC;
-      } else {
-        poison.stacks = 0;
-        poison.decayTimerSec = 0;
-        poison.dotTimerSec = 0;
-        poison.dotPerStack = 0;
-        break;
-      }
-    }
-
-    if (poison.stacks <= 0 || enemy.isDead === true) {
-      continue;
-    }
-
-    poison.dotTimerSec += dt;
-    while (poison.dotTimerSec >= 1 && poison.stacks > 0 && enemy.isDead !== true) {
-      poison.dotTimerSec -= 1;
-      const dotDamage = Math.max(MIN_DAMAGE, Math.round(Math.max(0, poison.dotPerStack) * poison.stacks));
-      if (!applyDamageToEnemy(enemy, dotDamage)) {
-        continue;
-      }
-      events.push(buildPoisonDotEvent(enemy, dotDamage));
-    }
-  }
-}
 
 function ensureChainSpawnCounterInitialized(runtime, attackSeq) {
   const key = String(Math.max(0, toNonNegativeInt(attackSeq, 0)));
@@ -1297,7 +1198,34 @@ export function updateSkillChainCombat({
     buildEffectRuntime,
   });
 
-  updatePoisonDots(enemies, Math.max(0, toFiniteNumber(dt, 0)), events);
+  const dtClamped = Math.max(0, toFiniteNumber(dt, 0));
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+    tickAilments(enemy, dtClamped, (ailmentId, damage) => {
+      if (enemy.isDead === true) {
+        return;
+      }
+      if (!applyDamageToEnemy(enemy, damage)) {
+        return;
+      }
+      events.push({
+        kind: "damage",
+        targetType: "enemy",
+        sourceType: "ailment",
+        ailmentId,
+        weaponId: "",
+        weaponDefId: "",
+        enemyId: enemy?.id ?? "",
+        damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
+        isCritical: false,
+        worldX: toFiniteNumber(enemy?.x, 0) + toFiniteNumber(enemy?.width, 0) / 2,
+        worldY: toFiniteNumber(enemy?.y, 0) + toFiniteNumber(enemy?.height, 0) / 2,
+        suppressWeaponHitEffect: true,
+      });
+    });
+  }
 
   return {
     events,
@@ -1312,74 +1240,6 @@ function getPlayerSkillTargetId(player) {
   return "player";
 }
 
-function ensurePlayerPoisonRuntime(player) {
-  if (!player || typeof player !== "object") {
-    return null;
-  }
-
-  if (!player.ailments || typeof player.ailments !== "object") {
-    player.ailments = {};
-  }
-
-  if (!player.ailments.poison || typeof player.ailments.poison !== "object") {
-    player.ailments.poison = {
-      stacks: 0,
-      applyRemainder: 0,
-      decayTimerSec: 0,
-      dotTimerSec: 0,
-      dotPerStack: 0,
-    };
-  }
-
-  const poison = player.ailments.poison;
-  poison.stacks = Math.max(0, toNonNegativeInt(poison.stacks, 0));
-  poison.applyRemainder = Math.max(0, toFiniteNumber(poison.applyRemainder, 0));
-  poison.decayTimerSec = Math.max(0, toFiniteNumber(poison.decayTimerSec, 0));
-  poison.dotTimerSec = Math.max(0, toFiniteNumber(poison.dotTimerSec, 0));
-  poison.dotPerStack = Math.max(0, toFiniteNumber(poison.dotPerStack, 0));
-
-  return poison;
-}
-
-function applyPoisonOnHitToPlayer(player, ailment, attacker, baseHitNonCrit) {
-  if (!player || ailment?.ailmentId !== "poison") {
-    return;
-  }
-
-  const poison = ensurePlayerPoisonRuntime(player);
-  if (!poison) {
-    return;
-  }
-
-  const applyBase = Math.max(0, toFiniteNumber(ailment.applyBase, 0));
-  const applyMult = calcPoisonApplyMult(ailment.plus);
-  const ailmentTakenMult = Math.max(0, toFiniteNumber(player.ailmentTakenMult, 1));
-  const apply = applyBase * applyMult * ailmentTakenMult;
-
-  poison.applyRemainder += apply;
-  const addStacksRaw = Math.floor(poison.applyRemainder);
-  const addStacks = Math.max(0, addStacksRaw);
-  poison.applyRemainder = Math.max(0, poison.applyRemainder - addStacks);
-
-  if (addStacks <= 0) {
-    return;
-  }
-
-  const previousStacks = poison.stacks;
-  const nextStacks = clamp(previousStacks + addStacks, 0, POISON_MAX_STACKS);
-  const addedStacks = Math.max(0, nextStacks - previousStacks);
-  if (addedStacks <= 0) {
-    return;
-  }
-
-  poison.stacks = nextStacks;
-  poison.decayTimerSec = POISON_DURATION_SEC;
-
-  const arc = Math.max(0, toFiniteNumber(attacker?.statTotals?.arc, 0));
-  const addedDotPerStack = Math.max(0, baseHitNonCrit) * POISON_DOT_COEF * (1 + arc * 0);
-  const weightedTotal = poison.dotPerStack * previousStacks + addedDotPerStack * addedStacks;
-  poison.dotPerStack = weightedTotal / nextStacks;
-}
 
 function applyDamageToPlayer(player, damage, applyPlayerHpDamage = true) {
   if (!player || isPlayerDead(player)) {
@@ -1432,25 +1292,6 @@ function buildSkillDamageEventToPlayer({
   };
 }
 
-function buildPoisonDotEventToPlayer(player, damage) {
-  const playerHitbox = getPlayerCombatHitbox(player);
-  const centerX = playerHitbox ? playerHitbox.x + playerHitbox.width / 2 : toFiniteNumber(player?.x, 0);
-  const centerY = playerHitbox ? playerHitbox.y + playerHitbox.height / 2 : toFiniteNumber(player?.y, 0);
-  return {
-    kind: "damage",
-    targetType: "player",
-    targetId: getPlayerSkillTargetId(player),
-    sourceType: "ailment",
-    ailmentId: "poison",
-    weaponId: "",
-    weaponDefId: "",
-    damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
-    isCritical: false,
-    worldX: centerX,
-    worldY: centerY,
-    suppressWeaponHitEffect: true,
-  };
-}
 
 function applyAttackHitToPlayer({
   player,
@@ -1488,8 +1329,18 @@ function applyAttackHitToPlayer({
   );
 
   if (applyPlayerHpDamage !== false && Array.isArray(attack.applyAilments) && attack.applyAilments.length > 0) {
+    const arc = Math.max(0, toFiniteNumber(attackerEnemy?.statTotals?.arc, 0));
     for (const ailment of attack.applyAilments) {
-      applyPoisonOnHitToPlayer(player, ailment, attackerEnemy, roll.baseHitNonCrit);
+      const ailmentTakenMult = Math.max(0, toFiniteNumber(player.ailmentTakenMult, 1));
+      applyAilmentOnHit(
+        player,
+        ailment.ailmentId,
+        ailment.applyBase,
+        ailment.plus,
+        arc,
+        ailmentTakenMult,
+        roll.baseHitNonCrit
+      );
     }
   }
 
@@ -1807,48 +1658,6 @@ function updateEnemySkillProjectiles({
   return removeEffectsById(effects, effectIdsToRemove);
 }
 
-function updatePoisonDotsOnPlayer(player, dt, events, applyPlayerHpDamage = true) {
-  if (!player || !Number.isFinite(dt) || dt <= 0 || applyPlayerHpDamage === false) {
-    return;
-  }
-
-  const poison = ensurePlayerPoisonRuntime(player);
-  if (!poison || poison.stacks <= 0 || isPlayerDead(player)) {
-    if (poison) {
-      poison.decayTimerSec = 0;
-      poison.dotTimerSec = 0;
-    }
-    return;
-  }
-
-  poison.decayTimerSec -= dt;
-  while (poison.decayTimerSec <= 0 && poison.stacks > 0) {
-    poison.stacks -= 1;
-    if (poison.stacks > 0) {
-      poison.decayTimerSec += POISON_DURATION_SEC;
-    } else {
-      poison.stacks = 0;
-      poison.decayTimerSec = 0;
-      poison.dotTimerSec = 0;
-      poison.dotPerStack = 0;
-      break;
-    }
-  }
-
-  if (poison.stacks <= 0 || isPlayerDead(player)) {
-    return;
-  }
-
-  poison.dotTimerSec += dt;
-  while (poison.dotTimerSec >= 1 && poison.stacks > 0 && !isPlayerDead(player)) {
-    poison.dotTimerSec -= 1;
-    const dotDamage = Math.max(MIN_DAMAGE, Math.round(Math.max(0, poison.dotPerStack) * poison.stacks));
-    if (!applyDamageToPlayer(player, dotDamage, true)) {
-      continue;
-    }
-    events.push(buildPoisonDotEventToPlayer(player, dotDamage));
-  }
-}
 
 function hasEnemySkillProjectiles(runtime) {
   return Array.isArray(runtime?.projectiles) && runtime.projectiles.length > 0;
@@ -2058,12 +1867,39 @@ export function updateEnemySkillChainCombat({
     buildEffectRuntime,
   });
 
-  updatePoisonDotsOnPlayer(
-    player,
-    Math.max(0, toFiniteNumber(dt, 0)),
-    events,
-    applyPlayerHpDamage
-  );
+  if (applyPlayerHpDamage !== false && player && !isPlayerDead(player)) {
+    const playerHitbox = getPlayerCombatHitbox(player);
+    const centerX = playerHitbox
+      ? playerHitbox.x + playerHitbox.width / 2
+      : toFiniteNumber(player?.x, 0);
+    const centerY = playerHitbox
+      ? playerHitbox.y + playerHitbox.height / 2
+      : toFiniteNumber(player?.y, 0);
+    const playerTargetId = getPlayerSkillTargetId(player);
+    const dtPlayer = Math.max(0, toFiniteNumber(dt, 0));
+    tickAilments(player, dtPlayer, (ailmentId, damage) => {
+      if (isPlayerDead(player)) {
+        return;
+      }
+      if (!applyDamageToPlayer(player, damage, true)) {
+        return;
+      }
+      events.push({
+        kind: "damage",
+        targetType: "player",
+        targetId: playerTargetId,
+        sourceType: "ailment",
+        ailmentId,
+        weaponId: "",
+        weaponDefId: "",
+        damage: Math.max(0, Math.round(toFiniteNumber(damage, 0))),
+        isCritical: false,
+        worldX: centerX,
+        worldY: centerY,
+        suppressWeaponHitEffect: true,
+      });
+    });
+  }
 
   return {
     events,

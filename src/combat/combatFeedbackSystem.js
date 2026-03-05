@@ -1,6 +1,17 @@
 const POPUP_LIFETIME_SEC = 0.45;
 const POPUP_RISE_SPEED_PX_PER_SEC = 28;
 
+const AILMENT_DOT_FILL_STYLE = {
+  bleed:  "#c0392b",
+  poison: "#27ae60",
+  burn:   "#e67e22",
+};
+const AILMENT_DOT_STROKE_STYLE = {
+  bleed:  "#7b241c",
+  poison: "#1e8449",
+  burn:   "#ba6a1b",
+};
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -27,6 +38,13 @@ export function spawnDamagePopupsFromEvents(events, nowSeq = 0) {
       continue;
     }
 
+    let fillStyle = "";
+    let strokeStyle = "";
+    if (event.sourceType === "ailment" && typeof event.ailmentId === "string") {
+      fillStyle = AILMENT_DOT_FILL_STYLE[event.ailmentId] ?? "";
+      strokeStyle = AILMENT_DOT_STROKE_STYLE[event.ailmentId] ?? "";
+    }
+
     popups.push({
       id: `popup-${nowSeq}-${eventIndex}`,
       value: damageValue,
@@ -39,8 +57,8 @@ export function spawnDamagePopupsFromEvents(events, nowSeq = 0) {
       ageSec: 0,
       lifetimeSec: POPUP_LIFETIME_SEC,
       riseSpeedPxPerSec: POPUP_RISE_SPEED_PX_PER_SEC,
-      fillStyle: "",
-      strokeStyle: "",
+      fillStyle,
+      strokeStyle,
       alpha: 1,
     });
 

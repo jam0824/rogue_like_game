@@ -93,6 +93,14 @@ const UI_TEXT_JA = {
   desc_skill_poison_01: "攻撃に毒付与を追加する。",
   name_skill_explosion_01: "エクスプロージョン",
   desc_skill_explosion_01: "命中地点で爆発を発生させる。",
+  ailment_name_bleed: "出血",
+  ailment_name_poison: "中毒",
+  ailment_name_burn: "燃焼",
+  ailment_name_chill: "冷却",
+  ailment_name_freeze: "凍結",
+  ailment_name_shock: "感電",
+  ailment_name_paralyze: "麻痺",
+  ailment_name_brittle: "脆化",
 };
 
 const ITEM_ICON_LABELS = {
@@ -108,6 +116,14 @@ const ITEM_ICON_LABELS = {
   empty: "",
   buff: "BF",
   debuff: "DB",
+  bleed: "BL",
+  poison: "PS",
+  burn: "BN",
+  chill: "CH",
+  freeze: "FZ",
+  shock: "SK",
+  paralyze: "PZ",
+  brittle: "BR",
 };
 
 function toInt(value, fallback = 0) {
