@@ -141,6 +141,14 @@ function normalizeEnemyRecord(rawEnemy, fileName) {
       typeof rawEnemy.attack_png_file_path === "string" && rawEnemy.attack_png_file_path.trim().length > 0
         ? rawEnemy.attack_png_file_path.trim()
         : null,
+    attackAnimations:
+      rawEnemy.attack_animations && typeof rawEnemy.attack_animations === "object" && !Array.isArray(rawEnemy.attack_animations)
+        ? Object.fromEntries(
+            Object.entries(rawEnemy.attack_animations)
+              .filter(([, path]) => typeof path === "string" && path.trim().length > 0)
+              .map(([key, path]) => [key, path.trim()])
+          )
+        : null,
     deathPngFilePath: rawEnemy.death_png_file_path.trim(),
     width: rawEnemy.width,
     height: rawEnemy.height,

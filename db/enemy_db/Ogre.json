@@ -6,7 +6,9 @@
   "walk_png_file_path": "graphic/enemy/Ogre/walk_Ogre.png",
   "idle_png_file_path": "graphic/enemy/Ogre/idle_Ogre.png",
   "attack_png_file_path": "graphic/enemy/Ogre/attack_Ogre.png",
-  "attack2_png_file_path": "graphic/enemy/Ogre/attack2_Ogre.png",
+  "attack_animations": {
+    "charge": "graphic/enemy/Ogre/attack2_Ogre.png"
+  },
   "death_png_file_path": "graphic/enemy/Ogre/death_Ogre.png",
   "width": 64,
   "height": 64,

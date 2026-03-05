@@ -2383,8 +2383,15 @@ function resolveEnemyAnimation(enemy) {
   }
 
   if (enemy?.attackAnimActive === true) {
+    let attackAnimKey = "attack";
+    if (enemy?.attack?.isBoss === true) {
+      const actionKey = enemy.attack.activeActionKey;
+      if (typeof actionKey === "string" && actionKey.length > 0 && actionKey !== "chase") {
+        attackAnimKey = `attack_${actionKey}`;
+      }
+    }
     return {
-      animation: "attack",
+      animation: attackAnimKey,
       oneShot: true,
       animTime: Math.max(0, toFiniteNumber(enemy.attackAnimTime, 0)),
     };
@@ -2414,10 +2421,18 @@ export function getEnemyFrame(enemy, enemyAsset = null) {
   let oneShot = resolved.oneShot;
   let animTime = resolved.animTime;
 
-  if (defaultAnimation === "attack") {
-    const hasAttackSheet = Number.isFinite(enemyAsset?.attack?.frameCount);
+  const isAttackAnim = defaultAnimation === "attack" || defaultAnimation.startsWith("attack_");
+  if (isAttackAnim) {
+    let effectiveAttackAnim = null;
+    if (defaultAnimation !== "attack" && Number.isFinite(enemyAsset?.[defaultAnimation]?.frameCount)) {
+      effectiveAttackAnim = defaultAnimation;
+    } else if (Number.isFinite(enemyAsset?.attack?.frameCount)) {
+      effectiveAttackAnim = "attack";
+    }
+
+    const hasAttackSheet = effectiveAttackAnim !== null;
     const attackFrameCount = hasAttackSheet
-      ? resolveAnimationFrameCount(enemyAsset, "attack")
+      ? resolveAnimationFrameCount(enemyAsset, effectiveAttackAnim)
       : resolveAnimationFrameCount(enemyAsset, "idle");
     const elapsedAttackFrames = Math.floor(animTime * fps);
 
@@ -2427,6 +2442,8 @@ export function getEnemyFrame(enemy, enemyAsset = null) {
       animTime = Math.max(0, toFiniteNumber(enemy?.animTime, 0));
     } else if (!hasAttackSheet) {
       animation = "idle";
+    } else {
+      animation = effectiveAttackAnim;
     }
   }
 

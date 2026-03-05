@@ -86,7 +86,28 @@ async function loadAssetForDefinition(definition) {
       })
     : Promise.resolve(null);
 
-  const [walk, idle, death, attack] = await Promise.all([
+  const attackAnimationsMap = definition.attackAnimations && typeof definition.attackAnimations === "object"
+    ? Object.entries(definition.attackAnimations).filter(([, path]) => typeof path === "string" && path.trim().length > 0)
+    : [];
+  const attackAnimPromises = attackAnimationsMap.map(([actionKey, path]) =>
+    loadEnemySheet(
+      toNonEmptyPath(path, `attackAnimations.${actionKey}`),
+      frameWidth,
+      frameHeight,
+      `attack_${actionKey} sheet (${definition.id})`
+    )
+      .then((sheet) => [`attack_${actionKey}`, sheet])
+      .catch((error) => {
+        console.warn(
+          `Failed to load attack animation for ${actionKey} (${definition.id}): ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return [`attack_${actionKey}`, null];
+      })
+  );
+
+  const [walk, idle, death, attack, ...attackAnimResults] = await Promise.all([
     loadEnemySheet(
       toNonEmptyPath(definition.walkPngFilePath, "walkPngFilePath"),
       frameWidth,
@@ -106,22 +127,28 @@ async function loadAssetForDefinition(definition) {
       `death sheet (${definition.id})`
     ),
     attackPromise,
+    ...attackAnimPromises,
   ]);
 
-  return [
-    definition.id,
-    {
-      walk,
-      idle,
-      attack,
-      death,
-      fps,
-      defaultFacing,
-      drawScale,
-      frameWidth,
-      frameHeight,
-    },
-  ];
+  const asset = {
+    walk,
+    idle,
+    attack,
+    death,
+    fps,
+    defaultFacing,
+    drawScale,
+    frameWidth,
+    frameHeight,
+  };
+
+  for (const [key, sheet] of attackAnimResults) {
+    if (sheet) {
+      asset[key] = sheet;
+    }
+  }
+
+  return [definition.id, asset];
 }
 
 export async function loadEnemyAssets(enemyDefinitions) {
