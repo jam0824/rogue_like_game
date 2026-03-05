@@ -759,6 +759,37 @@ body {
   letter-spacing: 0.4px;
 }
 
+.system-boss-hp-row {
+  margin-top: -2px;
+}
+
+#system-boss-hp-bar {
+  --boss-hp-bar-height: 16px;
+  position: relative;
+  width: 220px;
+  height: var(--boss-hp-bar-height);
+  border: 2px solid #6a2118;
+  background: rgba(58, 11, 8, 0.88);
+  overflow: hidden;
+}
+
+#system-boss-hp-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(to bottom, #ffd2b8 0%, #ff915e 40%, #d44d1f 100%);
+}
+
+#system-boss-hp-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+}
+
 #system-level {
   font-size: 15px;
   font-weight: 900;

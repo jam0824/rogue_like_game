@@ -23,6 +23,7 @@ const VECTOR_EPSILON = 0.0001;
 const BIAS_LERP_BASE = 6;
 const MIN_ATTACK_COOLDOWN_SEC = 0.05;
 const DEFAULT_SPRITE_FACING = "right";
+const BOSS_CHARGE_STOP_EPSILON = 0.001;
 
 const BEHAVIOR_MODE = {
   RANDOM_WALK: "random_walk",
@@ -33,6 +34,13 @@ const ENEMY_ATTACK_PHASE = {
   COOLDOWN: "cooldown",
   WINDUP: "windup",
   ATTACK: "attack",
+  RECOVER: "recover",
+};
+
+const BOSS_ACTION_STATE = {
+  IDLE: "idle",
+  WINDUP: "windup",
+  EXECUTE: "execute",
   RECOVER: "recover",
 };
 
@@ -53,6 +61,13 @@ function clamp(value, min, max) {
 
 function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function toNonNegativeInt(value, fallback = 0) {
+  if (!Number.isFinite(value)) {
+    return Math.max(0, Math.floor(Number(fallback) || 0));
+  }
+  return Math.max(0, Math.floor(Number(value)));
 }
 
 function resolveImageMagnification(rawMagnification, fallback = 1) {
@@ -681,14 +696,24 @@ function updateEnemyWeaponTransform(weaponRuntime, enemy, aimDir, dt) {
   weaponRuntime.rotationRad = rotationDeg * Math.PI / 180;
 }
 
-function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
-  const profile = attackProfile && typeof attackProfile === "object" ? attackProfile : null;
-  const rangeConfig = resolveEnemyRangeConfig(profile);
-  const profileWeapons = Array.isArray(profile?.weapons) ? profile.weapons : [];
-  const weaponCount = Math.max(1, profileWeapons.length);
-  const visibilityMode = profile?.weaponVisibilityMode === "always" ? "always" : "burst";
+function normalizeWeaponSkills(rawSkills) {
+  if (!Array.isArray(rawSkills)) {
+    return [];
+  }
 
-  const weapons = profileWeapons.map((weapon, index) => {
+  return rawSkills
+    .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+    .map((skill) => ({
+      id: skill.id,
+      plus: Number.isFinite(skill.plus) ? Math.max(0, Math.floor(Number(skill.plus))) : 0,
+    }));
+}
+
+function buildEnemyAttackWeapons(profileWeapons, enemyId, spawnX, spawnY, enemyWidth, enemyHeight, visibilityMode) {
+  const source = Array.isArray(profileWeapons) ? profileWeapons : [];
+  const weaponCount = Math.max(1, source.length);
+
+  return source.map((weapon, index) => {
     const supported = weapon?.supported !== false;
     const forceHidden = weapon?.forceHidden === true;
     const width = Math.max(1, toFiniteNumber(weapon?.width, 32));
@@ -701,14 +726,9 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       id: `${enemyId}-weapon-${index}`,
       weaponDefId: weapon?.weaponDefId ?? null,
       formationId: weapon?.formationId ?? null,
-      skillInstances: Array.isArray(weapon?.skills)
-        ? weapon.skills
-            .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
-            .map((skill) => ({
-              id: skill.id,
-              plus: Number.isFinite(skill.plus) ? Math.max(0, Math.floor(Number(skill.plus))) : 0,
-            }))
-        : [],
+      actionKey: typeof weapon?.actionKey === "string" ? weapon.actionKey : null,
+      skillInstances: normalizeWeaponSkills(weapon?.skills),
+      skillParams: weapon?.skillParams ?? null,
       baseDamage: toFiniteNumber(weapon?.baseDamage, Number.NaN),
       x: enemyCenterX - width / 2,
       y: enemyCenterY - height / 2,
@@ -733,35 +753,49 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
       forceHidden,
     };
   });
+}
+
+function createDisabledEnemyAttackRuntime() {
+  return {
+    enabled: false,
+    isBoss: false,
+    phase: ENEMY_ATTACK_PHASE.COOLDOWN,
+    phaseTimerSec: 0,
+    telegraphAlpha: 0,
+    telegraphs: [],
+    windupSec: 0,
+    recoverSec: 0,
+    executeSec: 0,
+    cooldownAfterRecoverSec: 0,
+    weaponAimMode: "none",
+    weaponVisibilityMode: "burst",
+    attackCycle: 0,
+    engageRangePx: 0,
+    attackRangePx: Number.POSITIVE_INFINITY,
+    losRequired: false,
+    attackLinked: true,
+    lockedAimDirX: 0,
+    lockedAimDirY: 0,
+    weapons: [],
+  };
+}
+
+function createDefaultEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
+  const rangeConfig = resolveEnemyRangeConfig(profile);
+  const visibilityMode = profile?.weaponVisibilityMode === "always" ? "always" : "burst";
+  const weapons = buildEnemyAttackWeapons(profile?.weapons, enemyId, spawnX, spawnY, enemyWidth, enemyHeight, visibilityMode);
 
   if (weapons.length === 0) {
-    return {
-      enabled: false,
-      phase: ENEMY_ATTACK_PHASE.COOLDOWN,
-      phaseTimerSec: 0,
-      telegraphAlpha: 0,
-      windupSec: 0,
-      recoverSec: 0,
-      executeSec: 0,
-      cooldownAfterRecoverSec: 0,
-      weaponAimMode: "none",
-      weaponVisibilityMode: "burst",
-      attackCycle: 0,
-      engageRangePx: 0,
-      attackRangePx: Number.POSITIVE_INFINITY,
-      losRequired: false,
-      attackLinked: true,
-      lockedAimDirX: 0,
-      lockedAimDirY: 0,
-      weapons: [],
-    };
+    return createDisabledEnemyAttackRuntime();
   }
 
   return {
     enabled: true,
+    isBoss: false,
     phase: ENEMY_ATTACK_PHASE.COOLDOWN,
     phaseTimerSec: 0,
     telegraphAlpha: 0,
+    telegraphs: [],
     windupSec: Math.max(0, toFiniteNumber(profile?.windupSec, 0)),
     recoverSec: Math.max(0, toFiniteNumber(profile?.recoverSec, 0)),
     executeSec: Math.max(0, toFiniteNumber(profile?.executeSec, 0)),
@@ -779,7 +813,95 @@ function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyW
   };
 }
 
-function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfile = null, dungeonFloor = 1) {
+function resolveBossActionKeyToWeaponIdMap(weapons, actions = {}) {
+  const map = {};
+  for (const [actionKey, action] of Object.entries(actions)) {
+    const byIndex =
+      Number.isFinite(action?.weaponIndex) && weapons[Math.max(0, Math.floor(action.weaponIndex))]
+        ? weapons[Math.max(0, Math.floor(action.weaponIndex))]
+        : null;
+    const byActionKey = weapons.find((weapon) => weapon.actionKey === actionKey) ?? null;
+    map[actionKey] = (byIndex ?? byActionKey)?.id ?? null;
+  }
+  return map;
+}
+
+function createBossEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
+  const rangeConfig = resolveEnemyRangeConfig(profile);
+  const visibilityMode = profile?.weaponVisibilityMode === "always" ? "always" : "burst";
+  const weapons = buildEnemyAttackWeapons(profile?.weapons, enemyId, spawnX, spawnY, enemyWidth, enemyHeight, visibilityMode);
+  if (weapons.length === 0) {
+    return createDisabledEnemyAttackRuntime();
+  }
+
+  const actions = profile?.actions && typeof profile.actions === "object" ? profile.actions : {};
+  const actionCooldowns = {};
+  for (const actionKey of Object.keys(actions)) {
+    actionCooldowns[actionKey] = 0;
+  }
+
+  return {
+    enabled: true,
+    isBoss: true,
+    phase: ENEMY_ATTACK_PHASE.COOLDOWN,
+    phaseTimerSec: 0,
+    telegraphAlpha: 0,
+    telegraphs: [],
+    windupSec: 0,
+    recoverSec: 0,
+    executeSec: 0,
+    cooldownAfterRecoverSec: 0,
+    weaponAimMode: profile?.weaponAimMode === "move_dir" || profile?.weaponAimMode === "none" ? profile.weaponAimMode : "to_target",
+    weaponVisibilityMode: visibilityMode,
+    attackCycle: 0,
+    engageRangePx: rangeConfig.engageRangePx,
+    attackRangePx: Math.max(0, toFiniteNumber(profile?.attackRangePx, Number.POSITIVE_INFINITY)),
+    losRequired: profile?.losRequired === true,
+    attackLinked: profile?.attackLinked !== false,
+    lockedAimDirX: 0,
+    lockedAimDirY: 0,
+    weapons,
+    phases: Array.isArray(profile?.phases) ? profile.phases : [],
+    actionPriority: Array.isArray(profile?.actionPriority) ? profile.actionPriority : [],
+    actions,
+    summonRules: profile?.summonRules ?? null,
+    actionCooldowns,
+    actionState: BOSS_ACTION_STATE.IDLE,
+    actionTimerSec: 0,
+    activeActionKey: "chase",
+    activeActionWeaponId: null,
+    activePhase: null,
+    chargeRuntime: null,
+    pressRuntime: null,
+    summonRuntime: null,
+    actionKeyToWeaponId: resolveBossActionKeyToWeaponIdMap(weapons, actions),
+  };
+}
+
+function createEnemyAttackRuntime(attackProfile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight) {
+  const profile = attackProfile && typeof attackProfile === "object" ? attackProfile : null;
+  if (!profile) {
+    return createDisabledEnemyAttackRuntime();
+  }
+
+  if (profile.role === "boss") {
+    return createBossEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight);
+  }
+
+  return createDefaultEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemyWidth, enemyHeight);
+}
+
+function createEnemyState(
+  definition,
+  x,
+  y,
+  collision,
+  rng,
+  enemyId,
+  attackProfile = null,
+  dungeonFloor = 1,
+  spawnMeta = null
+) {
   const noticeRadiusPx = Math.max(0, definition.noticeDistance * TILE_SIZE);
   const giveupDistanceTiles = Math.max(definition.giveupDistance, definition.noticeDistance);
   const giveupRadiusPx = Math.max(0, giveupDistanceTiles * TILE_SIZE);
@@ -851,6 +973,11 @@ function createEnemyState(definition, x, y, collision, rng, enemyId, attackProfi
     chaseSpeedPxPerSec: Math.max(0, toFiniteNumber(derived.chaseSpeedPxPerSec, moveSpeed * ENEMY_CHASE_SPEED_MULTIPLIER)),
     lastMoveDx: 0,
     lastMoveDy: 1,
+    spawnedByEnemyId:
+      typeof spawnMeta?.spawnedByEnemyId === "string" && spawnMeta.spawnedByEnemyId.length > 0
+        ? spawnMeta.spawnedByEnemyId
+        : null,
+    isSummoned: spawnMeta?.isSummoned === true || derived.tags.includes("summoned"),
     attack: createEnemyAttackRuntime(attackProfile, enemyId, x, y, definition.width, definition.height),
   };
 }
@@ -936,23 +1063,142 @@ function resolveSpawnCount(definition, spawnRng) {
   return spawnRng.int(min, max);
 }
 
+function normalizeCreateEnemiesOptions(blockedTilesOrOptions) {
+  const looksLikeOptions =
+    blockedTilesOrOptions &&
+    typeof blockedTilesOrOptions === "object" &&
+    !Array.isArray(blockedTilesOrOptions) &&
+    !(blockedTilesOrOptions instanceof Set) &&
+    ("blockedTiles" in blockedTilesOrOptions ||
+      "fixedSpawns" in blockedTilesOrOptions ||
+      "useFixedSpawnsOnly" in blockedTilesOrOptions);
+
+  if (!looksLikeOptions) {
+    return {
+      blockedTiles: blockedTilesOrOptions,
+      fixedSpawns: [],
+      useFixedSpawnsOnly: false,
+    };
+  }
+
+  return {
+    blockedTiles: blockedTilesOrOptions.blockedTiles ?? null,
+    fixedSpawns: Array.isArray(blockedTilesOrOptions.fixedSpawns) ? blockedTilesOrOptions.fixedSpawns : [],
+    useFixedSpawnsOnly: blockedTilesOrOptions.useFixedSpawnsOnly === true,
+  };
+}
+
+function resolveFixedSpawnCollision(definition) {
+  return definition.type === "walk"
+    ? buildCollisionProfileForWalk(definition.width, definition.height, definition.imageMagnification)
+    : null;
+}
+
+function createEnemyFromFixedSpawn({
+  fixedSpawn,
+  definition,
+  dungeon,
+  seed,
+  dungeonFloor,
+  enemyAttackProfilesByDbId,
+  blockedTileKeys,
+  index,
+}) {
+  if (!Number.isFinite(fixedSpawn?.tileX) || !Number.isFinite(fixedSpawn?.tileY)) {
+    throw new Error(`Fixed enemy spawn at index ${index} has invalid tile coordinates`);
+  }
+
+  const tileX = Math.floor(fixedSpawn.tileX);
+  const tileY = Math.floor(fixedSpawn.tileY);
+  const tileKey = `${tileX}:${tileY}`;
+  if (blockedTileKeys.has(tileKey)) {
+    throw new Error(`Fixed enemy spawn at index ${index} is blocked: ${tileKey}`);
+  }
+
+  const collision = resolveFixedSpawnCollision(definition);
+  const centerX = tileX * TILE_SIZE + TILE_SIZE / 2;
+  const centerY = tileY * TILE_SIZE + TILE_SIZE / 2;
+  const x = centerX - definition.width / 2;
+  const y = centerY - definition.height / 2;
+  const passableProbe = { type: definition.type, width: definition.width, height: definition.height, collision };
+
+  if (!isEnemyPositionPassable(passableProbe, x, y, dungeon)) {
+    throw new Error(`Fixed enemy spawn at index ${index} is not passable: ${tileKey}`);
+  }
+
+  blockedTileKeys.add(tileKey);
+  const enemyId =
+    typeof fixedSpawn?.enemyId === "string" && fixedSpawn.enemyId.length > 0
+      ? fixedSpawn.enemyId
+      : `enemy-fixed-${definition.id}-${index}`;
+  const enemyRng = createRng(deriveSeed(seed ?? dungeon.seed, `enemy-fixed-${definition.id}-${index}`));
+  const attackProfile = enemyAttackProfilesByDbId?.[definition.id] ?? null;
+
+  return createEnemyState(
+    definition,
+    x,
+    y,
+    collision,
+    enemyRng,
+    enemyId,
+    attackProfile,
+    dungeonFloor,
+    {
+      spawnedByEnemyId:
+        typeof fixedSpawn?.spawnedByEnemyId === "string" && fixedSpawn.spawnedByEnemyId.length > 0
+          ? fixedSpawn.spawnedByEnemyId
+          : null,
+      isSummoned: fixedSpawn?.isSummoned === true,
+    }
+  );
+}
+
 export function createEnemies(
   dungeon,
   enemyDefinitions,
   seed,
   enemyAttackProfilesByDbId = null,
-  blockedTiles = null
+  blockedTilesOrOptions = null
 ) {
   if (!Array.isArray(enemyDefinitions) || enemyDefinitions.length === 0) {
     return [];
   }
 
+  const createOptions = normalizeCreateEnemiesOptions(blockedTilesOrOptions);
   const spawnRng = createRng(deriveSeed(seed ?? dungeon.seed, "enemy-spawn"));
   const spawnRooms = dungeon.rooms.filter((room) => room.id !== dungeon.startRoomId);
   const dungeonFloor = Math.max(1, Math.floor(toFiniteNumber(dungeon?.floor, 1)));
   const guaranteedOrder = spawnRng.shuffle(enemyDefinitions);
   const enemies = [];
-  const blockedTileKeys = normalizeBlockedTileSet(blockedTiles);
+  const blockedTileKeys = normalizeBlockedTileSet(createOptions.blockedTiles);
+  const enemyDefinitionsById = Object.fromEntries(enemyDefinitions.map((definition) => [definition.id, definition]));
+
+  for (let fixedIndex = 0; fixedIndex < createOptions.fixedSpawns.length; fixedIndex += 1) {
+    const fixedSpawn = createOptions.fixedSpawns[fixedIndex];
+    const fixedEnemyId =
+      typeof fixedSpawn?.enemyDbId === "string" && fixedSpawn.enemyDbId.length > 0 ? fixedSpawn.enemyDbId : null;
+    const definition = fixedEnemyId ? enemyDefinitionsById[fixedEnemyId] : null;
+    if (!definition) {
+      throw new Error(`Fixed enemy spawn at index ${fixedIndex} references unknown enemy_db_id: ${fixedEnemyId}`);
+    }
+
+    enemies.push(
+      createEnemyFromFixedSpawn({
+        fixedSpawn,
+        definition,
+        dungeon,
+        seed,
+        dungeonFloor,
+        enemyAttackProfilesByDbId,
+        blockedTileKeys,
+        index: fixedIndex,
+      })
+    );
+  }
+
+  if (createOptions.useFixedSpawnsOnly) {
+    return enemies;
+  }
 
   for (let roomIndex = 0; roomIndex < spawnRooms.length; roomIndex += 1) {
     const room = spawnRooms[roomIndex];
@@ -1018,6 +1264,16 @@ function updateEnemy(enemy, dungeon, dt, player) {
     enemy.attackAnimTime = Math.max(0, toFiniteNumber(enemy.attackAnimTime, 0) + dt);
   }
   updateBehaviorMode(enemy, dungeon, player);
+
+  const isBossActionLock =
+    enemy.attack?.isBoss === true &&
+    enemy.attack.activeActionKey !== "chase" &&
+    enemy.attack.actionState !== BOSS_ACTION_STATE.IDLE;
+  if (isBossActionLock) {
+    enemy.isMoving = false;
+    enemy.animTime += dt;
+    return;
+  }
 
   const speedPxPerSec = enemy.behaviorMode === BEHAVIOR_MODE.CHASE ? enemy.chaseSpeedPxPerSec : enemy.baseSpeedPxPerSec;
   const travelDistance = speedPxPerSec * dt;
@@ -1168,6 +1424,7 @@ function setEnemyAttackPhase(enemy, phase, timerSec) {
   const attack = enemy.attack;
   attack.phase = phase;
   attack.phaseTimerSec = Math.max(0, toFiniteNumber(timerSec, 0));
+  attack.telegraphs = [];
 
   if (phase === ENEMY_ATTACK_PHASE.WINDUP) {
     attack.telegraphAlpha = 1;
@@ -1323,14 +1580,678 @@ function applyEnemyWeaponHits(enemy, player, events, options = {}) {
   }
 }
 
+function buildBossTelegraphLine(enemy, dashDistanceTiles, telegraphWidthTiles = 1) {
+  const attack = enemy.attack;
+  const enemyCenter = getEnemyCenter(enemy);
+  const distancePx = Math.max(0, toFiniteNumber(dashDistanceTiles, 0) * TILE_SIZE);
+  const toX = enemyCenter.x + attack.lockedAimDirX * distancePx;
+  const toY = enemyCenter.y + attack.lockedAimDirY * distancePx;
+  return {
+    kind: "line",
+    style: "line_red_translucent",
+    fromX: enemyCenter.x,
+    fromY: enemyCenter.y,
+    toX,
+    toY,
+    widthPx: Math.max(2, toFiniteNumber(telegraphWidthTiles, 1) * TILE_SIZE),
+    alpha: attack.telegraphAlpha,
+  };
+}
+
+function buildBossTelegraphCircle(centerX, centerY, radiusTiles, style = "circle_red_translucent", alpha = 1) {
+  return {
+    kind: "circle",
+    style,
+    centerX,
+    centerY,
+    radiusPx: Math.max(2, toFiniteNumber(radiusTiles, 0) * TILE_SIZE),
+    alpha: clamp(toFiniteNumber(alpha, 1), 0, 1),
+  };
+}
+
+function resolveBossPhase(attack, enemy) {
+  const maxHp = Math.max(1, toFiniteNumber(enemy.maxHp, 1));
+  const hpRatio = clamp(toFiniteNumber(enemy.hp, maxHp) / maxHp, 0, 1.01);
+  for (const phase of attack.phases) {
+    if (hpRatio >= phase.hpRatioMin && hpRatio < phase.hpRatioMax) {
+      return phase;
+    }
+  }
+  return attack.phases[0] ?? null;
+}
+
+function countAliveSummonsOf(enemy, allEnemies) {
+  if (!Array.isArray(allEnemies)) {
+    return 0;
+  }
+
+  let count = 0;
+  for (const candidate of allEnemies) {
+    if (!candidate || candidate.isDead === true) {
+      continue;
+    }
+    if (candidate.spawnedByEnemyId === enemy.id) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function evaluateBossWhenClause(when, context) {
+  const tokens = String(when ?? "")
+    .split("&&")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  if (tokens.length <= 0) {
+    return false;
+  }
+
+  for (const token of tokens) {
+    if (token === "always") {
+      continue;
+    }
+
+    if (token === "cooldown_ready" && context.cooldownReady !== true) {
+      return false;
+    }
+    if (token === "minion_count_lt" && context.minionCountLt !== true) {
+      return false;
+    }
+    if (token === "target_distance_gte" && context.targetDistanceGte !== true) {
+      return false;
+    }
+    if (token === "target_distance_lte" && context.targetDistanceLte !== true) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function resolveBossAction(enemy, player, dungeon, allEnemies) {
+  const attack = enemy.attack;
+  const distanceTiles = getDistanceToPlayer(enemy, player) / TILE_SIZE;
+  const minionCount = countAliveSummonsOf(enemy, allEnemies);
+
+  for (const priority of attack.actionPriority) {
+    const actionKey = priority.action;
+    const actionConfig = attack.actions?.[actionKey] ?? null;
+    if (!actionConfig) {
+      continue;
+    }
+
+    const actionCooldownSec = Math.max(0, toFiniteNumber(attack.actionCooldowns?.[actionKey], 0));
+    const context = {
+      cooldownReady: actionCooldownSec <= 0.0001,
+      minionCountLt: minionCount < Math.max(0, toNonNegativeInt(actionConfig.minionCountLt, 0)),
+      targetDistanceGte: distanceTiles >= Math.max(0, toFiniteNumber(actionConfig.targetDistanceGte, 0)),
+      targetDistanceLte: distanceTiles <= Math.max(0, toFiniteNumber(actionConfig.targetDistanceLte, Number.POSITIVE_INFINITY)),
+    };
+    if (evaluateBossWhenClause(priority.when, context)) {
+      if (actionKey === "chase") {
+        if (attack.losRequired === true && !hasLineOfSightToPlayer(enemy, player, dungeon)) {
+          continue;
+        }
+      }
+      return actionKey;
+    }
+  }
+
+  return "chase";
+}
+
+function getBossActionWeapon(attack, actionKey) {
+  const weaponId = attack.actionKeyToWeaponId?.[actionKey] ?? null;
+  if (!weaponId) {
+    return null;
+  }
+  return attack.weapons.find((weapon) => weapon.id === weaponId) ?? null;
+}
+
+function setBossActiveWeaponVisibility(attack, activeWeaponId, visible) {
+  for (const weapon of attack.weapons) {
+    if (weapon.forceHidden === true) {
+      weapon.visible = false;
+      continue;
+    }
+    if (attack.weaponVisibilityMode === "always") {
+      weapon.visible = true;
+      continue;
+    }
+    weapon.visible = visible === true && weapon.id === activeWeaponId;
+  }
+}
+
+function applyBossDamageToPlayer(enemy, weapon, attack, player, events, options = {}) {
+  if (!weapon || !player) {
+    return;
+  }
+
+  const playerHitbox = getPlayerCombatHitbox(player);
+  if (!playerHitbox) {
+    return;
+  }
+
+  const canUseDerivedRoll =
+    Number.isFinite(weapon.baseDamage) &&
+    weapon.baseDamage > 0 &&
+    typeof enemy.damageSeed === "string" &&
+    Number.isFinite(enemy.damageMult) &&
+    Number.isFinite(enemy.attackScale) &&
+    Number.isFinite(enemy.critChance) &&
+    Number.isFinite(enemy.critMult);
+  const damageRoll = canUseDerivedRoll
+    ? rollHitDamage({
+        baseDamage: weapon.baseDamage,
+        damageMult: enemy.damageMult,
+        attackScale: enemy.attackScale,
+        critChance: enemy.critChance,
+        critMult: enemy.critMult,
+        seedKey: `${enemy.damageSeed}::${attack.attackCycle}::${weapon.id}::player`,
+      })
+    : {
+        damage: Math.max(1, Math.round(toFiniteNumber(enemy.attackDamage, 1))),
+        isCritical: false,
+      };
+  const damageValue = damageRoll.damage;
+  const applyPlayerHpDamage = options.applyPlayerHpDamage !== false;
+
+  if (applyPlayerHpDamage) {
+    player.hp = Math.max(0, toFiniteNumber(player.hp, toFiniteNumber(player.maxHp, 100)) - damageValue);
+    if (Number.isFinite(player.maxHp)) {
+      player.hp = Math.min(player.hp, player.maxHp);
+    }
+  }
+
+  const flashDurationSec = Math.max(0.0001, toFiniteNumber(player.hitFlashDurationSec, 0.12));
+  player.hitFlashTimerSec = flashDurationSec;
+
+  const worldX = playerHitbox.x + playerHitbox.width / 2;
+  const worldY = playerHitbox.y + playerHitbox.height / 2;
+  events.push({
+    kind: "damage",
+    targetType: "player",
+    enemyId: enemy.id,
+    weaponId: weapon.id,
+    weaponDefId: weapon.weaponDefId,
+    damage: damageValue,
+    isCritical: damageRoll.isCritical === true,
+    worldX,
+    worldY,
+  });
+}
+
+function isTileWalkable(grid, tileX, tileY) {
+  if (!Array.isArray(grid) || grid.length <= 0 || !Array.isArray(grid[0])) {
+    return false;
+  }
+  if (tileY < 0 || tileY >= grid.length || tileX < 0 || tileX >= grid[0].length) {
+    return false;
+  }
+  return grid[tileY][tileX] === true;
+}
+
+function buildOccupiedTileSet(enemies) {
+  const occupied = new Set();
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+    const center = getEnemyCenter(enemy);
+    const tile = toTileCoordinate(center);
+    occupied.add(`${tile.x}:${tile.y}`);
+  }
+  return occupied;
+}
+
+function iterateRingTileCandidates(centerTileX, centerTileY, radius) {
+  const candidates = [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    const dxAbs = radius - Math.abs(dy);
+    if (dxAbs === 0) {
+      candidates.push({ tileX: centerTileX, tileY: centerTileY + dy });
+      continue;
+    }
+    candidates.push({ tileX: centerTileX - dxAbs, tileY: centerTileY + dy });
+    candidates.push({ tileX: centerTileX + dxAbs, tileY: centerTileY + dy });
+  }
+  return candidates;
+}
+
+function resolveBossSummonSpawnTiles(enemy, dungeon, allEnemies, requestedCount) {
+  const walkableGrid = getWalkableGrid(dungeon);
+  if (!Array.isArray(walkableGrid) || walkableGrid.length <= 0 || !Array.isArray(walkableGrid[0])) {
+    return [];
+  }
+  const occupied = buildOccupiedTileSet(allEnemies);
+  const center = toTileCoordinate(getEnemyCenter(enemy));
+  const resolved = [];
+
+  for (let radius = 3; radius <= 8; radius += 1) {
+    for (const candidate of iterateRingTileCandidates(center.x, center.y, radius)) {
+      if (!isTileWalkable(walkableGrid, candidate.tileX, candidate.tileY)) {
+        continue;
+      }
+      const key = `${candidate.tileX}:${candidate.tileY}`;
+      if (occupied.has(key)) {
+        continue;
+      }
+      occupied.add(key);
+      resolved.push(candidate);
+      if (resolved.length >= requestedCount) {
+        return resolved;
+      }
+    }
+  }
+
+  if (resolved.length >= requestedCount) {
+    return resolved;
+  }
+
+  for (let y = 0; y < walkableGrid.length; y += 1) {
+    for (let x = 0; x < walkableGrid[y].length; x += 1) {
+      if (!isTileWalkable(walkableGrid, x, y)) {
+        continue;
+      }
+      const key = `${x}:${y}`;
+      if (occupied.has(key)) {
+        continue;
+      }
+      occupied.add(key);
+      resolved.push({ tileX: x, tileY: y });
+      if (resolved.length >= requestedCount) {
+        return resolved;
+      }
+    }
+  }
+
+  return resolved;
+}
+
+function enterBossActionWindup(enemy, player, dungeon, allEnemies) {
+  const attack = enemy.attack;
+  const actionKey = attack.activeActionKey;
+  const actionConfig = attack.actions?.[actionKey] ?? {};
+  const actionWeapon = getBossActionWeapon(attack, actionKey);
+  const skillParams = actionWeapon?.skillParams ?? null;
+
+  const lockedAim = getEnemyAimDirection(enemy, player, false);
+  attack.lockedAimDirX = lockedAim.x;
+  attack.lockedAimDirY = lockedAim.y;
+  attack.actionState = BOSS_ACTION_STATE.WINDUP;
+  attack.phase = ENEMY_ATTACK_PHASE.WINDUP;
+  attack.actionTimerSec = Math.max(0, toFiniteNumber(actionConfig.windupSec, 0));
+  attack.telegraphAlpha = 1;
+  attack.telegraphs = [];
+  attack.activeActionWeaponId = actionWeapon?.id ?? null;
+  setBossActiveWeaponVisibility(attack, attack.activeActionWeaponId, false);
+
+  if (actionKey === "charge" && skillParams?.charge) {
+    attack.chargeRuntime = {
+      distancePx: Math.max(0, toFiniteNumber(skillParams.charge.dashDistanceTiles, 0) * TILE_SIZE),
+      remainingPx: Math.max(0, toFiniteNumber(skillParams.charge.dashDistanceTiles, 0) * TILE_SIZE),
+      speedPxPerSec: Math.max(0, toFiniteNumber(skillParams.charge.speedTilePerSec, 0) * TILE_SIZE),
+      stopOnPlayerHit: skillParams.charge.stopOnPlayerHit !== false,
+      wallHitRecoverSec: Math.max(
+        toFiniteNumber(actionConfig.recoverOnWallHitSec, 0),
+        toFiniteNumber(skillParams.charge.wallHitRecoverSec, 0)
+      ),
+      knockbackPx: Math.max(0, toFiniteNumber(skillParams.charge.knockbackTiles, 0) * TILE_SIZE),
+    };
+    attack.telegraphs.push(
+      buildBossTelegraphLine(
+        enemy,
+        toFiniteNumber(skillParams.charge.dashDistanceTiles, 0),
+        toFiniteNumber(skillParams.charge.telegraphWidthTiles, 1)
+      )
+    );
+  } else if (actionKey === "press" && skillParams?.aoe) {
+    const targetCenter = getPlayerFeetCenter(player);
+    attack.pressRuntime = {
+      centerX: targetCenter.x,
+      centerY: targetCenter.y,
+      remainingHits: Math.max(1, toNonNegativeInt(attack.activePhase?.pressChainCount, 1)),
+      hitIntervalSec: 0.2,
+      hitTimerSec: 0,
+      radiusTiles: Math.max(0, toFiniteNumber(skillParams.aoe.telegraphRadiusTiles, 0)),
+    };
+    attack.telegraphs.push(
+      buildBossTelegraphCircle(
+        targetCenter.x,
+        targetCenter.y,
+        toFiniteNumber(skillParams.aoe.telegraphRadiusTiles, 0),
+        skillParams.aoe.telegraphStyle || "circle_red_translucent",
+        1
+      )
+    );
+  } else if (actionKey === "summon" && skillParams?.summon) {
+    const phaseCount = attack.activePhase?.summonCount;
+    const countRange = phaseCount
+      ? {
+          min: Math.max(0, toNonNegativeInt(phaseCount.min, 0)),
+          max: Math.max(0, toNonNegativeInt(phaseCount.max, 0)),
+        }
+      : {
+          min: Math.max(0, toNonNegativeInt(skillParams.summon?.count?.min, 0)),
+          max: Math.max(0, toNonNegativeInt(skillParams.summon?.count?.max, 0)),
+        };
+    const summonCount =
+      countRange.max > countRange.min ? enemy.rng.int(countRange.min, countRange.max) : countRange.max;
+    const roomMax = Math.max(
+      0,
+      toNonNegativeInt(attack.summonRules?.maxAliveInRoom, 0),
+      toNonNegativeInt(skillParams.summon.maxAliveInRoom, 0)
+    );
+    const perSummonerMax = Math.max(
+      0,
+      toNonNegativeInt(attack.summonRules?.maxAlivePerSummoner, 0),
+      toNonNegativeInt(skillParams.summon.maxAlivePerSummoner, 0)
+    );
+    const aliveMinions = countAliveSummonsOf(enemy, allEnemies);
+    const availableBySummoner = perSummonerMax > 0 ? Math.max(0, perSummonerMax - aliveMinions) : summonCount;
+    const availableByRoom = roomMax > 0 ? Math.max(0, roomMax - aliveMinions) : summonCount;
+    const resolvedCount = Math.max(0, Math.min(summonCount, availableBySummoner, availableByRoom));
+    const spawnTiles = resolveBossSummonSpawnTiles(enemy, dungeon, allEnemies, resolvedCount);
+    attack.summonRuntime = {
+      enemyDbId: skillParams.summon.enemyId,
+      spawnTiles,
+      spawned: false,
+      spawnTelegraphRadiusTiles: Math.max(0, toFiniteNumber(skillParams.summon.spawnTelegraphRadiusTiles, 0.5)),
+      spawnTelegraphStyle: skillParams.summon.spawnTelegraphStyle || "circle_red_translucent",
+      castEffectId: skillParams.summon.castEffectId || "",
+    };
+    attack.telegraphs.push(
+      ...spawnTiles.map((tile) =>
+        buildBossTelegraphCircle(
+          tile.tileX * TILE_SIZE + TILE_SIZE / 2,
+          tile.tileY * TILE_SIZE + TILE_SIZE / 2,
+          attack.summonRuntime.spawnTelegraphRadiusTiles,
+          attack.summonRuntime.spawnTelegraphStyle,
+          1
+        )
+      )
+    );
+  }
+}
+
+function beginBossActionExecute(enemy) {
+  const attack = enemy.attack;
+  const actionKey = attack.activeActionKey;
+  const actionConfig = attack.actions?.[actionKey] ?? {};
+  const actionWeapon = getBossActionWeapon(attack, actionKey);
+  const skillParams = actionWeapon?.skillParams ?? null;
+
+  let executeSec = Math.max(0.05, toFiniteNumber(actionConfig.executeSec, toFiniteNumber(actionWeapon?.executeDurationSec, 0.05)));
+  if (actionKey === "charge" && attack.chargeRuntime) {
+    const speedPxPerSec = Math.max(1, attack.chargeRuntime.speedPxPerSec);
+    executeSec = Math.max(0.05, attack.chargeRuntime.distancePx / speedPxPerSec);
+  }
+  if (actionKey === "press" && attack.pressRuntime) {
+    const chainCount = Math.max(1, toNonNegativeInt(attack.pressRuntime.remainingHits, 1));
+    executeSec = Math.max(0.05, chainCount * attack.pressRuntime.hitIntervalSec);
+  }
+  if (actionKey === "summon") {
+    executeSec = Math.max(0.05, toFiniteNumber(actionConfig.executeSec, 0.1));
+  }
+
+  attack.actionState = BOSS_ACTION_STATE.EXECUTE;
+  attack.phase = ENEMY_ATTACK_PHASE.ATTACK;
+  attack.actionTimerSec = executeSec;
+  attack.attackCycle = Math.max(0, toNonNegativeInt(attack.attackCycle, 0)) + 1;
+  attack.telegraphAlpha = 0;
+  attack.telegraphs = [];
+  enemy.attackAnimActive = true;
+  enemy.attackAnimTime = 0;
+  setBossActiveWeaponVisibility(attack, attack.activeActionWeaponId, true);
+
+  if (actionKey === "press" && attack.pressRuntime && skillParams?.aoe) {
+    attack.pressRuntime.radiusTiles = Math.max(0, toFiniteNumber(skillParams.aoe.telegraphRadiusTiles, 0));
+  }
+}
+
+function transitionBossToRecover(enemy, wallHit = false) {
+  const attack = enemy.attack;
+  const actionKey = attack.activeActionKey;
+  const actionConfig = attack.actions?.[actionKey] ?? {};
+  let recoverSec = Math.max(0, toFiniteNumber(actionConfig.recoverSec, 0));
+  if (wallHit && attack.chargeRuntime) {
+    recoverSec = Math.max(recoverSec, toFiniteNumber(attack.chargeRuntime.wallHitRecoverSec, recoverSec));
+  }
+
+  attack.actionState = BOSS_ACTION_STATE.RECOVER;
+  attack.phase = ENEMY_ATTACK_PHASE.RECOVER;
+  attack.actionTimerSec = recoverSec;
+  attack.telegraphAlpha = 0;
+  attack.telegraphs = [];
+  setBossActiveWeaponVisibility(attack, attack.activeActionWeaponId, false);
+}
+
+function completeBossAction(enemy) {
+  const attack = enemy.attack;
+  const actionKey = attack.activeActionKey;
+  const actionConfig = attack.actions?.[actionKey] ?? {};
+  const cooldownSec = Math.max(0, toFiniteNumber(actionConfig.cooldownSec, 0));
+  attack.actionCooldowns[actionKey] = cooldownSec;
+  attack.actionState = BOSS_ACTION_STATE.IDLE;
+  attack.phase = ENEMY_ATTACK_PHASE.COOLDOWN;
+  attack.actionTimerSec = 0;
+  attack.activeActionKey = "chase";
+  attack.activeActionWeaponId = null;
+  attack.chargeRuntime = null;
+  attack.pressRuntime = null;
+  attack.summonRuntime = null;
+  attack.telegraphAlpha = 0;
+  attack.telegraphs = [];
+  setBossActiveWeaponVisibility(attack, null, false);
+}
+
+function stepBossCharge(enemy, player, dungeon, dt, events, options = {}) {
+  const attack = enemy.attack;
+  const runtime = attack.chargeRuntime;
+  if (!runtime) {
+    return { finished: true, wallHit: false };
+  }
+
+  const speedPxPerSec = Math.max(0, runtime.speedPxPerSec);
+  const travelDistance = Math.min(runtime.remainingPx, speedPxPerSec * dt);
+  const substeps = Math.max(1, Math.ceil(travelDistance / MAX_SUBSTEP_PIXELS));
+  const stepDistance = travelDistance / substeps;
+  let wallHit = false;
+  let didHitPlayer = false;
+
+  for (let stepIndex = 0; stepIndex < substeps; stepIndex += 1) {
+    if (stepDistance <= BOSS_CHARGE_STOP_EPSILON) {
+      break;
+    }
+
+    const nextX = enemy.x + attack.lockedAimDirX * stepDistance;
+    const nextY = enemy.y + attack.lockedAimDirY * stepDistance;
+    if (!isEnemyPositionPassable(enemy, nextX, nextY, dungeon)) {
+      wallHit = true;
+      break;
+    }
+
+    enemy.x = nextX;
+    enemy.y = nextY;
+    runtime.remainingPx = Math.max(0, runtime.remainingPx - stepDistance);
+    updateFacing(enemy, attack.lockedAimDirX, attack.lockedAimDirY);
+    updateSpriteFacing(enemy, attack.lockedAimDirX);
+
+    if (!player || didHitPlayer) {
+      continue;
+    }
+
+    const enemyHitbox = getEnemyCombatHitbox(enemy);
+    const playerHitbox = getPlayerCombatHitbox(player);
+    if (!enemyHitbox || !playerHitbox) {
+      continue;
+    }
+    if (!intersectsAabb(enemyHitbox, playerHitbox)) {
+      continue;
+    }
+
+    const actionWeapon = getBossActionWeapon(attack, attack.activeActionKey);
+    applyBossDamageToPlayer(enemy, actionWeapon, attack, player, events, options);
+    didHitPlayer = true;
+    if (runtime.stopOnPlayerHit) {
+      break;
+    }
+  }
+
+  const finished = wallHit || didHitPlayer || runtime.remainingPx <= BOSS_CHARGE_STOP_EPSILON;
+  return { finished, wallHit };
+}
+
+function stepBossPress(enemy, player, events, options = {}) {
+  const attack = enemy.attack;
+  const runtime = attack.pressRuntime;
+  if (!runtime || runtime.remainingHits <= 0) {
+    return;
+  }
+
+  runtime.hitTimerSec -= options.dt ?? 0;
+  if (runtime.hitTimerSec > 0) {
+    return;
+  }
+
+  runtime.hitTimerSec = runtime.hitIntervalSec;
+  runtime.remainingHits -= 1;
+  const actionWeapon = getBossActionWeapon(attack, attack.activeActionKey);
+  const playerCenter = getPlayerFeetCenter(player);
+  const radiusPx = Math.max(0, runtime.radiusTiles * TILE_SIZE);
+  const distance = Math.hypot(playerCenter.x - runtime.centerX, playerCenter.y - runtime.centerY);
+  if (distance > radiusPx) {
+    return;
+  }
+
+  applyBossDamageToPlayer(enemy, actionWeapon, attack, player, events, options);
+}
+
+function stepBossSummon(enemy, events) {
+  const attack = enemy.attack;
+  const runtime = attack.summonRuntime;
+  if (!runtime || runtime.spawned === true) {
+    return;
+  }
+
+  runtime.spawned = true;
+  for (const tile of runtime.spawnTiles) {
+    events.push({
+      kind: "summon_request",
+      summonerEnemyId: enemy.id,
+      enemyDbId: runtime.enemyDbId,
+      tileX: tile.tileX,
+      tileY: tile.tileY,
+      isSummoned: true,
+    });
+  }
+
+  if (runtime.castEffectId) {
+    const center = getEnemyCenter(enemy);
+    events.push({
+      kind: "effect_spawn",
+      effectId: runtime.castEffectId,
+      worldX: center.x,
+      worldY: center.y,
+    });
+  }
+}
+
+function updateBossEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
+  const attack = enemy.attack;
+  if (!attack || attack.enabled !== true || !attack.isBoss) {
+    return;
+  }
+
+  attack.activePhase = resolveBossPhase(attack, enemy);
+  attack.telegraphs = Array.isArray(attack.telegraphs) ? attack.telegraphs : [];
+
+  for (const actionKey of Object.keys(attack.actionCooldowns ?? {})) {
+    attack.actionCooldowns[actionKey] = Math.max(0, toFiniteNumber(attack.actionCooldowns[actionKey], 0) - dt);
+  }
+
+  if (!player || (Number.isFinite(player.hp) && player.hp <= 0)) {
+    attack.telegraphAlpha = 0;
+    attack.telegraphs = [];
+    setBossActiveWeaponVisibility(attack, attack.activeActionWeaponId, false);
+    updateEnemyWeaponVisuals(enemy, player, dt);
+    return;
+  }
+
+  if (attack.actionState === BOSS_ACTION_STATE.IDLE) {
+    const resolvedAction = resolveBossAction(enemy, player, dungeon, options.allEnemies);
+    attack.activeActionKey = resolvedAction;
+
+    if (resolvedAction !== "chase") {
+      enterBossActionWindup(enemy, player, dungeon, options.allEnemies);
+    } else {
+      attack.phase = ENEMY_ATTACK_PHASE.COOLDOWN;
+      attack.telegraphAlpha = 0;
+      attack.telegraphs = [];
+      setBossActiveWeaponVisibility(attack, null, false);
+    }
+  }
+
+  if (attack.actionState === BOSS_ACTION_STATE.WINDUP) {
+    const windupSec = Math.max(0.0001, toFiniteNumber(attack.actionTimerSec, 0.0001));
+    const normalized = clamp((Math.sin(performance.now() / 1000 * Math.PI * ENEMY_ATTACK_TELEGRAPH_BLINK_HZ) + 1) * 0.5, 0, 1);
+    attack.telegraphAlpha = clamp(0.2 + normalized * 0.8, 0, 1);
+    for (const telegraph of attack.telegraphs) {
+      telegraph.alpha = attack.telegraphAlpha;
+    }
+    attack.actionTimerSec = Math.max(0, attack.actionTimerSec - dt);
+    if (attack.actionTimerSec <= 0 || windupSec <= 0) {
+      beginBossActionExecute(enemy);
+    }
+  }
+
+  if (attack.actionState === BOSS_ACTION_STATE.EXECUTE) {
+    const actionKey = attack.activeActionKey;
+    let shouldRecover = false;
+    let wallHit = false;
+
+    if (actionKey === "charge") {
+      const result = stepBossCharge(enemy, player, dungeon, dt, events, options);
+      shouldRecover = result.finished;
+      wallHit = result.wallHit;
+    } else if (actionKey === "press") {
+      stepBossPress(enemy, player, events, { ...options, dt });
+      shouldRecover = attack.pressRuntime?.remainingHits <= 0;
+    } else if (actionKey === "summon") {
+      stepBossSummon(enemy, events);
+      shouldRecover = true;
+    }
+
+    attack.actionTimerSec = Math.max(0, attack.actionTimerSec - dt);
+    if (shouldRecover || attack.actionTimerSec <= 0) {
+      transitionBossToRecover(enemy, wallHit);
+    }
+  }
+
+  if (attack.actionState === BOSS_ACTION_STATE.RECOVER) {
+    attack.actionTimerSec = Math.max(0, attack.actionTimerSec - dt);
+    if (attack.actionTimerSec <= 0) {
+      completeBossAction(enemy);
+    }
+  }
+
+  updateEnemyWeaponVisuals(enemy, player, dt);
+}
+
 function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
   const attack = enemy.attack;
   if (!attack || attack.enabled !== true) {
     return;
   }
 
+  if (attack.isBoss === true) {
+    updateBossEnemyAttack(enemy, player, dungeon, dt, events, options);
+    return;
+  }
+
   if (!player || (Number.isFinite(player.hp) && player.hp <= 0)) {
     attack.telegraphAlpha = 0;
+    attack.telegraphs = [];
     if (attack.weaponVisibilityMode !== "always") {
       setEnemyWeaponVisibility(attack, false);
     }
@@ -1351,6 +2272,7 @@ function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
 
   updateEnemyWeaponVisuals(enemy, player, dt);
   updateEnemyAttackTelegraph(enemy);
+  attack.telegraphs = [];
 
   if (attack.phase === ENEMY_ATTACK_PHASE.ATTACK) {
     applyEnemyWeaponHits(enemy, player, events, options);
@@ -1397,7 +2319,10 @@ export function updateEnemyAttacks(enemies, player, dungeon, dt, options = {}) {
       continue;
     }
 
-    updateEnemyAttack(enemy, player, dungeon, dt, events, options);
+    updateEnemyAttack(enemy, player, dungeon, dt, events, {
+      ...options,
+      allEnemies: enemies,
+    });
   }
 
   return events;
@@ -1522,6 +2447,16 @@ export function getEnemyTelegraphAlpha(enemy) {
   }
 
   return clamp(toFiniteNumber(enemy.attack.telegraphAlpha, 0), 0, 1);
+}
+
+export function getEnemyTelegraphPrimitives(enemy) {
+  if (!enemy?.attack || !Array.isArray(enemy.attack.telegraphs)) {
+    return [];
+  }
+
+  return enemy.attack.telegraphs
+    .filter((telegraph) => telegraph && typeof telegraph.kind === "string")
+    .map((telegraph) => ({ ...telegraph }));
 }
 
 export function getEnemyWeaponRuntimes(enemy) {

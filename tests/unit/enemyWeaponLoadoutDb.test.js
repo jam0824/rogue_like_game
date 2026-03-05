@@ -113,9 +113,34 @@ describe("enemyWeaponLoadoutDb", () => {
         {
           weaponDefId: "weapon_sword_01",
           formationId: "formation_id_circle01",
+          actionKey: null,
         },
       ],
     });
+  });
+
+  it("action_key を actionKey に正規化する", async () => {
+    setupFetchMock({
+      fileNames: ["enemy_loadout_ogre_boss_01.json"],
+      recordsByFileName: {
+        "enemy_loadout_ogre_boss_01.json": createLoadoutRecord({
+          id: "enemy_loadout_ogre_boss_01",
+          weapons: [
+            {
+              action_key: "charge",
+              weapon_def_id: "weapon_ogre_charge_01",
+              rarity: "boss",
+              weapon_plus: 0,
+              formation_id: "formation_id_stop01",
+              skills: [{ id: "skill_ogre_charge_01", plus: 0 }],
+            },
+          ],
+        }),
+      },
+    });
+
+    const loadouts = await loadEnemyWeaponLoadouts();
+    expect(loadouts[0].weapons[0].actionKey).toBe("charge");
   });
 
   it("必須キー欠損はエラー", async () => {

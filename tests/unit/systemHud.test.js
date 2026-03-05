@@ -88,6 +88,10 @@ function createWeaponSlotButton() {
 }
 
 function createHudRoot() {
+  const bossHpRow = createElement();
+  const bossHpBar = createElement();
+  const bossHpFill = createElement();
+  const bossHpText = createElement();
   const hpBar = createElement();
   const hpFill = createElement();
   const hpText = createElement();
@@ -146,6 +150,10 @@ function createHudRoot() {
   });
 
   const byId = {
+    "#system-boss-hp-row": bossHpRow,
+    "#system-boss-hp-bar": bossHpBar,
+    "#system-boss-hp-fill": bossHpFill,
+    "#system-boss-hp-text": bossHpText,
     "#system-hp-bar": hpBar,
     "#system-hp-fill": hpFill,
     "#system-hp-text": hpText,
@@ -210,6 +218,10 @@ function createHudRoot() {
 
   return {
     root,
+    bossHpRow,
+    bossHpBar,
+    bossHpFill,
+    bossHpText,
     hpBar,
     hpFill,
     hpText,
@@ -260,6 +272,70 @@ describe("systemHud", () => {
     expect(refs.goldText.textContent).toBe("$1,000");
     expect(refs.buffList.hidden).toBe(false);
     expect(refs.buffList.innerHTML).toContain("BF");
+  });
+
+  it("ボスHPバーを表示し、固定幅220pxで描画する", () => {
+    const refs = createHudRoot();
+    const hud = createSystemHud(refs.root, {});
+
+    hud.setHud({
+      hpCurrent: 80,
+      hpMax: 120,
+      boss: {
+        visible: true,
+        hpCurrent: 90,
+        hpMax: 300,
+      },
+      runLevel: 4,
+      gold: 1000,
+      buffs: [],
+      debuffs: [],
+    });
+
+    expect(refs.bossHpRow.hidden).toBe(false);
+    expect(refs.bossHpBar.style.width).toBe("220px");
+    expect(refs.bossHpFill.style.width).toBe("30%");
+    expect(refs.bossHpText.textContent).toBe("90/300");
+  });
+
+  it("ボスHPバー値をクランプし、非表示時は隠す", () => {
+    const refs = createHudRoot();
+    const hud = createSystemHud(refs.root, {});
+
+    hud.setHud({
+      hpCurrent: 80,
+      hpMax: 120,
+      boss: {
+        visible: true,
+        hpCurrent: 999,
+        hpMax: 100,
+      },
+      runLevel: 4,
+      gold: 1000,
+      buffs: [],
+      debuffs: [],
+    });
+
+    expect(refs.bossHpText.textContent).toBe("100/100");
+    expect(refs.bossHpFill.style.width).toBe("100%");
+
+    hud.setHud({
+      hpCurrent: 80,
+      hpMax: 120,
+      boss: {
+        visible: false,
+        hpCurrent: -10,
+        hpMax: 0,
+      },
+      runLevel: 4,
+      gold: 1000,
+      buffs: [],
+      debuffs: [],
+    });
+
+    expect(refs.bossHpRow.hidden).toBe(true);
+    expect(refs.bossHpText.textContent).toBe("0/1");
+    expect(refs.bossHpFill.style.width).toBe("0%");
   });
 
   it("クイックスロットクリックで onUseQuickSlot が呼ばれる", () => {

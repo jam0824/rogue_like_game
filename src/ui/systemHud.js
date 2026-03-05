@@ -289,6 +289,10 @@ export function createSystemHud(root, handlers = {}) {
   const hpBar = root.querySelector("#system-hp-bar");
   const hpFill = root.querySelector("#system-hp-fill");
   const hpText = root.querySelector("#system-hp-text");
+  const bossHpRow = root.querySelector("#system-boss-hp-row");
+  const bossHpBar = root.querySelector("#system-boss-hp-bar");
+  const bossHpFill = root.querySelector("#system-boss-hp-fill");
+  const bossHpText = root.querySelector("#system-boss-hp-text");
   const levelText = root.querySelector("#system-level");
   const buffList = root.querySelector("#system-buff-list");
   const debuffList = root.querySelector("#system-debuff-list");
@@ -587,10 +591,14 @@ export function createSystemHud(root, handlers = {}) {
   }
 
   return {
-    setHud({ hpCurrent, hpMax, runLevel, gold, buffs = [], debuffs = [] }) {
+    setHud({ hpCurrent, hpMax, boss = null, runLevel, gold, buffs = [], debuffs = [] }) {
       const maxValue = Math.max(1, Math.round(Number(hpMax) || 0));
       const currentValue = clamp(Math.round(Number(hpCurrent) || 0), 0, maxValue);
       const hpRatio = clamp(maxValue > 0 ? currentValue / maxValue : 0, 0, 1);
+      const bossMaxValue = Math.max(1, Math.round(Number(boss?.hpMax) || 0));
+      const bossCurrentValue = clamp(Math.round(Number(boss?.hpCurrent) || 0), 0, bossMaxValue);
+      const bossRatio = clamp(bossMaxValue > 0 ? bossCurrentValue / bossMaxValue : 0, 0, 1);
+      const isBossVisible = boss?.visible === true;
       const levelValue = Math.max(1, Math.round(Number(runLevel) || 1));
 
       if (hpBar) {
@@ -601,6 +609,15 @@ export function createSystemHud(root, handlers = {}) {
         hpFill.style.width = `${Math.round(hpRatio * 100)}%`;
       }
       setText(hpText, `${currentValue}/${maxValue}`);
+      setHidden(bossHpRow, !isBossVisible);
+      if (bossHpBar) {
+        bossHpBar.style.width = "220px";
+        bossHpBar.setAttribute("aria-label", `BOSS HP ${bossCurrentValue}/${bossMaxValue}`);
+      }
+      if (bossHpFill) {
+        bossHpFill.style.width = `${Math.round(bossRatio * 100)}%`;
+      }
+      setText(bossHpText, `${bossCurrentValue}/${bossMaxValue}`);
       setText(levelText, `LV ${levelValue}`);
       setText(goldText, formatGold(gold));
       renderStatusIcons(buffList, buffs, "buff");

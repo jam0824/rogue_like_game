@@ -9,6 +9,8 @@ import {
   ROOM_COUNT_MIN,
 } from "../config/constants.js";
 
+const BOSS_START_MIN_DISTANCE_TILES = 10;
+
 function buildAdjacency(graph) {
   const adjacency = new Map();
   for (const node of graph.nodes) {
@@ -49,6 +51,82 @@ function hasPath(graph, start, goal) {
  */
 export function validateDungeon(dungeon) {
   const errors = [];
+  const isBossFloor = dungeon?.isBossFloor === true;
+
+  if (isBossFloor) {
+    const roomCount = Array.isArray(dungeon?.rooms) ? dungeon.rooms.length : 0;
+    const loopEdges = Array.isArray(dungeon?.graph?.edges)
+      ? dungeon.graph.edges.filter((edge) => edge.kind === "loop")
+      : [];
+    const branchCount = Array.isArray(dungeon?.graph?.branchPaths) ? dungeon.graph.branchPaths.length : 0;
+    const startRoom = dungeon.rooms.find((room) => room.id === dungeon.startRoomId);
+    const bossArena = dungeon?.bossArena;
+    const bossRoomExists =
+      Number.isFinite(bossArena?.roomId) && dungeon.rooms.some((room) => room.id === bossArena.roomId);
+    const hasStartToBossPath =
+      bossRoomExists && hasPath(dungeon.graph, dungeon.startRoomId, Math.floor(bossArena.roomId));
+    const hasBossStartTiles =
+      Number.isFinite(bossArena?.startTile?.tileX) &&
+      Number.isFinite(bossArena?.startTile?.tileY) &&
+      Number.isFinite(bossArena?.bossTile?.tileX) &&
+      Number.isFinite(bossArena?.bossTile?.tileY);
+    const startBossDistance = hasBossStartTiles
+      ? Math.abs(Math.floor(bossArena.startTile.tileX) - Math.floor(bossArena.bossTile.tileX)) +
+        Math.abs(Math.floor(bossArena.startTile.tileY) - Math.floor(bossArena.bossTile.tileY))
+      : null;
+
+    if (roomCount !== 1) {
+      errors.push(`boss roomCount must be 1, got ${roomCount}`);
+    }
+
+    if (!startRoom || startRoom.isSafe !== true) {
+      errors.push("boss start room must exist and be marked safe");
+    }
+
+    if (!bossArena || !bossRoomExists) {
+      errors.push("boss arena metadata is missing");
+    } else {
+      if (!Number.isFinite(bossArena?.startTile?.tileX) || !Number.isFinite(bossArena?.startTile?.tileY)) {
+        errors.push("boss arena startTile is missing");
+      }
+      if (!Number.isFinite(bossArena?.bossTile?.tileX) || !Number.isFinite(bossArena?.bossTile?.tileY)) {
+        errors.push("boss arena bossTile is missing");
+      }
+      if (
+        hasBossStartTiles &&
+        Number.isFinite(startBossDistance) &&
+        startBossDistance < BOSS_START_MIN_DISTANCE_TILES
+      ) {
+        errors.push(
+          `boss start-to-boss distance must be >= ${BOSS_START_MIN_DISTANCE_TILES}, got ${startBossDistance}`
+        );
+      }
+      if (!hasStartToBossPath) {
+        errors.push("no path from start room to boss room");
+      }
+    }
+
+    if (branchCount !== 0) {
+      errors.push(`boss branch count must be 0, got ${branchCount}`);
+    }
+
+    if (loopEdges.length !== 0) {
+      errors.push(`boss loop edge count must be 0, got ${loopEdges.length}`);
+    }
+
+    return {
+      ok: errors.length === 0,
+      errors,
+      metrics: {
+        isBossFloor: true,
+        roomCount,
+        branchCount,
+        loopEdgeCount: loopEdges.length,
+        hasStartToBossPath,
+        startBossDistance,
+      },
+    };
+  }
 
   const roomCount = dungeon.rooms.length;
   if (roomCount < ROOM_COUNT_MIN || roomCount > ROOM_COUNT_MAX) {
@@ -90,6 +168,7 @@ export function validateDungeon(dungeon) {
     ok: errors.length === 0,
     errors,
     metrics: {
+      isBossFloor: false,
       roomCount,
       mainPathCount,
       branchCount,

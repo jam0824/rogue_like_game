@@ -8,6 +8,7 @@ import {
   isEnemyDeathAnimationFinished,
   getEnemyFrame,
   getEnemyHitFlashAlpha,
+  getEnemyTelegraphPrimitives,
   getEnemyTelegraphAlpha,
   getEnemyWeaponRuntimes,
   updateEnemies,
@@ -101,6 +102,129 @@ function createEnemyAttackProfile(overrides = {}) {
     weaponVisibilityMode: "burst",
     attackLinked: true,
     weapons,
+    ...overrides,
+  };
+}
+
+function createBossAttackProfile(overrides = {}) {
+  return {
+    role: "boss",
+    preferredRangePx: 0,
+    engageRangePx: 0,
+    retreatRangePx: 0,
+    attackRangePx: 999,
+    losRequired: false,
+    weaponAimMode: "to_target",
+    weaponVisibilityMode: "burst",
+    attackLinked: true,
+    phases: [
+      {
+        phase: 1,
+        hpRatioMin: 0,
+        hpRatioMax: 1.01,
+        summonCount: { min: 2, max: 2 },
+        chargeMicroCorrectDeg: 0,
+        pressChainCount: 1,
+      },
+    ],
+    actionPriority: [
+      { action: "summon", when: "minion_count_lt && cooldown_ready" },
+      { action: "charge", when: "target_distance_gte && cooldown_ready" },
+      { action: "press", when: "target_distance_lte && cooldown_ready" },
+      { action: "chase", when: "always" },
+    ],
+    actions: {
+      summon: {
+        weaponIndex: 2,
+        cooldownSec: 0.2,
+        minionCountLt: 3,
+        windupSec: 0.02,
+        recoverSec: 0.01,
+      },
+      charge: {
+        weaponIndex: 0,
+        cooldownSec: 0.2,
+        targetDistanceGte: 2,
+        windupSec: 0.05,
+        recoverSec: 0.01,
+        recoverOnWallHitSec: 0.03,
+      },
+      press: {
+        weaponIndex: 1,
+        cooldownSec: 0.2,
+        targetDistanceLte: 2,
+        windupSec: 0.05,
+        recoverSec: 0.01,
+      },
+      chase: {
+        repathIntervalSec: 0.2,
+      },
+    },
+    summonRules: {
+      maxAliveInRoom: 8,
+      maxAlivePerSummoner: 6,
+      vanishOnSummonerDeath: true,
+    },
+    weapons: [
+      {
+        actionKey: "charge",
+        weaponDefId: "weapon_ogre_charge_01",
+        width: 32,
+        height: 32,
+        baseDamage: 10,
+        supported: false,
+        forceHidden: true,
+        skillParams: {
+          attackKind: "charge",
+          charge: {
+            dashDistanceTiles: 3,
+            speedTilePerSec: 12,
+            stopOnPlayerHit: true,
+            wallHitRecoverSec: 0.05,
+            telegraphStyle: "line_red_translucent",
+            telegraphWidthTiles: 1,
+          },
+        },
+      },
+      {
+        actionKey: "press",
+        weaponDefId: "weapon_ogre_hammer_01",
+        width: 32,
+        height: 32,
+        baseDamage: 10,
+        supported: false,
+        forceHidden: true,
+        skillParams: {
+          attackKind: "aoe",
+          aoe: {
+            telegraphStyle: "circle_red_translucent",
+            telegraphRadiusTiles: 1.5,
+          },
+        },
+      },
+      {
+        actionKey: "summon",
+        weaponDefId: "weapon_ogre_summon_01",
+        width: 32,
+        height: 32,
+        baseDamage: 0,
+        supported: false,
+        forceHidden: true,
+        skillParams: {
+          attackKind: "summon",
+          summon: {
+            enemyId: "OgreMinion_01",
+            count: { min: 2, max: 2 },
+            spawnStyle: "boss_ring_outside",
+            spawnTelegraphRadiusTiles: 0.5,
+            spawnTelegraphStyle: "circle_red_translucent",
+            maxAliveInRoom: 8,
+            maxAlivePerSummoner: 6,
+            vanishOnSummonerDeath: true,
+          },
+        },
+      },
+    ],
     ...overrides,
   };
 }
@@ -777,5 +901,160 @@ describe("enemySystem", () => {
     expect(events).toHaveLength(1);
     expect(events[0].damage).toBe(expectedDamage);
     expect(player.hp).toBe(100 - expectedDamage);
+  });
+
+  it("fixedSpawns オプションでボスを指定タイルに固定スポーンできる", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-fixed-spawn", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-fixed-seed",
+      null,
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 5, tileY: 6, enemyId: "boss-001" }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+
+    expect(enemies).toHaveLength(1);
+    expect(enemies[0].id).toBe("boss-001");
+    const centerTileX = Math.floor((enemies[0].x + enemies[0].width / 2) / 32);
+    const centerTileY = Math.floor((enemies[0].y + enemies[0].height / 2) / 32);
+    expect(centerTileX).toBe(5);
+    expect(centerTileY).toBe(6);
+  });
+
+  it("boss 行動優先度で summon を選択し summon_request を発行する", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-summon-01", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-summon-seed",
+      { [enemyDef.id]: createBossAttackProfile() },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [boss] = enemies;
+    const player = createPlayer({ x: boss.x + 64, y: boss.y + 64 });
+    boss.behaviorMode = "chase";
+    boss.isChasing = true;
+
+    let summonEvents = [];
+    for (let i = 0; i < 20; i += 1) {
+      const events = updateEnemyAttacks(enemies, player, dungeon, 0.02);
+      summonEvents = events.filter((event) => event.kind === "summon_request");
+      if (summonEvents.length > 0) {
+        break;
+      }
+    }
+
+    expect(summonEvents.length).toBeGreaterThan(0);
+    expect(summonEvents[0]).toMatchObject({
+      kind: "summon_request",
+      summonerEnemyId: boss.id,
+      enemyDbId: "OgreMinion_01",
+    });
+  });
+
+  it("boss charge は line テレグラフを出し、実行中に前進する", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-charge-01", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-charge-seed",
+      {
+        [enemyDef.id]: createBossAttackProfile({
+          actionPriority: [
+            { action: "charge", when: "target_distance_gte && cooldown_ready" },
+            { action: "chase", when: "always" },
+          ],
+          actions: {
+            charge: {
+              weaponIndex: 0,
+              cooldownSec: 0.2,
+              targetDistanceGte: 1,
+              windupSec: 0.05,
+              recoverSec: 0.01,
+            },
+            chase: {
+              repathIntervalSec: 0.2,
+            },
+          },
+        }),
+      },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [boss] = enemies;
+    const player = createPlayer({ x: boss.x + 180, y: boss.y });
+    boss.behaviorMode = "chase";
+    boss.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const telegraphs = getEnemyTelegraphPrimitives(boss);
+    expect(telegraphs.some((telegraph) => telegraph.kind === "line")).toBe(true);
+
+    const beforeX = boss.x;
+    for (let i = 0; i < 10; i += 1) {
+      updateEnemyAttacks(enemies, player, dungeon, 0.02);
+    }
+    expect(boss.x).toBeGreaterThan(beforeX);
+  });
+
+  it("boss press は windup開始時の位置で circle テレグラフをロックする", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-press-01", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-press-seed",
+      {
+        [enemyDef.id]: createBossAttackProfile({
+          actionPriority: [
+            { action: "press", when: "target_distance_lte && cooldown_ready" },
+            { action: "chase", when: "always" },
+          ],
+          actions: {
+            press: {
+              weaponIndex: 1,
+              cooldownSec: 0.2,
+              targetDistanceLte: 99,
+              windupSec: 0.05,
+              recoverSec: 0.01,
+            },
+            chase: {
+              repathIntervalSec: 0.2,
+            },
+          },
+        }),
+      },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [boss] = enemies;
+    const player = createPlayer({ x: boss.x + 16, y: boss.y });
+    boss.behaviorMode = "chase";
+    boss.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const circleBeforeMove = getEnemyTelegraphPrimitives(boss).find((telegraph) => telegraph.kind === "circle");
+    expect(circleBeforeMove).toBeDefined();
+
+    player.x += 200;
+    player.y += 200;
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const circleAfterMove = getEnemyTelegraphPrimitives(boss).find((telegraph) => telegraph.kind === "circle");
+    expect(circleAfterMove).toBeDefined();
+    expect(circleAfterMove.centerX).toBe(circleBeforeMove.centerX);
+    expect(circleAfterMove.centerY).toBe(circleBeforeMove.centerY);
   });
 });

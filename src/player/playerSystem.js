@@ -181,6 +181,43 @@ function findStartRoom(dungeon) {
   return dungeon.rooms.find((room) => room.id === dungeon.startRoomId) ?? null;
 }
 
+function resolveBossFloorStartTile(dungeon) {
+  if (dungeon?.isBossFloor !== true) {
+    return null;
+  }
+
+  const startTile = dungeon?.bossArena?.startTile;
+  if (!startTile || !Number.isFinite(startTile.tileX) || !Number.isFinite(startTile.tileY)) {
+    return null;
+  }
+
+  const tileX = Math.floor(startTile.tileX);
+  const tileY = Math.floor(startTile.tileY);
+  if (tileX < 0 || tileY < 0 || tileX >= dungeon.gridWidth || tileY >= dungeon.gridHeight) {
+    return null;
+  }
+
+  return {
+    tileX,
+    tileY,
+  };
+}
+
+function resolvePreferredSpawnFeetCenter(dungeon, startRoom) {
+  const bossStartTile = resolveBossFloorStartTile(dungeon);
+  if (bossStartTile) {
+    return {
+      x: bossStartTile.tileX * TILE_SIZE + TILE_SIZE / 2,
+      y: bossStartTile.tileY * TILE_SIZE + TILE_SIZE / 2,
+    };
+  }
+
+  return {
+    x: startRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
+    y: startRoom.centerY * TILE_SIZE + TILE_SIZE / 2,
+  };
+}
+
 function isWalkableStep(fromX, fromY, toX, toY, walkableGrid, dimensions) {
   if (!hasStepMovement(fromX, fromY, toX, toY)) {
     return false;
@@ -302,10 +339,7 @@ export function createPlayerState(dungeon, playerDefinition = null) {
 
   const defaults = resolvePlayerDefaults(playerDefinition);
   const walkableGrid = getWalkableGrid(dungeon);
-  const preferredFeetCenter = {
-    x: startRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
-    y: startRoom.centerY * TILE_SIZE + TILE_SIZE / 2,
-  };
+  const preferredFeetCenter = resolvePreferredSpawnFeetCenter(dungeon, startRoom);
 
   const preferredPlayerPos = clampPlayerToBounds(
     preferredFeetCenter.x - defaults.width / 2,

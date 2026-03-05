@@ -32,7 +32,7 @@ function createGrid(width, height, initial = true) {
   return Array.from({ length: height }, () => Array.from({ length: width }, () => initial));
 }
 
-function createDungeon({ walkableGrid, rooms, startRoomId }) {
+function createDungeon({ walkableGrid, rooms, startRoomId, ...overrides }) {
   const gridHeight = walkableGrid.length;
   const gridWidth = walkableGrid[0].length;
 
@@ -43,6 +43,7 @@ function createDungeon({ walkableGrid, rooms, startRoomId }) {
     walkableGrid,
     rooms,
     startRoomId,
+    ...overrides,
   };
 }
 
@@ -124,6 +125,54 @@ describe("playerSystem", () => {
 
       expect(Math.floor(feet.x / TILE_SIZE)).toBe(2);
       expect(Math.floor(feet.y / TILE_SIZE)).toBe(3);
+    });
+
+    it("boss floor では bossArena.startTile を優先してスポーンする", () => {
+      const walkableGrid = createGrid(12, 12, true);
+      const startRoom = { id: 10, x: 2, y: 2, w: 8, h: 8, centerX: 6, centerY: 6 };
+      const dungeon = createDungeon({
+        walkableGrid,
+        rooms: [startRoom],
+        startRoomId: 10,
+        isBossFloor: true,
+        bossArena: {
+          startTile: { tileX: 4, tileY: 9 },
+          bossTile: { tileX: 6, tileY: 6 },
+        },
+      });
+
+      const player = createPlayerState(dungeon, PLAYER_DEFINITION);
+      const feetCenter = getPlayerFeetCenter(player);
+      const feetTileX = Math.floor(feetCenter.x / TILE_SIZE);
+      const feetTileY = Math.floor(feetCenter.y / TILE_SIZE);
+      const distToBoss =
+        Math.abs(feetTileX - dungeon.bossArena.bossTile.tileX) + Math.abs(feetTileY - dungeon.bossArena.bossTile.tileY);
+
+      expect(feetTileX).toBe(4);
+      expect(feetTileY).toBe(9);
+      expect(distToBoss).toBeGreaterThan(0);
+    });
+
+    it("boss floor の startTile が不正な場合は開始部屋中心にフォールバックする", () => {
+      const walkableGrid = createGrid(8, 8, true);
+      const startRoom = { id: 10, x: 2, y: 3, w: 3, h: 3, centerX: 3, centerY: 4 };
+      const dungeon = createDungeon({
+        walkableGrid,
+        rooms: [startRoom],
+        startRoomId: 10,
+        isBossFloor: true,
+        bossArena: {
+          startTile: { tileX: Number.NaN, tileY: 0 },
+          bossTile: { tileX: 3, tileY: 2 },
+        },
+      });
+
+      const player = createPlayerState(dungeon, PLAYER_DEFINITION);
+      const expectedX = startRoom.centerX * TILE_SIZE + TILE_SIZE / 2 - PLAYER_DEFINITION.width / 2;
+      const expectedY = startRoom.centerY * TILE_SIZE + TILE_SIZE / 2 - PLAYER_DEFINITION.height / 2;
+
+      expect(player.x).toBe(expectedX);
+      expect(player.y).toBe(expectedY);
     });
 
     it("開始部屋が見つからない場合は例外を投げる", () => {
