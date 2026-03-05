@@ -14,7 +14,7 @@
   "height": 64,
   "fps": 12,
   "png_facing_direction": "right",
-  "image_magnification": 2.0,
+  "image_magnification": 3.0,
   "notice_distance": 8,
   "giveup_distance": 999,
 
@@ -22,8 +22,8 @@
   "role": "boss",
   "spawn": { "min": 1, "max": 1 },
 
-  "vit": 18,
-  "for": 12,
+  "vit": 5,
+  "for": 5,
   "agi": 1,
   "pow": 18,
   "tec": 1,
