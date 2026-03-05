@@ -199,6 +199,8 @@ function createBossAttackProfile(overrides = {}) {
           aoe: {
             telegraphStyle: "circle_red_translucent",
             telegraphRadiusTiles: 1.5,
+            targetPosition: "target_locked",
+            positionLockTiming: "on_windup_start",
           },
         },
       },
@@ -960,6 +962,95 @@ describe("enemySystem", () => {
     });
   });
 
+  it("通常敵もwindup開始時にターゲット座標をロックし、windup中は維持する", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "walker-lock-target-01" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "normal-lock-target-seed",
+      {
+        [enemyDef.id]: createEnemyAttackProfile({
+          windupSec: 0.12,
+          recoverSec: 0.1,
+          executeSec: 0.2,
+          cooldownAfterRecoverSec: 0.1,
+          engageRangePx: 999,
+          attackRangePx: 999,
+          losRequired: false,
+        }),
+      },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [enemy] = enemies;
+    const player = createPlayer({ x: enemy.x + 64, y: enemy.y + 32 });
+    enemy.behaviorMode = "chase";
+    enemy.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    const lockedBeforeMoveX = enemy.attack.lockedTargetX;
+    const lockedBeforeMoveY = enemy.attack.lockedTargetY;
+    expect(Number.isFinite(lockedBeforeMoveX)).toBe(true);
+    expect(Number.isFinite(lockedBeforeMoveY)).toBe(true);
+    expect(lockedBeforeMoveX).toBe(player.x + player.width / 2);
+    expect(lockedBeforeMoveY).toBe(player.y + player.height - player.footHitboxHeight / 2);
+
+    player.x += 180;
+    player.y += 140;
+    updateEnemyAttacks(enemies, player, dungeon, 0.01);
+    expect(enemy.attack.lockedTargetX).toBe(lockedBeforeMoveX);
+    expect(enemy.attack.lockedTargetY).toBe(lockedBeforeMoveY);
+  });
+
+  it("boss press が同フレームで recover に遷移してもロック座標は維持される", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-press-lock-hold-01", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-press-lock-hold-seed",
+      {
+        [enemyDef.id]: createBossAttackProfile({
+          actionPriority: [
+            { action: "press", when: "target_distance_lte && cooldown_ready" },
+            { action: "chase", when: "always" },
+          ],
+          actions: {
+            press: {
+              weaponIndex: 1,
+              cooldownSec: 0.2,
+              targetDistanceLte: 99,
+              windupSec: 0.005,
+              recoverSec: 0.2,
+            },
+            chase: {
+              repathIntervalSec: 0.2,
+            },
+          },
+        }),
+      },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [boss] = enemies;
+    const player = createPlayer({ x: boss.x + 16, y: boss.y });
+    boss.behaviorMode = "chase";
+    boss.isChasing = true;
+
+    updateEnemyAttacks(enemies, player, dungeon, 0.02);
+
+    expect(boss.attack.actionState).toBe("recover");
+    expect(Number.isFinite(boss.attack.lockedTargetX)).toBe(true);
+    expect(Number.isFinite(boss.attack.lockedTargetY)).toBe(true);
+    expect(boss.attack.lockedTargetX).toBe(player.x + player.width / 2);
+    expect(boss.attack.lockedTargetY).toBe(player.y + player.height - player.footHitboxHeight / 2);
+  });
+
   it("boss charge は line テレグラフを出し、実行中に前進する", () => {
     const dungeon = createDungeon();
     const enemyDef = createEnemyDefinition({ id: "boss-charge-01", rank: "boss", role: "boss" });
@@ -1048,6 +1139,12 @@ describe("enemySystem", () => {
     updateEnemyAttacks(enemies, player, dungeon, 0.01);
     const circleBeforeMove = getEnemyTelegraphPrimitives(boss).find((telegraph) => telegraph.kind === "circle");
     expect(circleBeforeMove).toBeDefined();
+    expect(Number.isFinite(boss.attack.lockedTargetX)).toBe(true);
+    expect(Number.isFinite(boss.attack.lockedTargetY)).toBe(true);
+    expect(boss.attack.lockedTargetX).toBe(circleBeforeMove.centerX);
+    expect(boss.attack.lockedTargetY).toBe(circleBeforeMove.centerY);
+    const lockedTargetX = boss.attack.lockedTargetX;
+    const lockedTargetY = boss.attack.lockedTargetY;
 
     player.x += 200;
     player.y += 200;
@@ -1056,5 +1153,7 @@ describe("enemySystem", () => {
     expect(circleAfterMove).toBeDefined();
     expect(circleAfterMove.centerX).toBe(circleBeforeMove.centerX);
     expect(circleAfterMove.centerY).toBe(circleBeforeMove.centerY);
+    expect(boss.attack.lockedTargetX).toBe(lockedTargetX);
+    expect(boss.attack.lockedTargetY).toBe(lockedTargetY);
   });
 });

@@ -4010,6 +4010,16 @@ function getPlayerSkillTargetId(player) {
   return "player";
 }
 
+function shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon) {
+  if (enemy?.attack?.isBoss !== true) {
+    return true;
+  }
+
+  const activeActionWeaponId =
+    typeof enemy.attack.activeActionWeaponId === "string" ? enemy.attack.activeActionWeaponId : "";
+  return activeActionWeaponId.length > 0 && weapon?.id === activeActionWeaponId;
+}
+
 function buildEnemyWeaponStartEvents(enemies, beforeSnapshot) {
   const events = [];
 
@@ -4021,6 +4031,9 @@ function buildEnemyWeaponStartEvents(enemies, beforeSnapshot) {
     const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
     for (const weapon of getEnemyWeaponRuntimes(enemy)) {
       if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+      if (!shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon)) {
         continue;
       }
 
@@ -4137,6 +4150,9 @@ function spawnEnemyWeaponStartEffects(enemies, beforeSnapshot) {
     const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
     for (const weapon of getEnemyWeaponRuntimes(enemy)) {
       if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+      if (!shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon)) {
         continue;
       }
 

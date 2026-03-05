@@ -91,6 +91,51 @@ function resolveHitEventTargetId(hitEvent) {
   return "";
 }
 
+function resolveEnemyEntryAttackSpawnPoint({
+  entryAttack,
+  enemy,
+  player,
+  weaponRuntime,
+  eventWorldX,
+  eventWorldY,
+}) {
+  const weaponCenter = getWeaponCenter(weaponRuntime);
+  const fallbackX = toFiniteNumber(eventWorldX, weaponCenter.x);
+  const fallbackY = toFiniteNumber(eventWorldY, weaponCenter.y);
+  const aoe = entryAttack?.attackKind === "aoe" ? entryAttack?.aoe : null;
+  if (!aoe || aoe.targetPosition !== "target_locked") {
+    return { x: fallbackX, y: fallbackY };
+  }
+
+  const playerHitbox = getPlayerCombatHitbox(player);
+  const playerCenter = playerHitbox
+    ? {
+        x: playerHitbox.x + playerHitbox.width / 2,
+        y: playerHitbox.y + playerHitbox.height / 2,
+      }
+    : player
+      ? getPlayerCenter(player)
+      : null;
+
+  if (aoe.positionLockTiming === "on_windup_start") {
+    if (Number.isFinite(enemy?.attack?.lockedTargetX) && Number.isFinite(enemy?.attack?.lockedTargetY)) {
+      return {
+        x: enemy.attack.lockedTargetX,
+        y: enemy.attack.lockedTargetY,
+      };
+    }
+    if (playerCenter) {
+      return playerCenter;
+    }
+    return { x: fallbackX, y: fallbackY };
+  }
+
+  if (playerCenter) {
+    return playerCenter;
+  }
+  return { x: fallbackX, y: fallbackY };
+}
+
 function buildAabbFromCenter(x, y, width, height) {
   const resolvedWidth = Math.max(1, toFiniteNumber(width, TILE_SIZE));
   const resolvedHeight = Math.max(1, toFiniteNumber(height, TILE_SIZE));
@@ -236,6 +281,11 @@ function resolveAttackStep(entry, modifiers) {
                 ? params.aoe.hitBoxPer
                 : 1,
             hitIntervalSec: Math.max(0, toFiniteNumber(params.aoe?.hitIntervalSec, 0)),
+            targetPosition:
+              params.aoe?.targetPosition === "target_locked" || params.aoe?.targetPosition === "attacker"
+                ? params.aoe.targetPosition
+                : "hit",
+            positionLockTiming: params.aoe?.positionLockTiming === "on_windup_start" ? "on_windup_start" : "on_fire",
           }
         : null,
   };
@@ -1800,6 +1850,24 @@ function updatePoisonDotsOnPlayer(player, dt, events, applyPlayerHpDamage = true
   }
 }
 
+function hasEnemySkillProjectiles(runtime) {
+  return Array.isArray(runtime?.projectiles) && runtime.projectiles.length > 0;
+}
+
+function shouldCollectEnemyWeaponSkillContext(enemy, weaponRuntime, runtime) {
+  if (enemy?.attack?.isBoss !== true) {
+    return true;
+  }
+
+  const activeActionWeaponId =
+    typeof enemy.attack.activeActionWeaponId === "string" ? enemy.attack.activeActionWeaponId : "";
+  if (activeActionWeaponId.length > 0 && weaponRuntime?.id === activeActionWeaponId) {
+    return true;
+  }
+
+  return hasEnemySkillProjectiles(runtime);
+}
+
 function collectEnemyWeaponSkillContexts(enemies, player, weaponDefinitionsById, skillDefinitionsById, applyPlayerHpDamage) {
   const contextsByWeaponId = new Map();
 
@@ -1814,6 +1882,11 @@ function collectEnemyWeaponSkillContexts(enemies, player, weaponDefinitionsById,
         continue;
       }
 
+      const runtime = ensureWeaponSkillRuntime(weaponRuntime);
+      if (!shouldCollectEnemyWeaponSkillContext(enemy, weaponRuntime, runtime)) {
+        continue;
+      }
+
       const weaponDefinition = weaponDefinitionsById?.[weaponRuntime.weaponDefId] ?? null;
       const skillPlan = resolveWeaponSkillPlan({
         weaponRuntime,
@@ -1822,7 +1895,6 @@ function collectEnemyWeaponSkillContexts(enemies, player, weaponDefinitionsById,
         skillDefinitionsById,
       });
 
-      const runtime = ensureWeaponSkillRuntime(weaponRuntime);
       pruneChainSpawnCounters(runtime, attackSeq);
 
       contextsByWeaponId.set(weaponRuntime.id, {
@@ -1884,6 +1956,14 @@ export function updateEnemySkillChainCombat({
     const fallbackAttackSeq = Math.max(0, toNonNegativeInt(context.attackSeq, 0));
     const attackSeq = Math.max(0, toNonNegativeInt(startEvent.attackSeq, fallbackAttackSeq));
     ensureChainSpawnCounterInitialized(runtime, attackSeq);
+    const spawnPoint = resolveEnemyEntryAttackSpawnPoint({
+      entryAttack,
+      enemy: context.enemy,
+      player: context.player,
+      weaponRuntime: context.weaponRuntime,
+      eventWorldX: startEvent.worldX,
+      eventWorldY: startEvent.worldY,
+    });
 
     queue.push({
       type: "attack_spawn",
@@ -1894,8 +1974,8 @@ export function updateEnemySkillChainCombat({
       enemy: context.enemy,
       player: context.player,
       applyPlayerHpDamage: context.applyPlayerHpDamage,
-      spawnX: toFiniteNumber(startEvent.worldX, getWeaponCenter(context.weaponRuntime).x),
-      spawnY: toFiniteNumber(startEvent.worldY, getWeaponCenter(context.weaponRuntime).y),
+      spawnX: spawnPoint.x,
+      spawnY: spawnPoint.y,
     });
   }
 
@@ -1927,6 +2007,14 @@ export function updateEnemySkillChainCombat({
 
     const runtime = ensureWeaponSkillRuntime(context.weaponRuntime);
     ensureChainSpawnCounterInitialized(runtime, attackSeq);
+    const spawnPoint = resolveEnemyEntryAttackSpawnPoint({
+      entryAttack,
+      enemy: context.enemy,
+      player: context.player,
+      weaponRuntime: context.weaponRuntime,
+      eventWorldX: hitEvent.worldX,
+      eventWorldY: hitEvent.worldY,
+    });
 
     queue.push({
       type: "attack_spawn",
@@ -1937,8 +2025,8 @@ export function updateEnemySkillChainCombat({
       enemy: context.enemy,
       player: context.player,
       applyPlayerHpDamage: context.applyPlayerHpDamage,
-      spawnX: toFiniteNumber(hitEvent.worldX, getWeaponCenter(context.weaponRuntime).x),
-      spawnY: toFiniteNumber(hitEvent.worldY, getWeaponCenter(context.weaponRuntime).y),
+      spawnX: spawnPoint.x,
+      spawnY: spawnPoint.y,
     });
   }
 

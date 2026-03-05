@@ -776,6 +776,8 @@ function createDisabledEnemyAttackRuntime() {
     attackLinked: true,
     lockedAimDirX: 0,
     lockedAimDirY: 0,
+    lockedTargetX: Number.NaN,
+    lockedTargetY: Number.NaN,
     weapons: [],
   };
 }
@@ -809,6 +811,8 @@ function createDefaultEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemy
     attackLinked: profile?.attackLinked !== false,
     lockedAimDirX: 0,
     lockedAimDirY: 0,
+    lockedTargetX: Number.NaN,
+    lockedTargetY: Number.NaN,
     weapons,
   };
 }
@@ -860,6 +864,8 @@ function createBossEnemyAttackRuntime(profile, enemyId, spawnX, spawnY, enemyWid
     attackLinked: profile?.attackLinked !== false,
     lockedAimDirX: 0,
     lockedAimDirY: 0,
+    lockedTargetX: Number.NaN,
+    lockedTargetY: Number.NaN,
     weapons,
     phases: Array.isArray(profile?.phases) ? profile.phases : [],
     actionPriority: Array.isArray(profile?.actionPriority) ? profile.actionPriority : [],
@@ -1420,6 +1426,25 @@ function setEnemyWeaponVisibility(attack, visible) {
   }
 }
 
+function clearEnemyLockedTargetPosition(attack) {
+  if (!attack) {
+    return;
+  }
+  attack.lockedTargetX = Number.NaN;
+  attack.lockedTargetY = Number.NaN;
+}
+
+function lockEnemyTargetPosition(attack, player) {
+  if (!attack || !player) {
+    clearEnemyLockedTargetPosition(attack);
+    return;
+  }
+
+  const targetCenter = getPlayerFeetCenter(player);
+  attack.lockedTargetX = targetCenter.x;
+  attack.lockedTargetY = targetCenter.y;
+}
+
 function setEnemyAttackPhase(enemy, phase, timerSec) {
   const attack = enemy.attack;
   attack.phase = phase;
@@ -1448,7 +1473,13 @@ function setEnemyAttackPhase(enemy, phase, timerSec) {
   }
 
   attack.telegraphAlpha = 0;
-  if (phase === ENEMY_ATTACK_PHASE.RECOVER || phase === ENEMY_ATTACK_PHASE.COOLDOWN) {
+  if (phase === ENEMY_ATTACK_PHASE.COOLDOWN) {
+    clearEnemyLockedTargetPosition(attack);
+    setEnemyWeaponVisibility(attack, false);
+    return;
+  }
+
+  if (phase === ENEMY_ATTACK_PHASE.RECOVER) {
     setEnemyWeaponVisibility(attack, false);
   }
 }
@@ -1878,6 +1909,7 @@ function enterBossActionWindup(enemy, player, dungeon, allEnemies) {
   const lockedAim = getEnemyAimDirection(enemy, player, false);
   attack.lockedAimDirX = lockedAim.x;
   attack.lockedAimDirY = lockedAim.y;
+  lockEnemyTargetPosition(attack, player);
   attack.actionState = BOSS_ACTION_STATE.WINDUP;
   attack.phase = ENEMY_ATTACK_PHASE.WINDUP;
   attack.actionTimerSec = Math.max(0, toFiniteNumber(actionConfig.windupSec, 0));
@@ -1906,7 +1938,11 @@ function enterBossActionWindup(enemy, player, dungeon, allEnemies) {
       )
     );
   } else if (actionKey === "press" && skillParams?.aoe) {
-    const targetCenter = getPlayerFeetCenter(player);
+    const fallbackCenter = getPlayerFeetCenter(player);
+    const targetCenter = {
+      x: Number.isFinite(attack.lockedTargetX) ? attack.lockedTargetX : fallbackCenter.x,
+      y: Number.isFinite(attack.lockedTargetY) ? attack.lockedTargetY : fallbackCenter.y,
+    };
     attack.pressRuntime = {
       centerX: targetCenter.x,
       centerY: targetCenter.y,
@@ -2042,6 +2078,7 @@ function completeBossAction(enemy) {
   attack.summonRuntime = null;
   attack.telegraphAlpha = 0;
   attack.telegraphs = [];
+  clearEnemyLockedTargetPosition(attack);
   setBossActiveWeaponVisibility(attack, null, false);
 }
 
@@ -2173,6 +2210,7 @@ function updateBossEnemyAttack(enemy, player, dungeon, dt, events, options = {})
   if (!player || (Number.isFinite(player.hp) && player.hp <= 0)) {
     attack.telegraphAlpha = 0;
     attack.telegraphs = [];
+    clearEnemyLockedTargetPosition(attack);
     setBossActiveWeaponVisibility(attack, attack.activeActionWeaponId, false);
     updateEnemyWeaponVisuals(enemy, player, dt);
     return;
@@ -2188,6 +2226,7 @@ function updateBossEnemyAttack(enemy, player, dungeon, dt, events, options = {})
       attack.phase = ENEMY_ATTACK_PHASE.COOLDOWN;
       attack.telegraphAlpha = 0;
       attack.telegraphs = [];
+      clearEnemyLockedTargetPosition(attack);
       setBossActiveWeaponVisibility(attack, null, false);
     }
   }
@@ -2252,6 +2291,7 @@ function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
   if (!player || (Number.isFinite(player.hp) && player.hp <= 0)) {
     attack.telegraphAlpha = 0;
     attack.telegraphs = [];
+    clearEnemyLockedTargetPosition(attack);
     if (attack.weaponVisibilityMode !== "always") {
       setEnemyWeaponVisibility(attack, false);
     }
@@ -2266,6 +2306,7 @@ function updateEnemyAttack(enemy, player, dungeon, dt, events, options = {}) {
       const lockedAim = getEnemyAimDirection(enemy, player, false);
       attack.lockedAimDirX = lockedAim.x;
       attack.lockedAimDirY = lockedAim.y;
+      lockEnemyTargetPosition(attack, player);
       setEnemyAttackPhase(enemy, ENEMY_ATTACK_PHASE.WINDUP, attack.windupSec);
     }
   }
