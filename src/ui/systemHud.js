@@ -294,6 +294,13 @@ export function createSystemHud(root, handlers = {}) {
   const bossHpFill = root.querySelector("#system-boss-hp-fill");
   const bossHpText = root.querySelector("#system-boss-hp-text");
   const levelText = root.querySelector("#system-level");
+  const xpBar = root.querySelector("#system-xp-bar");
+  const xpFill = root.querySelector("#system-xp-fill");
+  const xpText = root.querySelector("#system-xp-text");
+  const levelupOverlay = root.querySelector("#levelup-overlay");
+  const levelupTitle = root.querySelector("#levelup-title");
+  const levelupSubtitle = root.querySelector("#levelup-subtitle");
+  const levelupStatButtons = root.querySelector("#levelup-stat-buttons");
   const buffList = root.querySelector("#system-buff-list");
   const debuffList = root.querySelector("#system-debuff-list");
   const goldText = root.querySelector("#system-gold");
@@ -572,6 +579,22 @@ export function createSystemHud(root, handlers = {}) {
     });
   }
 
+  if (levelupStatButtons) {
+    levelupStatButtons.addEventListener("click", (event) => {
+      const button = event?.target?.closest("[data-levelup-stat]");
+      if (!button) {
+        return;
+      }
+      const statKey = button.dataset?.levelupStat;
+      if (typeof statKey !== "string" || statKey.length === 0) {
+        return;
+      }
+      if (typeof handlers.onLevelUpStatSelected === "function") {
+        handlers.onLevelUpStatSelected(statKey);
+      }
+    });
+  }
+
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
     window.addEventListener("keydown", (event) => {
       if (event?.key !== "Escape") {
@@ -591,7 +614,7 @@ export function createSystemHud(root, handlers = {}) {
   }
 
   return {
-    setHud({ hpCurrent, hpMax, boss = null, runLevel, gold, buffs = [], debuffs = [] }) {
+    setHud({ hpCurrent, hpMax, boss = null, runLevel, xpCurrent = 0, xpToNext = 27, gold, buffs = [], debuffs = [] }) {
       const maxValue = Math.max(1, Math.round(Number(hpMax) || 0));
       const currentValue = clamp(Math.round(Number(hpCurrent) || 0), 0, maxValue);
       const hpRatio = clamp(maxValue > 0 ? currentValue / maxValue : 0, 0, 1);
@@ -600,6 +623,9 @@ export function createSystemHud(root, handlers = {}) {
       const bossRatio = clamp(bossMaxValue > 0 ? bossCurrentValue / bossMaxValue : 0, 0, 1);
       const isBossVisible = boss?.visible === true;
       const levelValue = Math.max(1, Math.round(Number(runLevel) || 1));
+      const xpCur = Math.max(0, Math.floor(Number(xpCurrent) || 0));
+      const xpNext = Math.max(1, Math.floor(Number(xpToNext) || 27));
+      const xpRatio = clamp(xpNext > 0 ? xpCur / xpNext : 0, 0, 1);
 
       if (hpBar) {
         hpBar.style.width = `${maxValue}px`;
@@ -619,9 +645,41 @@ export function createSystemHud(root, handlers = {}) {
       }
       setText(bossHpText, `${bossCurrentValue}/${bossMaxValue}`);
       setText(levelText, `LV ${levelValue}`);
+      if (xpBar) {
+        xpBar.setAttribute("aria-label", `XP ${xpCur}/${xpNext}`);
+      }
+      if (xpFill) {
+        xpFill.style.width = `${Math.round(xpRatio * 100)}%`;
+      }
+      setText(xpText, `${xpCur}/${xpNext}`);
       setText(goldText, formatGold(gold));
       renderStatusIcons(buffList, buffs, "buff");
       renderStatusIcons(debuffList, debuffs, "debuff");
+    },
+
+    showLevelUpModal({ newLevel, remainingCount = 1 }) {
+      if (!levelupOverlay) {
+        return;
+      }
+      if (levelupTitle) {
+        setText(levelupTitle, `レベルアップ！ LV ${Math.max(1, Math.floor(Number(newLevel) || 1))}`);
+      }
+      if (levelupSubtitle) {
+        const remaining = Math.max(1, Math.floor(Number(remainingCount) || 1));
+        setText(
+          levelupSubtitle,
+          remaining > 1
+            ? `ステータスを1つ選んでください（残り ${remaining} 回）`
+            : `ステータスを1つ選んでください`
+        );
+      }
+      levelupOverlay.hidden = false;
+    },
+
+    hideLevelUpModal() {
+      if (levelupOverlay) {
+        levelupOverlay.hidden = true;
+      }
     },
 
     setInventory({

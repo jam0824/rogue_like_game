@@ -118,6 +118,12 @@
             </div>
           </div>
           <div id="system-level" class="system-outline-text">LV 1</div>
+          <div class="system-xp-row">
+            <div id="system-xp-bar" role="img" aria-label="XP 0/27">
+              <div id="system-xp-fill"></div>
+            </div>
+            <div id="system-xp-text" class="system-outline-text">0/27</div>
+          </div>
           <div id="system-buff-list" class="system-status-row" aria-label="Buffs" hidden></div>
           <div id="system-debuff-list" class="system-status-row" aria-label="Debuffs" hidden></div>
         </div>
@@ -339,6 +345,39 @@
               </section>
             </div>
           </section>
+        </div>
+
+        <div id="levelup-overlay" hidden>
+          <div id="levelup-modal" role="dialog" aria-modal="true" aria-labelledby="levelup-title">
+            <p id="levelup-title" class="levelup-title">レベルアップ！</p>
+            <p id="levelup-subtitle" class="levelup-subtitle">ステータスを1つ選んでください</p>
+            <div id="levelup-stat-buttons" class="levelup-stat-buttons">
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="vit">
+                <span class="levelup-stat-name">VIT</span>
+                <span class="levelup-stat-desc">体力</span>
+              </button>
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="for">
+                <span class="levelup-stat-name">FOR</span>
+                <span class="levelup-stat-desc">堅牢</span>
+              </button>
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="agi">
+                <span class="levelup-stat-name">AGI</span>
+                <span class="levelup-stat-desc">機動</span>
+              </button>
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="pow">
+                <span class="levelup-stat-name">POW</span>
+                <span class="levelup-stat-desc">火力</span>
+              </button>
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="tec">
+                <span class="levelup-stat-name">TEC</span>
+                <span class="levelup-stat-desc">技量</span>
+              </button>
+              <button type="button" class="levelup-stat-btn" data-levelup-stat="arc">
+                <span class="levelup-stat-name">ARC</span>
+                <span class="levelup-stat-desc">霊性</span>
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 

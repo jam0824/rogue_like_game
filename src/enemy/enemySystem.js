@@ -984,6 +984,7 @@ function createEnemyState(
         ? spawnMeta.spawnedByEnemyId
         : null,
     isSummoned: spawnMeta?.isSummoned === true || derived.tags.includes("summoned"),
+    roomId: typeof spawnMeta?.roomId === "string" && spawnMeta.roomId.length > 0 ? spawnMeta.roomId : null,
     attack: createEnemyAttackRuntime(attackProfile, enemyId, x, y, definition.width, definition.height),
   };
 }
@@ -1233,7 +1234,8 @@ export function createEnemies(
           enemyRng,
           `enemy-${room.id}-${roomIndex}-${spawnIndex}`,
           attackProfile,
-          dungeonFloor
+          dungeonFloor,
+          { roomId: room.id }
         )
       );
       spawnedInRoom += 1;
