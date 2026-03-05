@@ -205,6 +205,7 @@ describe("weaponDb", () => {
           icon_file_name: null,
           width: 0,
           height: 0,
+          hit_num: 0,
           formation_id: "formation_id_stop01",
           skills: [{ id: "skill_id_bite_01", plus: 0 }],
         }),
@@ -219,6 +220,7 @@ describe("weaponDb", () => {
       iconFileName: "",
       width: 0,
       height: 0,
+      hitNum: 0,
       formationId: "formation_id_stop01",
     });
   });

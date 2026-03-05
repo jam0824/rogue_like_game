@@ -1,0 +1,36 @@
+{
+    "id": "skill_ogre_charge_01",
+    "name_key": "name_skill_ogre_charge_01",
+    "description_key": "desc_skill_ogre_charge_01",
+    "skill_type": "attack",
+    "rarity": "boss",
+    "max_plus": 0,
+    "unique_per_weapon": true,
+    "tags": ["skill_type:attack", "attack:charge", "element:physical"],
+    "ui": { "icon_file_name": null, "sort_order": 200 },
+    "params": {
+      "attack_kind": "charge",
+      "base_damage": 20,
+      "damage_element": "physical",
+      "chain_trigger": "on_hit",
+      "hit": {
+        "pierce_count": 0
+      },
+      "charge": {
+        "dash_distance_tiles": 7.0,
+        "speed_tile_per_sec": 12.0,
+        "direction_lock_timing": "on_windup_start",
+        "micro_correct_deg": 0,
+        "stop_on_player_hit": true,
+        "wall_hit_recover_sec": 1.2,
+        "hit_box_tiles": 1.0,
+        "telegraph_style": "line_red_translucent",
+        "telegraph_width_tiles": 0.8,
+        "knockback_tiles": 1.5
+      }
+    },
+    "se_key_fire": "",
+    "se_key_hit": "",
+    "effect_id_fire": "",
+    "effect_id_hit": "effect_ogre_charge_hit_01"
+}

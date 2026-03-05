@@ -124,6 +124,7 @@ describe("dungeonTileDb", () => {
       descriptionKey: "description_dungeon_01",
       tipSetRootPath: "graphic/dungeon_tip/dungeon_id_01",
       bgmKey: "bgm_key_dungeon_001",
+      bossFloor: false,
       enemyDbIds: ["BrownMushroom_01", "Bee_01"],
       wallHeightTiles: 5,
       walkableTileDecoration: [],
@@ -145,6 +146,21 @@ describe("dungeonTileDb", () => {
 
     const definitions = await loadDungeonDefinitions();
     expect(definitions[0].walkableTileDecoration).toEqual(["decoration_01.png", "decoration_02.png"]);
+  });
+
+  it("boss_floor:true を bossFloor:true として正規化する", async () => {
+    setupFetchMock({
+      fileNames: ["dungeon_id_10.json"],
+      recordsByFileName: {
+        "dungeon_id_10.json": createDungeonRecord({
+          id: "dungeon_id_10",
+          boss_floor: true,
+        }),
+      },
+    });
+
+    const definitions = await loadDungeonDefinitions();
+    expect(definitions[0].bossFloor).toBe(true);
   });
 
   it("tip_set の必須キー欠損はエラー", async () => {

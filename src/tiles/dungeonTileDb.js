@@ -8,6 +8,7 @@ const DUNGEON_DB_FALLBACK_FILE_NAMES = [
   "dungeon_id_07.json",
   "dungeon_id_08.json",
   "dungeon_id_09.json",
+  "dungeon_id_10.json",
 ];
 
 const REQUIRED_KEYS = [
@@ -138,6 +139,7 @@ function normalizeDungeonRecord(rawDungeon, fileName) {
     descriptionKey: rawDungeon.description_key,
     tipSetRootPath: rawDungeon.tip_set_root_path,
     bgmKey: rawDungeon.bgm.trim(),
+    bossFloor: rawDungeon.boss_floor === true,
     enemyDbIds: normalizeEnemyDbIds(rawDungeon.enemy_db_ids),
     wallHeightTiles: Math.max(1, Math.floor(Number(rawDungeon.wall_height))),
     tipSet: normalizeTipSet(rawDungeon.tip_set),

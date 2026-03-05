@@ -1,0 +1,36 @@
+{
+    "id": "enemy_loadout_ogre_boss_01",
+    "attack_linked": true,
+    "weapons": [
+      {
+        "action_key": "charge",
+        "weapon_def_id": "weapon_ogre_charge_01",
+        "rarity": "boss",
+        "weapon_plus": 0,
+        "formation_id": "formation_id_stop01",
+        "skills": [
+          {"id": "skill_ogre_charge_01", "plus": 0}
+        ]
+      },
+      {
+        "action_key": "press",
+        "weapon_def_id": "weapon_ogre_stone_hammer_01",
+        "rarity": "boss",
+        "weapon_plus": 0,
+        "formation_id": "formation_id_stop01",
+        "skills": [
+          {"id": "skill_ogre_hammer_press_01", "plus": 0}
+        ]
+      },
+      {
+        "action_key": "summon",
+        "weapon_def_id": "weapon_ogre_summon_01",
+        "rarity": "boss",
+        "weapon_plus": 0,
+        "formation_id": "formation_id_stop01",
+        "skills": [
+          {"id": "skill_ogre_summon_01", "plus": 0}
+        ]
+      }
+    ]
+}

@@ -1415,4 +1415,372 @@ describe("skillChainSystem", () => {
     ).toBe(false);
     expect(player.hp).toBe(hpBefore);
   });
+
+  it("enemy target_locked on_windup_start AoE spawns effect at locked target center", () => {
+    const dungeon = createDungeon();
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 448,
+      y: 448,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const skillDefinitionsById = {
+      skill_id_target_locked_windup: {
+        id: "skill_id_target_locked_windup",
+        skillType: "attack",
+        params: {
+          attackKind: "aoe",
+          baseDamage: 12,
+          damageElement: "physical",
+          startSpawnTiming: "start",
+          chainTrigger: "on_hit",
+          hit: { hitNum: 1, pierceCount: 0 },
+          aoe: {
+            spriteEffectId: "effect_id_explosion_01",
+            hitIntervalSec: 0,
+            targetPosition: "target_locked",
+            positionLockTiming: "on_windup_start",
+          },
+        },
+      },
+    };
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_target_locked_windup", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const enemy = createEnemyCaster("enemy-target-locked-start", 96, 96, weaponDefinition.skills);
+    enemy.attack.lockedTargetX = 120;
+    enemy.attack.lockedTargetY = 120;
+    const weapon = enemy.attack.weapons[0];
+
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [{ weaponId: weapon.id, attackSeq: 1, worldX: 888, worldY: 777 }],
+      weaponHitEvents: [],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const spawnedEffect = result.effects.find((effect) => effect?.effectId === "effect_id_explosion_01");
+    expect(spawnedEffect).toBeTruthy();
+    expect(spawnedEffect.x).toBe(120);
+    expect(spawnedEffect.y).toBe(120);
+    expect(result.events.some((event) => event?.kind === "damage" && event?.targetType === "player")).toBe(false);
+    expect(player.hp).toBe(200);
+  });
+
+  it("enemy target_locked on_fire AoE uses player center even on hit-triggered entry", () => {
+    const dungeon = createDungeon();
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: 192,
+      y: 96,
+      hp: 180,
+      maxHp: 180,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const skillDefinitionsById = {
+      skill_id_target_locked_fire: {
+        id: "skill_id_target_locked_fire",
+        skillType: "attack",
+        params: {
+          attackKind: "aoe",
+          baseDamage: 12,
+          damageElement: "physical",
+          startSpawnTiming: "hit",
+          chainTrigger: "on_hit",
+          hit: { hitNum: 1, pierceCount: 0 },
+          aoe: {
+            spriteEffectId: "effect_id_explosion_01",
+            hitIntervalSec: 0,
+            targetPosition: "target_locked",
+            positionLockTiming: "on_fire",
+          },
+        },
+      },
+    };
+    const weaponDefinition = createWeaponDefinition([{ id: "skill_id_target_locked_fire", plus: 0 }]);
+    const weaponDefinitionsById = {
+      weapon_sword_01: weaponDefinition,
+    };
+    const enemy = createEnemyCaster("enemy-target-locked-hit", 96, 96, weaponDefinition.skills);
+    enemy.attack.lockedTargetX = 120;
+    enemy.attack.lockedTargetY = 120;
+    const weapon = enemy.attack.weapons[0];
+
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon,
+      player,
+      enemies: [enemy],
+      effects: [],
+      weaponStartEvents: [],
+      weaponHitEvents: [{ weaponId: weapon.id, attackSeq: 1, targetId: player.id, worldX: 888, worldY: 777 }],
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const spawnedEffect = result.effects.find((effect) => effect?.effectId === "effect_id_explosion_01");
+    const playerCenterX = player.x + player.width / 2;
+    const playerCenterY = player.y + player.height / 2;
+    expect(spawnedEffect).toBeTruthy();
+    expect(spawnedEffect.x).toBe(playerCenterX);
+    expect(spawnedEffect.y).toBe(playerCenterY);
+  });
+
+  function createBossActionIsolationScenario(
+    activeActionWeaponId,
+    { includeChargeProjectileSkill = false, playerX = 192, playerY = 96, startEventWorldX, startEventWorldY } = {}
+  ) {
+    const dungeon = createDungeon();
+    const player = {
+      ...createPlayer(),
+      id: "player-main",
+      x: playerX,
+      y: playerY,
+      hp: 200,
+      maxHp: 200,
+      hitFlashTimerSec: 0,
+      hitFlashDurationSec: 0.12,
+      ailmentTakenMult: 1,
+    };
+    const playerCenterX = player.x + player.width / 2;
+    const playerCenterY = player.y + player.height / 2;
+
+    const skillDefinitionsById = {
+      skill_id_boss_press_aoe: {
+        id: "skill_id_boss_press_aoe",
+        skillType: "attack",
+        params: {
+          attackKind: "aoe",
+          baseDamage: 20,
+          damageElement: "physical",
+          startSpawnTiming: "start",
+          chainTrigger: "on_hit",
+          hit: { hitNum: 1, pierceCount: 0 },
+          aoe: {
+            spriteEffectId: "effect_id_explosion_01",
+            hitIntervalSec: 0,
+          },
+        },
+      },
+    };
+    if (includeChargeProjectileSkill) {
+      skillDefinitionsById.skill_id_boss_charge_projectile = {
+        id: "skill_id_boss_charge_projectile",
+        skillType: "attack",
+        params: {
+          attackKind: "projectile",
+          baseDamage: 8,
+          damageElement: "physical",
+          startSpawnTiming: "start",
+          chainTrigger: "on_hit",
+          hit: { hitNum: 1, pierceCount: 0 },
+          projectile: {
+            speedTilePerSec: 4,
+            lifeSec: 2,
+            moveDirection: "to_target",
+            spriteEffectId: "effect_id_proj_basic_01",
+            disappearHitWall: false,
+          },
+        },
+      };
+    }
+
+    const chargeSkills = includeChargeProjectileSkill ? [{ id: "skill_id_boss_charge_projectile", plus: 0 }] : [];
+    const pressSkills = [{ id: "skill_id_boss_press_aoe", plus: 0 }];
+    const summonSkills = [];
+    const weaponDefinitionsById = {
+      weapon_boss_charge: { ...createWeaponDefinition(chargeSkills), id: "weapon_boss_charge" },
+      weapon_boss_press: { ...createWeaponDefinition(pressSkills), id: "weapon_boss_press" },
+      weapon_boss_summon: { ...createWeaponDefinition(summonSkills), id: "weapon_boss_summon" },
+    };
+
+    const enemy = createEnemyCaster("boss-action-isolation", 96, 96, []);
+    enemy.attack.isBoss = true;
+    enemy.attack.attackCycle = 1;
+    enemy.attack.activeActionWeaponId = activeActionWeaponId;
+    enemy.attack.weapons = [
+      {
+        id: "boss-weapon-charge",
+        weaponDefId: "weapon_boss_charge",
+        x: 112,
+        y: 112,
+        width: 32,
+        height: 32,
+        skillInstances: chargeSkills.map((skill) => ({ ...skill })),
+      },
+      {
+        id: "boss-weapon-press",
+        weaponDefId: "weapon_boss_press",
+        x: 112,
+        y: 112,
+        width: 32,
+        height: 32,
+        skillInstances: pressSkills.map((skill) => ({ ...skill })),
+      },
+      {
+        id: "boss-weapon-summon",
+        weaponDefId: "weapon_boss_summon",
+        x: 112,
+        y: 112,
+        width: 32,
+        height: 32,
+        skillInstances: summonSkills.map((skill) => ({ ...skill })),
+      },
+    ];
+
+    const worldX = Number.isFinite(startEventWorldX) ? startEventWorldX : playerCenterX;
+    const worldY = Number.isFinite(startEventWorldY) ? startEventWorldY : playerCenterY;
+    const startEvents = enemy.attack.weapons.map((weapon) => ({
+      weaponId: weapon.id,
+      attackSeq: 1,
+      worldX,
+      worldY,
+    }));
+
+    return {
+      dungeon,
+      player,
+      enemy,
+      weaponDefinitionsById,
+      skillDefinitionsById,
+      startEvents,
+    };
+  }
+
+  it("boss activeActionWeaponId=summon では全武器start eventが来ても press AoE が発火しない", () => {
+    const scenario = createBossActionIsolationScenario("boss-weapon-summon");
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon: scenario.dungeon,
+      player: scenario.player,
+      enemies: [scenario.enemy],
+      effects: [],
+      weaponStartEvents: scenario.startEvents,
+      weaponHitEvents: [],
+      weaponDefinitionsById: scenario.weaponDefinitionsById,
+      skillDefinitionsById: scenario.skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const pressDamageEvents = result.events.filter(
+      (event) => event?.kind === "damage" && event?.targetType === "player" && event?.skillId === "skill_id_boss_press_aoe"
+    );
+    expect(pressDamageEvents).toHaveLength(0);
+    expect(result.effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(false);
+    expect(scenario.player.hp).toBe(200);
+  });
+
+  it("boss activeActionWeaponId=charge では全武器start eventが来ても press AoE が発火しない", () => {
+    const scenario = createBossActionIsolationScenario("boss-weapon-charge");
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon: scenario.dungeon,
+      player: scenario.player,
+      enemies: [scenario.enemy],
+      effects: [],
+      weaponStartEvents: scenario.startEvents,
+      weaponHitEvents: [],
+      weaponDefinitionsById: scenario.weaponDefinitionsById,
+      skillDefinitionsById: scenario.skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const pressDamageEvents = result.events.filter(
+      (event) => event?.kind === "damage" && event?.targetType === "player" && event?.skillId === "skill_id_boss_press_aoe"
+    );
+    expect(pressDamageEvents).toHaveLength(0);
+    expect(result.effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(false);
+    expect(scenario.player.hp).toBe(200);
+  });
+
+  it("boss activeActionWeaponId=press のときは従来どおり press AoE が発火する", () => {
+    const scenario = createBossActionIsolationScenario("boss-weapon-press");
+    const result = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon: scenario.dungeon,
+      player: scenario.player,
+      enemies: [scenario.enemy],
+      effects: [],
+      weaponStartEvents: scenario.startEvents,
+      weaponHitEvents: [],
+      weaponDefinitionsById: scenario.weaponDefinitionsById,
+      skillDefinitionsById: scenario.skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const pressDamageEvents = result.events.filter(
+      (event) => event?.kind === "damage" && event?.targetType === "player" && event?.skillId === "skill_id_boss_press_aoe"
+    );
+    expect(pressDamageEvents.length).toBeGreaterThan(0);
+    expect(result.effects.some((effect) => effect?.effectId === "effect_id_explosion_01")).toBe(true);
+    expect(scenario.player.hp).toBeLessThan(200);
+  });
+
+  it("boss 非アクティブ武器でも進行中projectileは継続更新される", () => {
+    const scenario = createBossActionIsolationScenario("boss-weapon-charge", {
+      includeChargeProjectileSkill: true,
+      playerX: 480,
+      playerY: 480,
+      startEventWorldX: 112,
+      startEventWorldY: 112,
+    });
+    const first = updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon: scenario.dungeon,
+      player: scenario.player,
+      enemies: [scenario.enemy],
+      effects: [],
+      weaponStartEvents: [scenario.startEvents[0]],
+      weaponHitEvents: [],
+      weaponDefinitionsById: scenario.weaponDefinitionsById,
+      skillDefinitionsById: scenario.skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const chargeWeapon = scenario.enemy.attack.weapons[0];
+    const firstProjectile = chargeWeapon?.skillChainRuntime?.projectiles?.[0];
+    expect(firstProjectile).toBeTruthy();
+    const xBefore = firstProjectile.x;
+
+    scenario.enemy.attack.activeActionWeaponId = "boss-weapon-summon";
+    updateEnemySkillChainCombat({
+      dt: 1 / 60,
+      dungeon: scenario.dungeon,
+      player: scenario.player,
+      enemies: [scenario.enemy],
+      effects: first.effects,
+      weaponStartEvents: [],
+      weaponHitEvents: [],
+      weaponDefinitionsById: scenario.weaponDefinitionsById,
+      skillDefinitionsById: scenario.skillDefinitionsById,
+      buildEffectRuntime: createBuildEffectRuntime(),
+      applyPlayerHpDamage: true,
+    });
+
+    const continuedProjectile = chargeWeapon?.skillChainRuntime?.projectiles?.[0];
+    expect(continuedProjectile).toBeTruthy();
+    expect(continuedProjectile.x).toBeGreaterThan(xBefore);
+  });
 });

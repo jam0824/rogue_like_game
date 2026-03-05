@@ -4,6 +4,10 @@ const EFFECT_DB_FALLBACK_FILE_NAMES = [
   "effect_id_explosion_01.json",
   "effect_id_explosion_02.json",
   "effect_id_bite_01.json",
+  "effect_ogre_charge_hit_01.json",
+  "effect_ogre_hammer_press_01.json",
+  "effect_ogre_hammer_press_ring_01.json",
+  "effect_ogre_summon_cast_01.json",
 ];
 
 const REQUIRED_KEYS = [

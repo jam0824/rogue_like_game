@@ -1,0 +1,31 @@
+{
+    "id": "skill_ogre_summon_01",
+    "name_key": "name_skill_ogre_summon_01",
+    "description_key": "desc_skill_ogre_summon_01",
+    "skill_type": "attack",
+    "rarity": "boss",
+    "max_plus": 0,
+    "unique_per_weapon": true,
+    "tags": ["skill_type:attack", "attack:summon"],
+    "ui": { "icon_file_name": null, "sort_order": 202 },
+    "params": {
+      "attack_kind": "summon",
+      "base_damage": 0,
+      "summon": {
+        "enemy_id": "OgreMinion_01",
+        "count": { "min": 2, "max": 2 },
+        "spawn_style": "boss_ring_outside",
+        "spawn_telegraph_sec": 0.5,
+        "spawn_telegraph_style": "circle_red_translucent",
+        "spawn_telegraph_radius_tiles": 0.5,
+        "max_alive_in_room": 8,
+        "max_alive_per_summoner": 6,
+        "vanish_on_summoner_death": true,
+        "cast_effect_id": "effect_ogre_summon_cast_01"
+      }
+    },
+    "se_key_fire": "",
+    "se_key_hit": "",
+    "effect_id_fire": "",
+    "effect_id_hit": ""
+}

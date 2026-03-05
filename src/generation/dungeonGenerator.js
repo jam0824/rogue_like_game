@@ -21,6 +21,12 @@ import {
 import { createBooleanGrid, fillRect, setCell } from "../core/grid.js";
 import { createRng, deriveSeed, normalizeSeed } from "../core/rng.js";
 
+const BOSS_ARENA_WIDTH_MIN = 26;
+const BOSS_ARENA_WIDTH_MAX = 32;
+const BOSS_ARENA_HEIGHT_MIN = 24;
+const BOSS_ARENA_HEIGHT_MAX = 28;
+const BOSS_START_MIN_DISTANCE_TILES = 10;
+
 /**
  * @typedef {Object} DungeonRoom
  * @property {number} id
@@ -63,6 +69,8 @@ import { createRng, deriveSeed, normalizeSeed } from "../core/rng.js";
  * @property {number} startRoomId
  * @property {number} stairsRoomId
  * @property {number} wallHeightTiles
+ * @property {boolean} isBossFloor
+ * @property {{roomId:number,startTile:{tileX:number,tileY:number},bossTile:{tileX:number,tileY:number},pillars:{tileX:number,tileY:number}[]}|null} bossArena
  * @property {DungeonStats} stats
  */
 
@@ -356,13 +364,18 @@ function carveCorridor(grid, fromRoom, toRoom, horizontalFirst, metrics) {
 }
 
 /**
- * @param {{ seed?: string|number, maxAttempts?: number, wallHeightTiles?: number }} [options]
+ * @param {{ seed?: string|number, maxAttempts?: number, wallHeightTiles?: number, bossFloor?: boolean }} [options]
  * @returns {DungeonResult}
  */
 export function generateDungeon(options = {}) {
   const seed = normalizeSeed(options.seed ?? INITIAL_SEED);
   const maxAttempts = options.maxAttempts ?? MAX_GENERATION_ATTEMPTS;
   const metrics = buildGenerationMetrics(options.wallHeightTiles);
+  const isBossFloor = options.bossFloor === true;
+
+  if (isBossFloor) {
+    return generateBossArenaDungeon(seed, metrics.wallHeightTiles);
+  }
 
   for (let generationAttempt = 1; generationAttempt <= maxAttempts; generationAttempt += 1) {
     const rng = createRng(deriveSeed(seed, generationAttempt));
@@ -410,6 +423,8 @@ export function generateDungeon(options = {}) {
       startRoomId,
       stairsRoomId,
       wallHeightTiles: metrics.wallHeightTiles,
+      isBossFloor: false,
+      bossArena: null,
       stats: {
         roomCount: rooms.length,
         mainPathCount: graph.mainPathRoomIds.length,
@@ -421,4 +436,159 @@ export function generateDungeon(options = {}) {
   }
 
   throw new Error(`Failed to generate dungeon within ${maxAttempts} attempts.`);
+}
+
+function isValidPillarTile(tileX, tileY, arena) {
+  return (
+    tileX > arena.x + 1 &&
+    tileX < arena.x + arena.w - 2 &&
+    tileY > arena.y + 1 &&
+    tileY < arena.y + arena.h - 2
+  );
+}
+
+function getTileManhattanDistance(fromTile, toTile) {
+  return Math.abs(Math.floor(fromTile.tileX) - Math.floor(toTile.tileX)) +
+    Math.abs(Math.floor(fromTile.tileY) - Math.floor(toTile.tileY));
+}
+
+function placeBossArenaPillars(arena, rng, startTile, bossTile) {
+  const centerX = Math.floor(arena.x + arena.w / 2);
+  const centerY = Math.floor(arena.y + arena.h / 2);
+  const candidates = [
+    { tileX: centerX - 6, tileY: centerY - 4 },
+    { tileX: centerX + 6, tileY: centerY - 4 },
+    { tileX: centerX - 6, tileY: centerY + 4 },
+    { tileX: centerX + 6, tileY: centerY + 4 },
+    { tileX: centerX - 7, tileY: centerY },
+    { tileX: centerX + 7, tileY: centerY },
+    { tileX: centerX - 4, tileY: centerY - 2 },
+    { tileX: centerX + 4, tileY: centerY - 2 },
+    { tileX: centerX - 4, tileY: centerY + 2 },
+    { tileX: centerX + 4, tileY: centerY + 2 },
+  ].filter((candidate) => {
+    if (!isValidPillarTile(candidate.tileX, candidate.tileY, arena)) {
+      return false;
+    }
+
+    const distToBoss = Math.abs(candidate.tileX - bossTile.tileX) + Math.abs(candidate.tileY - bossTile.tileY);
+    if (distToBoss < 4) {
+      return false;
+    }
+
+    if (candidate.tileX === startTile.tileX && candidate.tileY === startTile.tileY) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const targetCount = rng.int(2, 4);
+  const selected = [];
+  for (const candidate of rng.shuffle(candidates)) {
+    const tooClose = selected.some((picked) => {
+      const distance = Math.abs(picked.tileX - candidate.tileX) + Math.abs(picked.tileY - candidate.tileY);
+      return distance < 4;
+    });
+    if (tooClose) {
+      continue;
+    }
+    selected.push(candidate);
+    if (selected.length >= targetCount) {
+      break;
+    }
+  }
+
+  if (selected.length >= 2) {
+    return selected;
+  }
+
+  const fallback = [
+    { tileX: centerX - 5, tileY: centerY - 2 },
+    { tileX: centerX + 5, tileY: centerY + 2 },
+  ].filter((candidate) => isValidPillarTile(candidate.tileX, candidate.tileY, arena));
+  return fallback.length >= 2 ? fallback : selected;
+}
+
+function generateBossArenaDungeon(seed, wallHeightTiles) {
+  const rng = createRng(deriveSeed(seed, "boss-floor"));
+  const arenaWidth = rng.int(BOSS_ARENA_WIDTH_MIN, BOSS_ARENA_WIDTH_MAX);
+  const arenaHeight = rng.int(BOSS_ARENA_HEIGHT_MIN, BOSS_ARENA_HEIGHT_MAX);
+  const arenaX = clamp(Math.floor((GRID_WIDTH - arenaWidth) / 2 + rng.int(-2, 2)), 3, GRID_WIDTH - arenaWidth - 3);
+  const arenaY = clamp(Math.floor((GRID_HEIGHT - arenaHeight) / 2 + rng.int(-2, 2)), 3, GRID_HEIGHT - arenaHeight - 3);
+  const centerX = Math.floor(arenaX + arenaWidth / 2);
+  const centerY = Math.floor(arenaY + arenaHeight / 2);
+
+  const bossTile = {
+    tileX: centerX,
+    tileY: centerY,
+  };
+  const startTile = {
+    tileX: centerX,
+    tileY: arenaY + arenaHeight - 2,
+  };
+  const startBossDistance = getTileManhattanDistance(startTile, bossTile);
+  if (startBossDistance < BOSS_START_MIN_DISTANCE_TILES) {
+    throw new Error(
+      `Boss arena start distance must be >= ${BOSS_START_MIN_DISTANCE_TILES}, got ${startBossDistance}`
+    );
+  }
+  const arena = {
+    x: arenaX,
+    y: arenaY,
+    w: arenaWidth,
+    h: arenaHeight,
+  };
+  const pillars = placeBossArenaPillars(arena, rng, startTile, bossTile);
+
+  const floorGrid = createBooleanGrid(GRID_WIDTH, GRID_HEIGHT, false);
+  fillRect(floorGrid, arenaX, arenaY, arenaWidth, arenaHeight, true);
+  for (const pillar of pillars) {
+    setCell(floorGrid, pillar.tileX, pillar.tileY, false);
+  }
+
+  const room = {
+    id: 0,
+    type: ROOM_TYPE.START,
+    x: arenaX,
+    y: arenaY,
+    w: arenaWidth,
+    h: arenaHeight,
+    centerX,
+    centerY,
+    isSafe: true,
+  };
+  const graph = {
+    nodes: [room.id],
+    edges: [],
+    mainPathRoomIds: [room.id],
+    branchPaths: [],
+    loopEdge: null,
+  };
+
+  return {
+    seed,
+    gridWidth: GRID_WIDTH,
+    gridHeight: GRID_HEIGHT,
+    floorGrid,
+    rooms: [room],
+    graph,
+    startRoomId: room.id,
+    stairsRoomId: room.id,
+    wallHeightTiles,
+    isBossFloor: true,
+    bossArena: {
+      roomId: room.id,
+      startTile,
+      bossTile,
+      pillars,
+    },
+    stats: {
+      roomCount: 1,
+      mainPathCount: 1,
+      branchCount: 0,
+      hasLoop: false,
+      attempts: 1,
+    },
+  };
 }

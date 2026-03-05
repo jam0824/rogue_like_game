@@ -3,6 +3,9 @@ const SKILL_DB_FALLBACK_FILE_NAMES = [
   "skill_id_poison_01.json",
   "skill_id_explosion_01.json",
   "skill_id_bite_01.json",
+  "skill_ogre_charge_01.json",
+  "skill_ogre_hammer_press_01.json",
+  "skill_ogre_summon_01.json",
 ];
 
 const REQUIRED_KEYS = [
@@ -19,9 +22,25 @@ const REQUIRED_KEYS = [
 ];
 
 const SKILL_TYPES = new Set(["passive", "modifier", "attack", "orbit", "replicate", "reaction_boost"]);
-const ATTACK_KINDS = new Set(["projectile", "aoe"]);
+const ATTACK_KINDS = new Set(["projectile", "aoe", "charge", "summon"]);
 const START_SPAWN_TIMINGS = new Set(["start", "hit"]);
 const PROJECTILE_MOVE_DIRECTIONS = new Set(["to_target", "guided", "random"]);
+const AOE_TARGET_POSITIONS = new Set(["hit", "attacker", "target_locked"]);
+const AOE_POSITION_LOCK_TIMINGS = new Set(["on_fire", "on_windup_start"]);
+const CHARGE_DIRECTION_LOCK_TIMINGS = new Set(["on_windup_start"]);
+
+function normalizeOptionalString(value, fallback = "") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length <= 0) {
+    return fallback;
+  }
+
+  return normalized;
+}
 
 function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
@@ -69,6 +88,25 @@ function assertHasRequiredKeys(rawSkill, fileName) {
   }
 }
 
+function normalizeCountRange(rawCount, fileName, pathLabel = "count") {
+  if (!rawCount || typeof rawCount !== "object") {
+    throw new Error(`Skill DB ${fileName} has invalid params.${pathLabel}: must be an object`);
+  }
+
+  if (!Number.isFinite(rawCount.min) || rawCount.min < 0) {
+    throw new Error(`Skill DB ${fileName} has invalid params.${pathLabel}.min: ${rawCount.min}`);
+  }
+
+  if (!Number.isFinite(rawCount.max) || rawCount.max < rawCount.min) {
+    throw new Error(`Skill DB ${fileName} has invalid params.${pathLabel}.max: ${rawCount.max}`);
+  }
+
+  return {
+    min: Math.max(0, Math.floor(Number(rawCount.min))),
+    max: Math.max(0, Math.floor(Number(rawCount.max))),
+  };
+}
+
 function assertBaseShape(rawSkill, fileName) {
   if (typeof rawSkill.id !== "string" || rawSkill.id.trim().length === 0) {
     throw new Error(`Skill DB ${fileName} has invalid id: ${rawSkill.id}`);
@@ -106,7 +144,10 @@ function assertBaseShape(rawSkill, fileName) {
     throw new Error(`Skill DB ${fileName} has invalid ui: must be an object`);
   }
 
-  if (typeof rawSkill.ui.icon_file_name !== "string" || rawSkill.ui.icon_file_name.trim().length === 0) {
+  if (
+    rawSkill.ui.icon_file_name !== null &&
+    (typeof rawSkill.ui.icon_file_name !== "string" || rawSkill.ui.icon_file_name.trim().length === 0)
+  ) {
     throw new Error(`Skill DB ${fileName} has invalid ui.icon_file_name: ${rawSkill.ui.icon_file_name}`);
   }
 
@@ -227,6 +268,75 @@ function normalizeAttackParams(rawSkill, fileName) {
       spriteEffectId,
       hitBoxPer: normalizeHitBoxPer(rawAoe.hit_box_per),
       hitIntervalSec,
+      targetPosition:
+        typeof rawAoe.target_position === "string" && AOE_TARGET_POSITIONS.has(rawAoe.target_position)
+          ? rawAoe.target_position
+          : "hit",
+      positionLockTiming:
+        typeof rawAoe.position_lock_timing === "string" && AOE_POSITION_LOCK_TIMINGS.has(rawAoe.position_lock_timing)
+          ? rawAoe.position_lock_timing
+          : "on_fire",
+      telegraphStyle: normalizeOptionalString(rawAoe.telegraph_style, ""),
+      telegraphRadiusTiles: toNonNegativeNumber(rawAoe.telegraph_radius_tiles, 0),
+    };
+  }
+
+  let charge = null;
+  if (params.attack_kind === "charge") {
+    const rawCharge = params.charge;
+    if (!rawCharge || typeof rawCharge !== "object") {
+      throw new Error(`Skill DB ${fileName} has invalid params.charge: must be an object`);
+    }
+
+    if (!Number.isFinite(rawCharge.dash_distance_tiles) || rawCharge.dash_distance_tiles <= 0) {
+      throw new Error(`Skill DB ${fileName} has invalid params.charge.dash_distance_tiles`);
+    }
+
+    if (!Number.isFinite(rawCharge.speed_tile_per_sec) || rawCharge.speed_tile_per_sec <= 0) {
+      throw new Error(`Skill DB ${fileName} has invalid params.charge.speed_tile_per_sec`);
+    }
+
+    charge = {
+      dashDistanceTiles: Number(rawCharge.dash_distance_tiles),
+      speedTilePerSec: Number(rawCharge.speed_tile_per_sec),
+      directionLockTiming:
+        typeof rawCharge.direction_lock_timing === "string" &&
+        CHARGE_DIRECTION_LOCK_TIMINGS.has(rawCharge.direction_lock_timing)
+          ? rawCharge.direction_lock_timing
+          : "on_windup_start",
+      microCorrectDeg: toFiniteNumber(rawCharge.micro_correct_deg, 0),
+      stopOnPlayerHit: rawCharge.stop_on_player_hit !== false,
+      wallHitRecoverSec: toNonNegativeNumber(rawCharge.wall_hit_recover_sec, 0),
+      hitBoxTiles: toNonNegativeNumber(rawCharge.hit_box_tiles, 0),
+      telegraphStyle: normalizeOptionalString(rawCharge.telegraph_style, ""),
+      telegraphWidthTiles: toNonNegativeNumber(rawCharge.telegraph_width_tiles, 1),
+      knockbackTiles: toNonNegativeNumber(rawCharge.knockback_tiles, 0),
+    };
+  }
+
+  let summon = null;
+  if (params.attack_kind === "summon") {
+    const rawSummon = params.summon;
+    if (!rawSummon || typeof rawSummon !== "object") {
+      throw new Error(`Skill DB ${fileName} has invalid params.summon: must be an object`);
+    }
+
+    const enemyId = normalizeOptionalString(rawSummon.enemy_id, "");
+    if (enemyId.length <= 0) {
+      throw new Error(`Skill DB ${fileName} has invalid params.summon.enemy_id`);
+    }
+
+    summon = {
+      enemyId,
+      count: normalizeCountRange(rawSummon.count, fileName, "summon.count"),
+      spawnStyle: normalizeOptionalString(rawSummon.spawn_style, "random_walkable"),
+      spawnTelegraphSec: toNonNegativeNumber(rawSummon.spawn_telegraph_sec, 0.5),
+      spawnTelegraphStyle: normalizeOptionalString(rawSummon.spawn_telegraph_style, ""),
+      spawnTelegraphRadiusTiles: toNonNegativeNumber(rawSummon.spawn_telegraph_radius_tiles, 0.5),
+      maxAliveInRoom: toNonNegativeInt(rawSummon.max_alive_in_room, 0),
+      maxAlivePerSummoner: toNonNegativeInt(rawSummon.max_alive_per_summoner, 0),
+      vanishOnSummonerDeath: rawSummon.vanish_on_summoner_death === true,
+      castEffectId: normalizeOptionalString(rawSummon.cast_effect_id, ""),
     };
   }
 
@@ -244,6 +354,8 @@ function normalizeAttackParams(rawSkill, fileName) {
     },
     projectile,
     aoe,
+    charge,
+    summon,
   };
 }
 
@@ -275,7 +387,7 @@ function normalizeSkillRecord(rawSkill, fileName) {
     uniquePerWeapon: rawSkill.unique_per_weapon === true,
     tags: normalizeStringArray(rawSkill.tags),
     ui: {
-      iconFileName: rawSkill.ui.icon_file_name.trim(),
+      iconFileName: rawSkill.ui.icon_file_name === null ? null : rawSkill.ui.icon_file_name.trim(),
       sortOrder: Math.floor(Number(rawSkill.ui.sort_order) || 0),
     },
     params: normalizedParams,

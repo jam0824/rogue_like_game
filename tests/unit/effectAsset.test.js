@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadEffectAssets } from "../../src/effect/effectAsset.js";
+import { __resetEffectAssetWarningCacheForTests, loadEffectAssets } from "../../src/effect/effectAsset.js";
 
 function createEffectDefinition(overrides = {}) {
   return {
@@ -52,6 +52,7 @@ function installImageMock(sizeByToken) {
 }
 
 afterEach(() => {
+  __resetEffectAssetWarningCacheForTests();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -121,5 +122,49 @@ describe("effectAsset", () => {
     expect(assets.effect_test_vertical.frameCount).toBe(3);
     expect(assets.effect_test_vertical.frameColumns).toBe(2);
     expect(assets.effect_test_vertical.frameRows).toBe(3);
+  });
+
+  it("画像欠損があっても成功分のみ返して継続する", async () => {
+    installImageMock({
+      "effect_test_ok.png": { width: 120, height: 120 },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const assets = await loadEffectAssets([
+      createEffectDefinition({
+        id: "effect_test_ok",
+        effectFileName: "graphic/effect/effect_test_ok.png",
+      }),
+      createEffectDefinition({
+        id: "effect_test_missing",
+        effectFileName: "graphic/effect/effect_test_missing.png",
+      }),
+    ]);
+
+    expect(Object.keys(assets)).toEqual(["effect_test_ok"]);
+    expect(assets.effect_test_ok.frameCount).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain("effect_test_missing");
+  });
+
+  it("同一 effectId の欠損警告は1回だけ出す", async () => {
+    installImageMock({});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await loadEffectAssets([
+      createEffectDefinition({
+        id: "effect_test_missing_once",
+        effectFileName: "graphic/effect/effect_test_missing_once.png",
+      }),
+    ]);
+    await loadEffectAssets([
+      createEffectDefinition({
+        id: "effect_test_missing_once",
+        effectFileName: "graphic/effect/effect_test_missing_once.png",
+      }),
+    ]);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain("effect_test_missing_once");
   });
 });

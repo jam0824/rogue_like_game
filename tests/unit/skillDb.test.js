@@ -271,6 +271,94 @@ describe("skillDb", () => {
     expect(rotateFalse?.params?.projectile?.isRotate).toBe(false);
   });
 
+  it("charge/summon と aoe拡張を正規化し、ui.icon_file_name:null を許容する", async () => {
+    setupFetchMock({
+      fileNames: ["skill_charge.json", "skill_press.json", "skill_summon.json"],
+      recordsByFileName: {
+        "skill_charge.json": createSkillRecord({
+          id: "skill_charge",
+          ui: {
+            icon_file_name: null,
+            sort_order: 1,
+          },
+          params: {
+            attack_kind: "charge",
+            base_damage: 20,
+            damage_element: "physical",
+            chain_trigger: "on_hit",
+            charge: {
+              dash_distance_tiles: 7,
+              speed_tile_per_sec: 12,
+              direction_lock_timing: "on_windup_start",
+              stop_on_player_hit: true,
+              wall_hit_recover_sec: 1.2,
+              telegraph_style: "line_red_translucent",
+              telegraph_width_tiles: 0.8,
+            },
+          },
+        }),
+        "skill_press.json": createSkillRecord({
+          id: "skill_press",
+          ui: {
+            icon_file_name: null,
+            sort_order: 2,
+          },
+          params: {
+            attack_kind: "aoe",
+            base_damage: 25,
+            damage_element: "physical",
+            aoe: {
+              sprite_effect_id: "effect_ogre_hammer_press_01",
+              hit_box_per: 0.8,
+              hit_interval_sec: 0,
+              target_position: "target_locked",
+              position_lock_timing: "on_windup_start",
+              telegraph_style: "circle_red_translucent",
+              telegraph_radius_tiles: 2,
+            },
+          },
+        }),
+        "skill_summon.json": createSkillRecord({
+          id: "skill_summon",
+          ui: {
+            icon_file_name: null,
+            sort_order: 3,
+          },
+          params: {
+            attack_kind: "summon",
+            base_damage: 0,
+            summon: {
+              enemy_id: "OgreMinion_01",
+              count: { min: 2, max: 3 },
+              spawn_style: "boss_ring_outside",
+              spawn_telegraph_sec: 0.5,
+              spawn_telegraph_style: "circle_red_translucent",
+              spawn_telegraph_radius_tiles: 0.5,
+              max_alive_in_room: 8,
+              max_alive_per_summoner: 6,
+              vanish_on_summoner_death: true,
+              cast_effect_id: "effect_ogre_summon_cast_01",
+            },
+          },
+        }),
+      },
+    });
+
+    const definitions = await loadSkillDefinitions();
+    const charge = definitions.find((definition) => definition.id === "skill_charge");
+    const press = definitions.find((definition) => definition.id === "skill_press");
+    const summon = definitions.find((definition) => definition.id === "skill_summon");
+
+    expect(charge?.ui.iconFileName).toBeNull();
+    expect(charge?.params?.attackKind).toBe("charge");
+    expect(charge?.params?.charge?.telegraphStyle).toBe("line_red_translucent");
+    expect(press?.params?.aoe?.targetPosition).toBe("target_locked");
+    expect(press?.params?.aoe?.positionLockTiming).toBe("on_windup_start");
+    expect(summon?.params?.attackKind).toBe("summon");
+    expect(summon?.params?.summon?.count).toEqual({ min: 2, max: 3 });
+    expect(summon?.params?.summon?.spawnStyle).toBe("boss_ring_outside");
+  });
+
   it("required key 欠落はエラーになる", async () => {
     const invalid = createSkillRecord();
     delete invalid.id;

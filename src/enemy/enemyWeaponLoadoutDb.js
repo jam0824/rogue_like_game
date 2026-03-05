@@ -1,4 +1,8 @@
-const ENEMY_WEAPON_LOADOUT_DB_FALLBACK_FILE_NAMES = ["enemy_loadout_bite_01.json"];
+const ENEMY_WEAPON_LOADOUT_DB_FALLBACK_FILE_NAMES = [
+  "enemy_loadout_bite_01.json",
+  "enemy_loadout_ogre_boss_01.json",
+  "enemy_loadout_ogre_minion_claw_01.json",
+];
 
 const REQUIRED_KEYS = ["id", "weapons"];
 
@@ -53,11 +57,21 @@ function normalizeWeaponInstance(rawWeapon, fileName, index) {
     throw new Error(`Enemy weapon loadout DB ${fileName} has invalid rarity at index ${index}: ${rawWeapon.rarity}`);
   }
 
+  if (
+    rawWeapon.action_key !== undefined &&
+    (typeof rawWeapon.action_key !== "string" || rawWeapon.action_key.trim().length === 0)
+  ) {
+    throw new Error(
+      `Enemy weapon loadout DB ${fileName} has invalid action_key at index ${index}: ${rawWeapon.action_key}`
+    );
+  }
+
   if (rawWeapon.skills !== undefined && !Array.isArray(rawWeapon.skills)) {
     throw new Error(`Enemy weapon loadout DB ${fileName} has invalid skills at index ${index}: must be array`);
   }
 
   return {
+    actionKey: typeof rawWeapon.action_key === "string" ? rawWeapon.action_key.trim() : null,
     weaponDefId: rawWeapon.weapon_def_id,
     rarity: typeof rawWeapon.rarity === "string" ? rawWeapon.rarity : "common",
     weaponPlus: Number.isFinite(rawWeapon.weapon_plus) ? Math.max(0, Math.floor(rawWeapon.weapon_plus)) : 0,

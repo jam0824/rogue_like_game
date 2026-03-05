@@ -1,7 +1,7 @@
 import { deriveSeed } from "../core/rng.js";
 
 export const MIN_FLOOR = 1;
-export const MAX_FLOOR = 5;
+export const MAX_FLOOR = 10;
 
 function toInteger(value, fallback = MIN_FLOOR) {
   if (!Number.isFinite(value)) {

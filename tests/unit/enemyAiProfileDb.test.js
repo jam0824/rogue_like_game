@@ -20,6 +20,45 @@ function createAiProfileRecord(overrides = {}) {
   };
 }
 
+function createBossAiProfileRecord(overrides = {}) {
+  return {
+    id: "ai_profile_boss_ogre_v1",
+    role: "boss",
+    weapon_aim_mode: "to_target",
+    weapon_visibility_mode: "burst",
+    weapon_attack_cycles: 1,
+    weapon_active_range_tiles: 4,
+    weapon_cooldown_mul: 1,
+    los_required: true,
+    phases: [
+      { phase: 1, hp_ratio_min: 0.6, hp_ratio_max: 1.01, summon_count: { min: 2, max: 2 } },
+      { phase: 2, hp_ratio_min: 0.0, hp_ratio_max: 0.6, summon_count: { min: 3, max: 4 } },
+    ],
+    action_priority: [
+      { action: "summon", when: "minion_count_lt && cooldown_ready" },
+      { action: "chase", when: "always" },
+    ],
+    actions: {
+      summon: {
+        weapon_index: 2,
+        cooldown_sec: 9,
+        minion_count_lt: 3,
+        windup_sec: 1,
+        recover_sec: 0.5,
+      },
+      chase: {
+        repath_interval_sec: 0.4,
+      },
+    },
+    summon_rules: {
+      max_alive_in_room: 8,
+      max_alive_per_summoner: 6,
+      vanish_on_summoner_death: true,
+    },
+    ...overrides,
+  };
+}
+
 function createHtmlResponse(html) {
   return {
     ok: true,
@@ -147,6 +186,60 @@ describe("enemyAiProfileDb", () => {
     });
 
     await expect(loadEnemyAiProfiles()).rejects.toThrow("missing required key: id");
+  });
+
+  it("boss スキーマを正規化する", async () => {
+    setupFetchMock({
+      fileNames: ["ai_profile_boss_ogre_v1.json"],
+      recordsByFileName: {
+        "ai_profile_boss_ogre_v1.json": createBossAiProfileRecord(),
+      },
+    });
+
+    const profiles = await loadEnemyAiProfiles();
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].role).toBe("boss");
+    expect(profiles[0].phases[0]).toMatchObject({
+      phase: 1,
+      hpRatioMin: 0.6,
+      hpRatioMax: 1.01,
+      summonCount: { min: 2, max: 2 },
+    });
+    expect(profiles[0].actionPriority[0]).toEqual({
+      action: "summon",
+      when: "minion_count_lt && cooldown_ready",
+    });
+    expect(profiles[0].summonRules).toEqual({
+      maxAliveInRoom: 8,
+      maxAlivePerSummoner: 6,
+      vanishOnSummonerDeath: true,
+    });
+  });
+
+  it("boss の when 条件式に不正トークンがある場合はエラー", async () => {
+    setupFetchMock({
+      fileNames: ["ai_profile_boss_ogre_v1.json"],
+      recordsByFileName: {
+        "ai_profile_boss_ogre_v1.json": createBossAiProfileRecord({
+          action_priority: [{ action: "summon", when: "invalid_token && cooldown_ready" }],
+        }),
+      },
+    });
+
+    await expect(loadEnemyAiProfiles()).rejects.toThrow("invalid when token");
+  });
+
+  it("boss の必須フィールド欠損はエラー", async () => {
+    const invalidBoss = createBossAiProfileRecord();
+    delete invalidBoss.phases;
+    setupFetchMock({
+      fileNames: ["ai_profile_boss_ogre_v1.json"],
+      recordsByFileName: {
+        "ai_profile_boss_ogre_v1.json": invalidBoss,
+      },
+    });
+
+    await expect(loadEnemyAiProfiles()).rejects.toThrow("missing required key: phases");
   });
 
   it("id 重複はエラー", async () => {

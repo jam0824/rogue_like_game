@@ -66,6 +66,7 @@ describe("canvasRenderer effect frame source", () => {
       [],
       [],
       [],
+      [],
       [
         {
           effect: {
@@ -112,6 +113,7 @@ describe("canvasRenderer effect frame source", () => {
       null,
       0,
       "#ffffff",
+      [],
       [],
       [],
       [],

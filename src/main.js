@@ -12,6 +12,7 @@ import { loadEnemyWeaponLoadouts } from "./enemy/enemyWeaponLoadoutDb.js";
 import {
   createEnemies,
   getEnemyTelegraphAlpha,
+  getEnemyTelegraphPrimitives,
   isEnemyDeathAnimationFinished,
   getEnemyFrame,
   getEnemyHitFlashAlpha,
@@ -1091,10 +1092,21 @@ function buildInventoryQuickSlotTextState(slot) {
 }
 
 function buildHudTextState() {
+  const bossEnemy = Array.isArray(appState.enemies)
+    ? appState.enemies.find((enemy) => enemy?.role === "boss" && enemy?.isDead !== true) ?? null
+    : null;
+  const bossAttackPhase = typeof bossEnemy?.attack?.phase === "string" ? bossEnemy.attack.phase : "";
+  const isBossAttacking = bossAttackPhase === "windup" || bossAttackPhase === "attack" || bossAttackPhase === "recover";
+
   return {
     hp: {
       current: round2(appState.player?.hp ?? 0),
       max: round2(appState.player?.maxHp ?? 0),
+    },
+    boss: {
+      visible: bossEnemy !== null && (bossEnemy.isChasing === true || isBossAttacking),
+      hpCurrent: round2(bossEnemy?.hp ?? 0),
+      hpMax: round2(bossEnemy?.maxHp ?? 0),
     },
     runLevel: getRunLevel(appState.playerState),
     gold: getGold(appState.playerState),
@@ -1306,6 +1318,10 @@ function buildEnemyAilmentsTextState(enemy) {
 }
 
 function buildEnemyTextState(enemy) {
+  const telegraphs = getEnemyTelegraphPrimitives(enemy).map((telegraph) => ({
+    ...telegraph,
+    alpha: round2(telegraph.alpha ?? 0),
+  }));
   return {
     id: enemy.id,
     type: enemy.type,
@@ -1336,6 +1352,7 @@ function buildEnemyTextState(enemy) {
     ailments: buildEnemyAilmentsTextState(enemy),
     attackPhase: enemy.attack?.phase ?? "none",
     telegraphAlpha: round2(getEnemyTelegraphAlpha(enemy)),
+    telegraphs,
     weapons: getEnemyWeaponRuntimes(enemy).map((weapon) => buildEnemyWeaponTextState(weapon)),
   };
 }
@@ -1491,6 +1508,8 @@ function toTextState() {
       seed: dungeon.seed,
       dungeonId: dungeon.dungeonId ?? null,
       floor: Number.isFinite(dungeon.floor) ? Math.floor(dungeon.floor) : null,
+      isBossFloor: dungeon.isBossFloor === true,
+      bossRewardsUnlocked: dungeon.bossRewardsUnlocked === true,
       wallHeightTiles: dungeon.wallHeightTiles ?? null,
       isPaused: appState.isPaused === true,
       debug: {
@@ -1549,6 +1568,14 @@ function toTextState() {
         w: room.w,
         h: room.h,
       })),
+      bossArena: dungeon.bossArena
+        ? {
+            roomId: dungeon.bossArena.roomId,
+            startTile: dungeon.bossArena.startTile,
+            bossTile: dungeon.bossArena.bossTile,
+            pillars: dungeon.bossArena.pillars,
+          }
+        : null,
     },
     null,
     2
@@ -1755,6 +1782,65 @@ function buildEnemyAttackProfilesByDbId() {
       continue;
     }
 
+    if (aiProfile.role === "boss") {
+      const resolvedBossWeapons = [];
+      for (const weaponInstance of loadout.weapons) {
+        const weaponDefinition = weaponDefinitionsById?.[weaponInstance.weaponDefId];
+        if (!weaponDefinition) {
+          continue;
+        }
+
+        const skillInstances = Array.isArray(weaponInstance.skills)
+          ? weaponInstance.skills
+              .filter((skill) => skill && typeof skill.id === "string" && skill.id.length > 0)
+              .map((skill) => ({
+                id: skill.id,
+                plus: Number.isFinite(skill.plus) ? Math.max(0, Math.floor(Number(skill.plus))) : 0,
+              }))
+          : [];
+        const primarySkillId = skillInstances[0]?.id ?? null;
+        const primarySkill = primarySkillId ? skillDefinitionsById?.[primarySkillId] : null;
+
+        resolvedBossWeapons.push({
+          actionKey: typeof weaponInstance.actionKey === "string" ? weaponInstance.actionKey : null,
+          weaponDefId: weaponDefinition.id,
+          formationId: weaponInstance.formationId ?? weaponDefinition.formationId ?? null,
+          baseDamage: Number(weaponDefinition.baseDamage) || 0,
+          skills: skillInstances,
+          skillParams: primarySkill?.params ?? null,
+          width: Number(weaponDefinition.width) || 32,
+          height: Number(weaponDefinition.height) || 32,
+          radiusPx: 0,
+          angularSpeed: 0,
+          centerMode: "player",
+          biasStrengthMul: 0,
+          biasResponseMul: 0,
+          biasOffsetRatioMax: 0,
+          executeDurationSec: Number(weaponDefinition.attackCooldownSec) || 0.2,
+          supported: false,
+          forceHidden: true,
+        });
+      }
+
+      nextProfiles[enemyDefinition.id] = {
+        role: "boss",
+        preferredRangePx: Math.max(0, (Number(aiProfile.preferredRangeTiles) || 0) * TILE_SIZE),
+        engageRangePx: Math.max(0, (Number(aiProfile.engageRangeTiles) || 0) * TILE_SIZE),
+        retreatRangePx: Math.max(0, (Number(aiProfile.retreatRangeTiles) || 0) * TILE_SIZE),
+        attackRangePx: (Number(aiProfile.weaponActiveRangeTiles) || 0) * TILE_SIZE,
+        losRequired: aiProfile.losRequired === true,
+        weaponAimMode: aiProfile.weaponAimMode,
+        weaponVisibilityMode: aiProfile.weaponVisibilityMode,
+        attackLinked: loadout.attackLinked !== false,
+        phases: Array.isArray(aiProfile.phases) ? aiProfile.phases : [],
+        actionPriority: Array.isArray(aiProfile.actionPriority) ? aiProfile.actionPriority : [],
+        actions: aiProfile.actions ?? {},
+        summonRules: aiProfile.summonRules ?? null,
+        weapons: resolvedBossWeapons,
+      };
+      continue;
+    }
+
     const attackCycles = Math.max(1, Math.floor(Number(aiProfile.weaponAttackCycles) || 1));
     const cooldownMul = Math.max(0.0001, Number(aiProfile.weaponCooldownMul) || 1);
     const resolvedWeapons = [];
@@ -1899,15 +1985,23 @@ async function refreshItemResources() {
 }
 
 async function refreshEffectResources() {
+  let definitions;
   try {
-    const definitions = await loadEffectDefinitions();
-    const assets = await loadEffectAssets(definitions);
-    effectDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
-    effectAssets = assets;
+    definitions = await loadEffectDefinitions();
   } catch (error) {
     effectDefinitionsById = {};
     effectAssets = {};
-    console.warn(`[Effect] Failed to load effect resources: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[Effect] Failed to load effect DB: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  effectDefinitionsById = Object.fromEntries(definitions.map((definition) => [definition.id, definition]));
+
+  try {
+    effectAssets = await loadEffectAssets(definitions);
+  } catch (error) {
+    effectAssets = {};
+    console.warn(`[Effect] Failed to load effect assets: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -3128,6 +3222,7 @@ function buildSystemUiDigest() {
   return JSON.stringify({
     hpCurrent: hud.hp.current,
     hpMax: hud.hp.max,
+    boss: hud.boss,
     runLevel: hud.runLevel,
     gold: hud.gold,
     buffs: hud.buffs,
@@ -3156,6 +3251,7 @@ function syncSystemHud() {
   systemHud.setHud({
     hpCurrent: hud.hp.current,
     hpMax: hud.hp.max,
+    boss: hud.boss,
     runLevel: hud.runLevel,
     gold: hud.gold,
     buffs: hud.buffs,
@@ -3914,6 +4010,16 @@ function getPlayerSkillTargetId(player) {
   return "player";
 }
 
+function shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon) {
+  if (enemy?.attack?.isBoss !== true) {
+    return true;
+  }
+
+  const activeActionWeaponId =
+    typeof enemy.attack.activeActionWeaponId === "string" ? enemy.attack.activeActionWeaponId : "";
+  return activeActionWeaponId.length > 0 && weapon?.id === activeActionWeaponId;
+}
+
 function buildEnemyWeaponStartEvents(enemies, beforeSnapshot) {
   const events = [];
 
@@ -3925,6 +4031,9 @@ function buildEnemyWeaponStartEvents(enemies, beforeSnapshot) {
     const attackCycle = Math.max(0, Math.floor(Number(enemy?.attack?.attackCycle) || 0));
     for (const weapon of getEnemyWeaponRuntimes(enemy)) {
       if (!weapon || typeof weapon.id !== "string") {
+        continue;
+      }
+      if (!shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon)) {
         continue;
       }
 
@@ -4043,6 +4152,9 @@ function spawnEnemyWeaponStartEffects(enemies, beforeSnapshot) {
       if (!weapon || typeof weapon.id !== "string") {
         continue;
       }
+      if (!shouldIncludeEnemyWeaponStartByBossAction(enemy, weapon)) {
+        continue;
+      }
 
       const weaponDefinition = weaponDefinitionsById?.[weapon.weaponDefId];
       if (!weaponDefinition) {
@@ -4126,6 +4238,301 @@ function countNewlyDefeatedEnemies(enemies, beforeAliveEnemyIds) {
   return defeatedCount;
 }
 
+function buildBlockedEnemyTilesFromRuntime(enemies, treasureChests) {
+  const blocked = buildBlockedTileSetFromChests(treasureChests);
+
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+    const centerX = Number(enemy.x) + Number(enemy.width) / 2;
+    const centerY = Number(enemy.y) + Number(enemy.height) / 2;
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+      continue;
+    }
+    blocked.add(`${Math.floor(centerX / TILE_SIZE)}:${Math.floor(centerY / TILE_SIZE)}`);
+  }
+
+  return blocked;
+}
+
+function createExistingEnemyIdSet(enemies) {
+  const ids = new Set();
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || typeof enemy.id !== "string" || enemy.id.length <= 0) {
+      continue;
+    }
+    ids.add(enemy.id);
+  }
+  return ids;
+}
+
+function resolveSummonIdentity(event, fallbackIndex, existingEnemyIds) {
+  const fallback = Math.max(0, Math.floor(Number(fallbackIndex) || 0));
+  const summonerEnemyId =
+    typeof event?.summonerEnemyId === "string" && event.summonerEnemyId.length > 0
+      ? event.summonerEnemyId
+      : "summoner";
+  const hasSummonCastSeq = Number.isFinite(event?.summonCastSeq);
+  const hasSummonSpawnIndex = Number.isFinite(event?.summonSpawnIndex);
+  const summonCastSeq = hasSummonCastSeq ? Math.max(0, Math.floor(Number(event.summonCastSeq))) : null;
+  const summonSpawnIndex = hasSummonSpawnIndex ? Math.max(0, Math.floor(Number(event.summonSpawnIndex))) : fallback;
+  const baseId =
+    summonCastSeq !== null
+      ? `${summonerEnemyId}-summon-c${summonCastSeq}-s${summonSpawnIndex}`
+      : `${summonerEnemyId}-summon-${summonSpawnIndex}`;
+  const baseSeedKey =
+    summonCastSeq !== null
+      ? `summon:${summonerEnemyId}:cast:${summonCastSeq}:spawn:${summonSpawnIndex}`
+      : `summon:${summonerEnemyId}:${summonSpawnIndex}`;
+
+  let resolvedId = baseId;
+  let revision = 0;
+  while (existingEnemyIds.has(resolvedId)) {
+    revision += 1;
+    resolvedId = `${baseId}-r${revision}`;
+  }
+  existingEnemyIds.add(resolvedId);
+
+  return {
+    enemyId: resolvedId,
+    summonSeedKey: revision > 0 ? `${baseSeedKey}:rev:${revision}` : baseSeedKey,
+  };
+}
+
+function spawnSummonedEnemiesFromEvents(events) {
+  const summonEvents = Array.isArray(events)
+    ? events.filter((event) => event?.kind === "summon_request")
+    : [];
+  if (summonEvents.length <= 0 || !appState.dungeon) {
+    return [];
+  }
+
+  const spawned = [];
+  const existingEnemyIds = createExistingEnemyIdSet(appState.enemies);
+  for (const [index, event] of summonEvents.entries()) {
+    const definition = enemyDefinitionsById?.[event.enemyDbId];
+    if (!definition) {
+      continue;
+    }
+
+    const blockedTiles = buildBlockedEnemyTilesFromRuntime(
+      [...appState.enemies, ...spawned],
+      appState.treasureChests
+    );
+    const summonIdentity = resolveSummonIdentity(event, index, existingEnemyIds);
+    const summonSeed = deriveSeed(appState.dungeon.seed, summonIdentity.summonSeedKey);
+    try {
+      const created = createEnemies(
+        appState.dungeon,
+        [definition],
+        summonSeed,
+        enemyAttackProfilesByDbId,
+        {
+          blockedTiles,
+          fixedSpawns: [
+            {
+              enemyDbId: definition.id,
+              tileX: event.tileX,
+              tileY: event.tileY,
+              enemyId: summonIdentity.enemyId,
+              spawnedByEnemyId: event.summonerEnemyId,
+              isSummoned: event.isSummoned === true,
+            },
+          ],
+          useFixedSpawnsOnly: true,
+        }
+      );
+      if (created.length > 0) {
+        spawned.push(...created);
+      }
+    } catch (error) {
+      console.warn(`[Boss] summon spawn skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return spawned;
+}
+
+function spawnEffectEventsFromEnemyActions(events) {
+  const effectEvents = Array.isArray(events)
+    ? events.filter((event) => event?.kind === "effect_spawn")
+    : [];
+  if (effectEvents.length <= 0) {
+    return [];
+  }
+
+  const spawned = [];
+  for (const event of effectEvents) {
+    const runtime = buildEffectRuntime(event.effectId, Number(event.worldX) || 0, Number(event.worldY) || 0);
+    if (runtime) {
+      spawned.push(runtime);
+    }
+  }
+  return spawned;
+}
+
+function applySummonedVanishByDeadSummoner(enemies) {
+  if (!Array.isArray(enemies) || enemies.length <= 0) {
+    return;
+  }
+
+  const vanishedSummonerIds = new Set(
+    enemies
+      .filter(
+        (enemy) =>
+          enemy?.isDead === true &&
+          enemy?.attack?.isBoss === true &&
+          enemy?.attack?.summonRules?.vanishOnSummonerDeath === true
+      )
+      .map((enemy) => enemy.id)
+  );
+  if (vanishedSummonerIds.size <= 0) {
+    return;
+  }
+
+  for (const enemy of enemies) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+    if (!enemy.spawnedByEnemyId || !vanishedSummonerIds.has(enemy.spawnedByEnemyId)) {
+      continue;
+    }
+    enemy.isDead = true;
+    enemy.hp = 0;
+    enemy.deathAnimTime = Number.POSITIVE_INFINITY;
+  }
+}
+
+function buildBossRewardStairs(dungeon) {
+  const arenaRoomId = dungeon?.bossArena?.roomId;
+  const arenaRoom = dungeon?.rooms?.find((room) => room.id === arenaRoomId);
+  if (!arenaRoom || !Array.isArray(dungeon?.symbolGrid) || dungeon.symbolGrid.length <= 0) {
+    return null;
+  }
+
+  const wallHeightTiles = Math.max(1, Math.floor(Number(dungeon.wallHeightTiles) || 1));
+  const anchorTileY = Math.max(0, Math.floor(arenaRoom.y) - 1);
+  const centerX = Number.isFinite(dungeon?.bossArena?.bossTile?.tileX)
+    ? Math.floor(dungeon.bossArena.bossTile.tileX)
+    : Math.floor(arenaRoom.x + arenaRoom.w / 2);
+  const maxAnchorX = Math.max(0, dungeon.symbolGrid[0].length - 2);
+  const anchorTileX = clamp(centerX - 1, 0, maxAnchorX);
+  const nextSymbolGrid = dungeon.symbolGrid.map((row) => row.slice());
+  if (anchorTileY >= 0 && anchorTileY < nextSymbolGrid.length) {
+    nextSymbolGrid[anchorTileY][anchorTileX] = "S";
+    nextSymbolGrid[anchorTileY][anchorTileX + 1] = "S";
+  }
+
+  const triggerTileY = anchorTileY + wallHeightTiles;
+  const triggerTiles = [];
+  if (triggerTileY >= 0 && triggerTileY < nextSymbolGrid.length) {
+    triggerTiles.push({ tileX: anchorTileX, tileY: triggerTileY });
+    triggerTiles.push({ tileX: anchorTileX + 1, tileY: triggerTileY });
+  }
+
+  return {
+    symbolGrid: nextSymbolGrid,
+    downStair: {
+      anchorTileX,
+      anchorTileY,
+      widthTiles: 2,
+      heightTiles: wallHeightTiles,
+      triggerTiles,
+      isEnabled: true,
+    },
+  };
+}
+
+function findNearestWalkableTile(dungeon, tileX, tileY, blockedKeys = new Set()) {
+  const grid = dungeon?.walkableGrid;
+  if (!Array.isArray(grid) || grid.length <= 0 || !Array.isArray(grid[0])) {
+    return null;
+  }
+  const width = grid[0].length;
+  const height = grid.length;
+  const startX = clamp(Math.floor(tileX), 0, width - 1);
+  const startY = clamp(Math.floor(tileY), 0, height - 1);
+  const maxRadius = width + height;
+
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      const dxAbs = radius - Math.abs(dy);
+      const candidates = dxAbs === 0
+        ? [{ x: startX, y: startY + dy }]
+        : [
+            { x: startX - dxAbs, y: startY + dy },
+            { x: startX + dxAbs, y: startY + dy },
+          ];
+
+      for (const candidate of candidates) {
+        if (candidate.x < 0 || candidate.x >= width || candidate.y < 0 || candidate.y >= height) {
+          continue;
+        }
+        if (grid[candidate.y][candidate.x] !== true) {
+          continue;
+        }
+        if (blockedKeys.has(`${candidate.x}:${candidate.y}`)) {
+          continue;
+        }
+        return { tileX: candidate.x, tileY: candidate.y };
+      }
+    }
+  }
+
+  return null;
+}
+
+function unlockBossRewardsIfReady() {
+  const dungeon = appState.dungeon;
+  if (!dungeon?.isBossFloor || dungeon.bossRewardsUnlocked === true) {
+    return;
+  }
+
+  const aliveBossExists = appState.enemies.some((enemy) => enemy?.isDead !== true && enemy?.role === "boss");
+  if (aliveBossExists) {
+    return;
+  }
+
+  const stairUpdate = buildBossRewardStairs(dungeon);
+  if (stairUpdate) {
+    dungeon.symbolGrid = stairUpdate.symbolGrid;
+    dungeon.downStair = stairUpdate.downStair;
+    dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid, {
+      tallWallTileHeight: dungeon.wallHeightTiles,
+    });
+  }
+
+  const hasLegendaryChest = (appState.treasureChests ?? []).some((chest) => chest?.tier === "legendary");
+  if (!hasLegendaryChest) {
+    const bossEnemy = appState.enemies.find((enemy) => enemy?.role === "boss");
+    if (bossEnemy) {
+      const blockedKeys = new Set(
+        (appState.treasureChests ?? []).map((chest) => `${Math.floor(chest.tileX)}:${Math.floor(chest.tileY)}`)
+      );
+      const centerTileX = Math.floor((bossEnemy.x + bossEnemy.width / 2) / TILE_SIZE);
+      const centerTileY = Math.floor((bossEnemy.y + bossEnemy.height / 2) / TILE_SIZE);
+      const chestTile = findNearestWalkableTile(dungeon, centerTileX, centerTileY, blockedKeys);
+      if (chestTile) {
+        const chest = {
+          id: `boss_reward_${dungeon.floor}_${Date.now()}`,
+          tier: "legendary",
+          roomId: dungeon.bossArena?.roomId ?? dungeon.startRoomId,
+          tileX: chestTile.tileX,
+          tileY: chestTile.tileY,
+          xPx: chestTile.tileX * TILE_SIZE,
+          yPx: chestTile.tileY * TILE_SIZE,
+          isOpened: false,
+        };
+        appState.treasureChests = [...(appState.treasureChests ?? []), chest];
+      }
+    }
+  }
+
+  dungeon.walkableGrid = applyChestBlockingToWalkableGrid(dungeon.walkableGrid, appState.treasureChests);
+  dungeon.bossRewardsUnlocked = true;
+}
+
 function removeEnemiesAfterDeathAnimation(enemies, enemyAssetsByDbId) {
   if (!Array.isArray(enemies) || enemies.length <= 0) {
     return [];
@@ -4193,6 +4600,12 @@ function renderCurrentFrame() {
       telegraphAlpha: getEnemyTelegraphAlpha(enemy),
     };
   });
+  const enemyTelegraphDrawables = appState.enemies.flatMap((enemy) =>
+    getEnemyTelegraphPrimitives(enemy).map((telegraph) => ({
+      ...telegraph,
+      alpha: Number.isFinite(telegraph.alpha) ? telegraph.alpha : getEnemyTelegraphAlpha(enemy),
+    }))
+  );
   const weaponDrawables = appState.weapons.map((weapon) => ({
     weapon,
     asset: weaponAssets[weapon.weaponDefId] ?? null,
@@ -4248,6 +4661,7 @@ function renderCurrentFrame() {
     getPlayerHitFlashAlpha(appState.player),
     normalizeHitFlashColor(appState.player?.hitFlashColor),
     enemyDrawables,
+    enemyTelegraphDrawables,
     weaponDrawables,
     enemyWeaponDrawables,
     effectDrawables,
@@ -4660,6 +5074,14 @@ function stepSimulation(dt) {
   const enemyCombatEvents = updateEnemyAttacks(appState.enemies, appState.player, appState.dungeon, dt, {
     applyPlayerHpDamage: appState.debugPlayerDamagePreviewOnly !== true,
   });
+  const summonedEnemies = spawnSummonedEnemiesFromEvents(enemyCombatEvents);
+  if (summonedEnemies.length > 0) {
+    appState.enemies = [...appState.enemies, ...summonedEnemies];
+  }
+  const actionEffects = spawnEffectEventsFromEnemyActions(enemyCombatEvents);
+  if (actionEffects.length > 0) {
+    appState.effects = [...appState.effects, ...actionEffects];
+  }
   const enemySkillChainResult = updateEnemySkillChainCombat({
     dt,
     dungeon: appState.dungeon,
@@ -4720,6 +5142,9 @@ function stepSimulation(dt) {
     stepPlayerDeathSequence(dt, { updateAnimation: false });
     return;
   }
+
+  applySummonedVanishByDeadSummoner(appState.enemies);
+  unlockBossRewardsIfReady();
 
   appState.enemies = removeEnemiesAfterDeathAnimation(appState.enemies, enemyAssets);
   syncPlayerStateFromRuntime(
@@ -4855,22 +5280,30 @@ async function regenerate(seed, options = {}) {
     debugPanel.setDungeonId(selectedDungeonId);
     const tileAssets = await ensureTileAssetsForDungeon(dungeonDefinition);
 
+    const isBossFloor = dungeonDefinition.bossFloor === true;
     const dungeon = generateDungeon({
       seed: generationSeed,
       wallHeightTiles: dungeonDefinition.wallHeightTiles,
+      bossFloor: isBossFloor,
     });
     dungeon.dungeonId = dungeonDefinition.id;
     dungeon.wallHeightTiles = dungeonDefinition.wallHeightTiles;
+    dungeon.isBossFloor = dungeon.isBossFloor === true || isBossFloor;
+    dungeon.bossRewardsUnlocked = false;
     const validation = validateDungeon(dungeon);
     dungeon.symbolGrid = resolveWallSymbols(dungeon.floorGrid);
-    const stairPlacement = placeDownStairSymbols(dungeon.symbolGrid, dungeon, dungeonDefinition.wallHeightTiles);
-    dungeon.symbolGrid = stairPlacement.symbolGrid;
-    dungeon.downStair = stairPlacement.downStair
-      ? {
-          ...stairPlacement.downStair,
-          isEnabled: targetFloor < MAX_FLOOR,
-        }
-      : null;
+    if (!dungeon.isBossFloor) {
+      const stairPlacement = placeDownStairSymbols(dungeon.symbolGrid, dungeon, dungeonDefinition.wallHeightTiles);
+      dungeon.symbolGrid = stairPlacement.symbolGrid;
+      dungeon.downStair = stairPlacement.downStair
+        ? {
+            ...stairPlacement.downStair,
+            isEnabled: targetFloor < MAX_FLOOR,
+          }
+        : null;
+    } else {
+      dungeon.downStair = null;
+    }
     dungeon.walkableGrid = buildWalkableGrid(dungeon.floorGrid, dungeon.symbolGrid, {
       tallWallTileHeight: dungeonDefinition.wallHeightTiles,
     });
@@ -4903,16 +5336,44 @@ async function regenerate(seed, options = {}) {
     if (!herbDefinition) {
       throw new Error(`Item DB is missing required herb item: ${HERB_ITEM_ID}`);
     }
-    const treasureChests = createTreasureChests(dungeon, generationSeed);
+    const treasureChests = dungeon.isBossFloor ? [] : createTreasureChests(dungeon, generationSeed);
     dungeon.walkableGrid = applyChestBlockingToWalkableGrid(dungeon.walkableGrid, treasureChests);
     const blockedEnemyTiles = buildBlockedTileSetFromChests(treasureChests);
-    const enemies = createEnemies(
-      dungeon,
-      dungeonEnemyDefinitions,
-      generationSeed,
-      enemyAttackProfilesByDbId,
-      blockedEnemyTiles
-    );
+    let enemies;
+    if (dungeon.isBossFloor) {
+      const bossDefinition =
+        dungeonEnemyDefinitions.find((definition) => definition.rank === "boss") ?? dungeonEnemyDefinitions[0];
+      const bossTile = dungeon.bossArena?.bossTile;
+      if (!bossDefinition || !Number.isFinite(bossTile?.tileX) || !Number.isFinite(bossTile?.tileY)) {
+        throw new Error("Boss floor is missing boss spawn metadata.");
+      }
+      enemies = createEnemies(
+        dungeon,
+        dungeonEnemyDefinitions,
+        generationSeed,
+        enemyAttackProfilesByDbId,
+        {
+          blockedTiles: blockedEnemyTiles,
+          fixedSpawns: [
+            {
+              enemyDbId: bossDefinition.id,
+              tileX: Math.floor(bossTile.tileX),
+              tileY: Math.floor(bossTile.tileY),
+              enemyId: `boss-${bossDefinition.id}-${targetFloor}`,
+            },
+          ],
+          useFixedSpawnsOnly: true,
+        }
+      );
+    } else {
+      enemies = createEnemies(
+        dungeon,
+        dungeonEnemyDefinitions,
+        generationSeed,
+        enemyAttackProfilesByDbId,
+        blockedEnemyTiles
+      );
+    }
     const groundItems = [];
     const restoredWeaponDefinitions = buildWeaponDefinitionsFromPlayerState(
       appState.playerState,

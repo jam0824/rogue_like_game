@@ -1,0 +1,23 @@
+{
+    "id": "ai_profile_swarm_v1",
+    "role": "swarm",
+
+    "preferred_range_tiles": 2.0,
+    "engage_range_tiles": 3.0,
+    "retreat_range_tiles": 0.5,
+    "strafe_chance": 0.02,
+    "repath_interval_sec": 0.35,
+
+    "attack_windup_sec": 0.3,
+    "recover_sec": 0.8,
+
+    "max_active_hazards": 0,
+    "ally_prefer_radius_tiles": 1.5,
+
+    "weapon_aim_mode": "to_target",
+    "weapon_visibility_mode": "burst",
+    "weapon_attack_cycles": 1,
+    "weapon_active_range_tiles": 2.5,
+    "weapon_cooldown_mul": 1.0,
+    "los_required": true
+}

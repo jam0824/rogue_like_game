@@ -50,7 +50,7 @@ function assertWeaponShape(rawWeapon, fileName) {
     );
   }
 
-  if (!Number.isFinite(rawWeapon.hit_num) || rawWeapon.hit_num <= 0) {
+  if (!Number.isFinite(rawWeapon.hit_num) || rawWeapon.hit_num < 0) {
     throw new Error(`Weapon DB ${fileName} has invalid hit_num: ${rawWeapon.hit_num}`);
   }
 

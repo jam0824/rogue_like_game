@@ -422,6 +422,58 @@ function drawDamagePopups(ctx, damagePopups) {
   ctx.restore();
 }
 
+function drawEnemyTelegraphs(ctx, telegraphs) {
+  if (!Array.isArray(telegraphs) || telegraphs.length === 0) {
+    return;
+  }
+
+  for (const telegraph of telegraphs) {
+    if (!telegraph || typeof telegraph.kind !== "string") {
+      continue;
+    }
+
+    const alpha = clamp(Number(telegraph.alpha) || 0, 0, 1);
+    if (alpha <= 0) {
+      continue;
+    }
+
+    if (telegraph.kind === "line") {
+      const fromX = Number(telegraph.fromX) || 0;
+      const fromY = Number(telegraph.fromY) || 0;
+      const toX = Number(telegraph.toX) || fromX;
+      const toY = Number(telegraph.toY) || fromY;
+      const widthPx = Math.max(1, Number(telegraph.widthPx) || 1);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = "rgba(255, 48, 48, 0.7)";
+      ctx.lineWidth = widthPx;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
+
+    if (telegraph.kind === "circle") {
+      const centerX = Number(telegraph.centerX) || 0;
+      const centerY = Number(telegraph.centerY) || 0;
+      const radiusPx = Math.max(1, Number(telegraph.radiusPx) || 1);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "rgba(255, 48, 48, 0.35)";
+      ctx.strokeStyle = "rgba(255, 70, 70, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusPx, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
 function drawEffects(ctx, effectDrawables) {
   if (!Array.isArray(effectDrawables) || effectDrawables.length === 0) {
     return;
@@ -541,6 +593,7 @@ function drawGroundItem(ctx, drawable) {
  * @param {number} playerFlashAlpha
  * @param {string} playerFlashColor
  * @param {Array<{enemy:{x:number,y:number,width:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number,flipX?:boolean,drawScale?:number,anchorFeet?:boolean}|null,flashAlpha?:number,flashColor?:string,telegraphAlpha?:number}>} enemyDrawables
+ * @param {Array<{kind:(\"line\"|\"circle\"),style:string,alpha:number,fromX?:number,fromY?:number,toX?:number,toY?:number,widthPx?:number,centerX?:number,centerY?:number,radiusPx?:number}>} enemyTelegraphDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} weaponDrawables
  * @param {Array<{weapon:{x:number,y:number,height:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number}|null,frame:{row:number,col:number}|null,rotationRad?:number}>} enemyWeaponDrawables
  * @param {Array<{effect:{x:number,y:number,frameIndex:number,scale:number,blendMode:(\"normal\"|\"add\"),rotationRad?:number},asset:{image:HTMLImageElement,frameWidth:number,frameHeight:number,frameCount:number,frameColumns?:number,frameRows?:number,animationDirection:(\"horizontal\"|\"vertical\")}|null}>} effectDrawables
@@ -557,6 +610,7 @@ export function renderFrame(
   playerFlashAlpha = 0,
   playerFlashColor = "#ffffff",
   enemyDrawables = [],
+  enemyTelegraphDrawables = [],
   weaponDrawables = [],
   enemyWeaponDrawables = [],
   effectDrawables = [],
@@ -576,6 +630,7 @@ export function renderFrame(
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(backdrop.canvas, 0, 0);
+  drawEnemyTelegraphs(ctx, enemyTelegraphDrawables);
 
   const drawQueue = [];
 

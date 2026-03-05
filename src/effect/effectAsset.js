@@ -7,6 +7,8 @@ function loadImage(src) {
   });
 }
 
+const warnedMissingEffectAssetIds = new Set();
+
 function resolveSheetLayout(image, definition) {
   const frameWidth = Math.max(1, Number(definition.width) || 1);
   const frameHeight = Math.max(1, Number(definition.height) || 1);
@@ -70,7 +72,33 @@ async function loadAssetForDefinition(definition) {
   ];
 }
 
+function warnMissingEffectAssetOnce(definition, error) {
+  const effectId = typeof definition?.id === "string" && definition.id.length > 0 ? definition.id : "(unknown)";
+  if (warnedMissingEffectAssetIds.has(effectId)) {
+    return;
+  }
+  warnedMissingEffectAssetIds.add(effectId);
+  const reason = error instanceof Error ? error.message : String(error);
+  console.warn(`[EffectAsset] failed to load effect asset (${effectId}): ${reason}`);
+}
+
 export async function loadEffectAssets(effectDefinitions) {
-  const entries = await Promise.all(effectDefinitions.map((definition) => loadAssetForDefinition(definition)));
+  const definitions = Array.isArray(effectDefinitions) ? effectDefinitions : [];
+  const settled = await Promise.allSettled(definitions.map((definition) => loadAssetForDefinition(definition)));
+  const entries = [];
+  for (let index = 0; index < settled.length; index += 1) {
+    const result = settled[index];
+    if (result.status === "fulfilled") {
+      entries.push(result.value);
+      continue;
+    }
+
+    warnMissingEffectAssetOnce(definitions[index], result.reason);
+  }
+
   return Object.fromEntries(entries);
+}
+
+export function __resetEffectAssetWarningCacheForTests() {
+  warnedMissingEffectAssetIds.clear();
 }
