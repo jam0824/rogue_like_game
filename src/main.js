@@ -4256,6 +4256,50 @@ function buildBlockedEnemyTilesFromRuntime(enemies, treasureChests) {
   return blocked;
 }
 
+function createExistingEnemyIdSet(enemies) {
+  const ids = new Set();
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || typeof enemy.id !== "string" || enemy.id.length <= 0) {
+      continue;
+    }
+    ids.add(enemy.id);
+  }
+  return ids;
+}
+
+function resolveSummonIdentity(event, fallbackIndex, existingEnemyIds) {
+  const fallback = Math.max(0, Math.floor(Number(fallbackIndex) || 0));
+  const summonerEnemyId =
+    typeof event?.summonerEnemyId === "string" && event.summonerEnemyId.length > 0
+      ? event.summonerEnemyId
+      : "summoner";
+  const hasSummonCastSeq = Number.isFinite(event?.summonCastSeq);
+  const hasSummonSpawnIndex = Number.isFinite(event?.summonSpawnIndex);
+  const summonCastSeq = hasSummonCastSeq ? Math.max(0, Math.floor(Number(event.summonCastSeq))) : null;
+  const summonSpawnIndex = hasSummonSpawnIndex ? Math.max(0, Math.floor(Number(event.summonSpawnIndex))) : fallback;
+  const baseId =
+    summonCastSeq !== null
+      ? `${summonerEnemyId}-summon-c${summonCastSeq}-s${summonSpawnIndex}`
+      : `${summonerEnemyId}-summon-${summonSpawnIndex}`;
+  const baseSeedKey =
+    summonCastSeq !== null
+      ? `summon:${summonerEnemyId}:cast:${summonCastSeq}:spawn:${summonSpawnIndex}`
+      : `summon:${summonerEnemyId}:${summonSpawnIndex}`;
+
+  let resolvedId = baseId;
+  let revision = 0;
+  while (existingEnemyIds.has(resolvedId)) {
+    revision += 1;
+    resolvedId = `${baseId}-r${revision}`;
+  }
+  existingEnemyIds.add(resolvedId);
+
+  return {
+    enemyId: resolvedId,
+    summonSeedKey: revision > 0 ? `${baseSeedKey}:rev:${revision}` : baseSeedKey,
+  };
+}
+
 function spawnSummonedEnemiesFromEvents(events) {
   const summonEvents = Array.isArray(events)
     ? events.filter((event) => event?.kind === "summon_request")
@@ -4265,6 +4309,7 @@ function spawnSummonedEnemiesFromEvents(events) {
   }
 
   const spawned = [];
+  const existingEnemyIds = createExistingEnemyIdSet(appState.enemies);
   for (const [index, event] of summonEvents.entries()) {
     const definition = enemyDefinitionsById?.[event.enemyDbId];
     if (!definition) {
@@ -4275,7 +4320,8 @@ function spawnSummonedEnemiesFromEvents(events) {
       [...appState.enemies, ...spawned],
       appState.treasureChests
     );
-    const summonSeed = deriveSeed(appState.dungeon.seed, `summon:${event.summonerEnemyId}:${index}`);
+    const summonIdentity = resolveSummonIdentity(event, index, existingEnemyIds);
+    const summonSeed = deriveSeed(appState.dungeon.seed, summonIdentity.summonSeedKey);
     try {
       const created = createEnemies(
         appState.dungeon,
@@ -4289,7 +4335,7 @@ function spawnSummonedEnemiesFromEvents(events) {
               enemyDbId: definition.id,
               tileX: event.tileX,
               tileY: event.tileY,
-              enemyId: `${event.summonerEnemyId}-summon-${index}`,
+              enemyId: summonIdentity.enemyId,
               spawnedByEnemyId: event.summonerEnemyId,
               isSummoned: event.isSummoned === true,
             },

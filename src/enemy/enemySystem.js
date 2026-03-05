@@ -2172,7 +2172,9 @@ function stepBossSummon(enemy, events) {
   }
 
   runtime.spawned = true;
-  for (const tile of runtime.spawnTiles) {
+  const summonCastSeq = Math.max(0, toNonNegativeInt(attack.attackCycle, 0));
+  for (let summonSpawnIndex = 0; summonSpawnIndex < runtime.spawnTiles.length; summonSpawnIndex += 1) {
+    const tile = runtime.spawnTiles[summonSpawnIndex];
     events.push({
       kind: "summon_request",
       summonerEnemyId: enemy.id,
@@ -2180,6 +2182,8 @@ function stepBossSummon(enemy, events) {
       tileX: tile.tileX,
       tileY: tile.tileY,
       isSummoned: true,
+      summonCastSeq,
+      summonSpawnIndex,
     });
   }
 

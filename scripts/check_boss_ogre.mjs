@@ -1,9 +1,12 @@
+import { deriveSeed } from "../src/core/rng.js";
 import { clampFloor, resolveDungeonIdForFloor } from "../src/dungeon/floorProgression.js";
 import { createEnemies, getEnemyTelegraphPrimitives, updateEnemyAttacks } from "../src/enemy/enemySystem.js";
 import { generateDungeon } from "../src/generation/dungeonGenerator.js";
 import { validateDungeon } from "../src/generation/layoutValidator.js";
 
+const TILE_SIZE = 32;
 const BOSS_START_MIN_DISTANCE_TILES = 10;
+const CHECK_STEP_DT = 0.005;
 
 function assert(condition, message) {
   if (!condition) {
@@ -31,6 +34,30 @@ function createBossDefinition() {
     tec: 1,
     arc: 1,
     tags: ["boss", "heavy"],
+  };
+}
+
+function createMinionDefinition() {
+  return {
+    id: "OgreMinion_01",
+    type: "walk",
+    width: 32,
+    height: 32,
+    fps: 12,
+    pngFacingDirection: "right",
+    imageMagnification: 1.5,
+    noticeDistance: 6,
+    giveupDistance: 999,
+    rank: "normal",
+    role: "swarm",
+    spawn: { min: 1, max: 1 },
+    vit: 6,
+    for: 4,
+    agi: 3,
+    pow: 8,
+    tec: 1,
+    arc: 1,
+    tags: ["summoned", "minion"],
   };
 }
 
@@ -147,6 +174,70 @@ function createBossAttackProfile() {
   };
 }
 
+function buildBlockedEnemyTilesFromRuntime(enemies) {
+  const blocked = new Set();
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead === true) {
+      continue;
+    }
+    const centerX = Number(enemy.x) + Number(enemy.width) / 2;
+    const centerY = Number(enemy.y) + Number(enemy.height) / 2;
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+      continue;
+    }
+    blocked.add(`${Math.floor(centerX / TILE_SIZE)}:${Math.floor(centerY / TILE_SIZE)}`);
+  }
+  return blocked;
+}
+
+function createExistingEnemyIdSet(enemies) {
+  const ids = new Set();
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || typeof enemy.id !== "string" || enemy.id.length <= 0) {
+      continue;
+    }
+    ids.add(enemy.id);
+  }
+  return ids;
+}
+
+function resolveSummonIdentity(event, fallbackIndex, existingEnemyIds) {
+  const fallback = Math.max(0, Math.floor(Number(fallbackIndex) || 0));
+  const summonerEnemyId =
+    typeof event?.summonerEnemyId === "string" && event.summonerEnemyId.length > 0
+      ? event.summonerEnemyId
+      : "summoner";
+  const hasSummonCastSeq = Number.isFinite(event?.summonCastSeq);
+  const hasSummonSpawnIndex = Number.isFinite(event?.summonSpawnIndex);
+  const summonCastSeq = hasSummonCastSeq ? Math.max(0, Math.floor(Number(event.summonCastSeq))) : null;
+  const summonSpawnIndex = hasSummonSpawnIndex ? Math.max(0, Math.floor(Number(event.summonSpawnIndex))) : fallback;
+  const baseId =
+    summonCastSeq !== null
+      ? `${summonerEnemyId}-summon-c${summonCastSeq}-s${summonSpawnIndex}`
+      : `${summonerEnemyId}-summon-${summonSpawnIndex}`;
+  const baseSeedKey =
+    summonCastSeq !== null
+      ? `summon:${summonerEnemyId}:cast:${summonCastSeq}:spawn:${summonSpawnIndex}`
+      : `summon:${summonerEnemyId}:${summonSpawnIndex}`;
+
+  let enemyId = baseId;
+  let revision = 0;
+  while (existingEnemyIds.has(enemyId)) {
+    revision += 1;
+    enemyId = `${baseId}-r${revision}`;
+  }
+  existingEnemyIds.add(enemyId);
+
+  return {
+    enemyId,
+    summonSeedKey: revision > 0 ? `${baseSeedKey}:rev:${revision}` : baseSeedKey,
+  };
+}
+
+function countSummonTelegraphs(enemy) {
+  return getEnemyTelegraphPrimitives(enemy).filter((telegraph) => telegraph.kind === "circle").length;
+}
+
 function main() {
   assert(clampFloor(99) === 10, "clampFloor(99) must be 10");
   assert(resolveDungeonIdForFloor(10) === "dungeon_id_10", "floor 10 must resolve to dungeon_id_10");
@@ -169,6 +260,7 @@ function main() {
   );
 
   const bossDefinition = createBossDefinition();
+  const minionDefinition = createMinionDefinition();
   const enemies = createEnemies(
     dungeon,
     [bossDefinition],
@@ -206,25 +298,83 @@ function main() {
     isDead: false,
   };
 
-  let telegraphSeen = false;
-  let summonSeen = false;
-  updateEnemyAttacks(enemies, player, dungeon, 0.005);
-  telegraphSeen = getEnemyTelegraphPrimitives(boss).some(
-    (telegraph) => telegraph.kind === "line" || telegraph.kind === "circle"
-  );
-  for (let i = 0; i < 30; i += 1) {
-    const events = updateEnemyAttacks(enemies, player, dungeon, 0.02);
-    if (getEnemyTelegraphPrimitives(boss).some((telegraph) => telegraph.kind === "line" || telegraph.kind === "circle")) {
-      telegraphSeen = true;
+  const seenSummonedEnemyIds = new Set();
+  const summonCycleChecks = [];
+  let pendingSummonTelegraphCount = 0;
+
+  for (let step = 0; step < 1200; step += 1) {
+    const events = updateEnemyAttacks(enemies, player, dungeon, CHECK_STEP_DT);
+    if (boss.attack?.activeActionKey === "summon" && boss.attack?.actionState === "windup") {
+      pendingSummonTelegraphCount = countSummonTelegraphs(boss);
     }
-    if (events.some((event) => event.kind === "summon_request")) {
-      summonSeen = true;
+
+    const summonEvents = events.filter((event) => event.kind === "summon_request");
+    if (summonEvents.length <= 0) {
+      continue;
+    }
+
+    assert(pendingSummonTelegraphCount > 0, "summon telegraph count must be captured before summon_request");
+    assert(
+      pendingSummonTelegraphCount === summonEvents.length,
+      `summon telegraph count (${pendingSummonTelegraphCount}) must equal summon_request count (${summonEvents.length})`
+    );
+
+    const seenSpawnIndexByCast = new Set();
+    const existingEnemyIds = createExistingEnemyIdSet(enemies);
+    for (const [index, event] of summonEvents.entries()) {
+      assert(Number.isFinite(event.summonCastSeq), "summon_request must include summonCastSeq");
+      assert(Number.isFinite(event.summonSpawnIndex), "summon_request must include summonSpawnIndex");
+      const castSpawnKey = `${event.summonCastSeq}:${event.summonSpawnIndex}`;
+      assert(
+        !seenSpawnIndexByCast.has(castSpawnKey),
+        `duplicate summonSpawnIndex in same summon cast: ${castSpawnKey}`
+      );
+      seenSpawnIndexByCast.add(castSpawnKey);
+
+      const summonIdentity = resolveSummonIdentity(event, index, existingEnemyIds);
+      assert(
+        !seenSummonedEnemyIds.has(summonIdentity.enemyId),
+        `summoned enemy id must be unique across cycles: ${summonIdentity.enemyId}`
+      );
+      seenSummonedEnemyIds.add(summonIdentity.enemyId);
+
+      const blockedTiles = buildBlockedEnemyTilesFromRuntime(enemies);
+      const spawnedEnemies = createEnemies(
+        dungeon,
+        [minionDefinition],
+        deriveSeed(dungeon.seed, summonIdentity.summonSeedKey),
+        null,
+        {
+          blockedTiles,
+          fixedSpawns: [
+            {
+              enemyDbId: minionDefinition.id,
+              tileX: event.tileX,
+              tileY: event.tileY,
+              enemyId: summonIdentity.enemyId,
+              spawnedByEnemyId: event.summonerEnemyId,
+              isSummoned: true,
+            },
+          ],
+          useFixedSpawnsOnly: true,
+        }
+      );
+      enemies.push(...spawnedEnemies);
+    }
+
+    summonCycleChecks.push({
+      cycle: summonCycleChecks.length + 1,
+      telegraphCount: pendingSummonTelegraphCount,
+      summonRequestCount: summonEvents.length,
+    });
+    pendingSummonTelegraphCount = 0;
+    if (summonCycleChecks.length >= 2) {
       break;
     }
   }
 
-  assert(telegraphSeen === true, "boss telegraph must be emitted");
-  assert(summonSeen === true, "boss summon_request must be emitted");
+  assert(summonCycleChecks.length >= 2, "boss summon must run for at least 2 cycles");
+  assert(seenSummonedEnemyIds.size >= 4, "summoned enemy ids must accumulate uniquely across cycles");
 
   console.log("[check_boss_ogre] PASS");
 }

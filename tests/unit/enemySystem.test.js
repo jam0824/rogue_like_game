@@ -955,11 +955,62 @@ describe("enemySystem", () => {
     }
 
     expect(summonEvents.length).toBeGreaterThan(0);
+    const summonCastSeqSet = new Set(summonEvents.map((event) => event.summonCastSeq));
+    const summonSpawnIndexes = summonEvents.map((event) => event.summonSpawnIndex);
+    const uniqueSpawnIndexSet = new Set(summonSpawnIndexes);
+    expect(summonCastSeqSet.size).toBe(1);
+    expect(Number.isFinite(summonEvents[0].summonCastSeq)).toBe(true);
+    expect(summonEvents[0].summonCastSeq).toBeGreaterThanOrEqual(1);
+    expect(uniqueSpawnIndexSet.size).toBe(summonEvents.length);
+    expect([...uniqueSpawnIndexSet].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: summonEvents.length }, (_, index) => index)
+    );
     expect(summonEvents[0]).toMatchObject({
       kind: "summon_request",
       summonerEnemyId: boss.id,
       enemyDbId: "OgreMinion_01",
     });
+  });
+
+  it("boss summon は cast を跨ぐと summonCastSeq が進む", () => {
+    const dungeon = createDungeon();
+    const enemyDef = createEnemyDefinition({ id: "boss-summon-cast-seq-01", rank: "boss", role: "boss" });
+    const enemies = createEnemies(
+      dungeon,
+      [enemyDef],
+      "boss-summon-cast-seq-seed",
+      { [enemyDef.id]: createBossAttackProfile() },
+      {
+        fixedSpawns: [{ enemyDbId: enemyDef.id, tileX: 8, tileY: 8 }],
+        useFixedSpawnsOnly: true,
+      }
+    );
+    const [boss] = enemies;
+    const player = createPlayer({ x: boss.x + 64, y: boss.y + 64 });
+    boss.behaviorMode = "chase";
+    boss.isChasing = true;
+
+    const summonCastSeqs = [];
+    for (let i = 0; i < 200; i += 1) {
+      const events = updateEnemyAttacks(enemies, player, dungeon, 0.02);
+      const summonEvents = events.filter((event) => event.kind === "summon_request");
+      if (summonEvents.length <= 0) {
+        continue;
+      }
+
+      const castSeq = summonEvents[0].summonCastSeq;
+      if (summonCastSeqs.length <= 0 || castSeq !== summonCastSeqs[summonCastSeqs.length - 1]) {
+        summonCastSeqs.push(castSeq);
+      }
+      if (summonCastSeqs.length >= 2) {
+        break;
+      }
+    }
+
+    expect(summonCastSeqs.length).toBeGreaterThanOrEqual(2);
+    expect(Number.isFinite(summonCastSeqs[0])).toBe(true);
+    expect(Number.isFinite(summonCastSeqs[1])).toBe(true);
+    expect(summonCastSeqs[1]).toBeGreaterThan(summonCastSeqs[0]);
   });
 
   it("通常敵もwindup開始時にターゲット座標をロックし、windup中は維持する", () => {
