@@ -35,6 +35,7 @@ export function createAppState(initialSeed) {
     systemUi: createEmptySystemUiState(),
     backdrop: null,
     error: null,
+    pendingLevelUps: 0,
   };
 }
 

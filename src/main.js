@@ -87,6 +87,7 @@ import { resolveOverlayCenterWorld } from "./render/floorTransitionOverlayPositi
 import { computeCameraScroll, resolveGameViewScale } from "./render/gameViewScale.js";
 import { createAppState, setDungeonState, setErrorState } from "./state/appState.js";
 import { derivePlayerCombatStats } from "./status/derivedStats.js";
+import { applyXpGain, calcEnemyXp, calcFloorClearXp, calcRoomClearXp, calcXpToNextLevel } from "./xp/xpSystem.js";
 import { loadTileAssets } from "./tiles/tileCatalog.js";
 import { loadDungeonDefinitions } from "./tiles/dungeonTileDb.js";
 import { buildWalkableGrid } from "./tiles/walkableGrid.js";
@@ -229,6 +230,8 @@ const sceneTransitionState = createSceneTransitionState({
 });
 let floorTransitionLoadPromise = null;
 let sceneTransitionLoadPromise = null;
+const clearedRoomIds = new Set();
+let levelUpModalOpen = false;
 let soundEffectMap = {};
 let viewMode = VIEW_MODE.SURFACE;
 let surfaceScreen = SURFACE_SCREEN.HUB;
@@ -559,6 +562,11 @@ function getRunLevel(playerState) {
     return 1;
   }
   return Math.max(1, Math.round(runLevel));
+}
+
+function getRunXp(playerState) {
+  const xp = Number(playerState?.run?.xp);
+  return Number.isFinite(xp) ? Math.max(0, Math.floor(xp)) : 0;
 }
 
 function getRunFloor(playerState) {
@@ -1098,6 +1106,7 @@ function buildHudTextState() {
   const bossAttackPhase = typeof bossEnemy?.attack?.phase === "string" ? bossEnemy.attack.phase : "";
   const isBossAttacking = bossAttackPhase === "windup" || bossAttackPhase === "attack" || bossAttackPhase === "recover";
 
+  const runLevel = getRunLevel(appState.playerState);
   return {
     hp: {
       current: round2(appState.player?.hp ?? 0),
@@ -1108,7 +1117,9 @@ function buildHudTextState() {
       hpCurrent: round2(bossEnemy?.hp ?? 0),
       hpMax: round2(bossEnemy?.maxHp ?? 0),
     },
-    runLevel: getRunLevel(appState.playerState),
+    runLevel,
+    xpCurrent: getRunXp(appState.playerState),
+    xpToNext: calcXpToNextLevel(runLevel),
     gold: getGold(appState.playerState),
     buffs: [...(getSystemUiState().statusEffects?.buffs ?? [])],
     debuffs: [...(getSystemUiState().statusEffects?.debuffs ?? [])],
@@ -3210,6 +3221,9 @@ const systemHud = systemUiRoot
         const currentGroundItems = Array.isArray(appState.groundItems) ? appState.groundItems : [];
         appState.groundItems = [...currentGroundItems, dropResult.droppedGroundItem];
       },
+      onLevelUpStatSelected: (statKey) => {
+        applyLevelUpStat(statKey);
+      },
     })
   : null;
 
@@ -3224,6 +3238,8 @@ function buildSystemUiDigest() {
     hpMax: hud.hp.max,
     boss: hud.boss,
     runLevel: hud.runLevel,
+    xpCurrent: hud.xpCurrent,
+    xpToNext: hud.xpToNext,
     gold: hud.gold,
     buffs: hud.buffs,
     debuffs: hud.debuffs,
@@ -3253,6 +3269,8 @@ function syncSystemHud() {
     hpMax: hud.hp.max,
     boss: hud.boss,
     runLevel: hud.runLevel,
+    xpCurrent: hud.xpCurrent,
+    xpToNext: hud.xpToNext,
     gold: hud.gold,
     buffs: hud.buffs,
     debuffs: hud.debuffs,
@@ -4238,6 +4256,124 @@ function countNewlyDefeatedEnemies(enemies, beforeAliveEnemyIds) {
   return defeatedCount;
 }
 
+function collectDefeatedEnemies(enemies, beforeAliveEnemyIds) {
+  const defeated = [];
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || enemy.isDead !== true || typeof enemy.id !== "string") {
+      continue;
+    }
+    if (beforeAliveEnemyIds.has(enemy.id)) {
+      defeated.push(enemy);
+    }
+  }
+  return defeated;
+}
+
+function awardXpForDefeatedEnemies(defeatedEnemies) {
+  if (!appState.playerState?.run || defeatedEnemies.length === 0) {
+    return;
+  }
+  const currentFloor = getRunFloor(appState.playerState);
+  let totalXp = 0;
+
+  // Track which rooms had a defeat this frame (to check for room clear)
+  const defeatedRoomIds = new Set();
+  for (const enemy of defeatedEnemies) {
+    const xp = calcEnemyXp(enemy.rank ?? "normal", currentFloor, enemy.tags ?? []);
+    totalXp += xp;
+    if (typeof enemy.roomId === "string" && enemy.roomId.length > 0) {
+      defeatedRoomIds.add(enemy.roomId);
+    }
+  }
+
+  // Check each affected room for a clear
+  for (const roomId of defeatedRoomIds) {
+    if (clearedRoomIds.has(roomId)) {
+      continue;
+    }
+    // All non-summoned enemies in the room must be dead
+    const roomEnemies = (Array.isArray(appState.enemies) ? appState.enemies : []).filter(
+      (e) => e.roomId === roomId && !(Array.isArray(e.tags) && e.tags.includes("summoned"))
+    );
+    if (roomEnemies.length > 0 && roomEnemies.every((e) => e.isDead === true)) {
+      clearedRoomIds.add(roomId);
+      const roomXpValues = roomEnemies.map((e) => calcEnemyXp(e.rank ?? "normal", currentFloor, e.tags ?? []));
+      totalXp += calcRoomClearXp(roomXpValues);
+    }
+  }
+
+  if (totalXp > 0) {
+    const levelsGained = applyXpGain(appState.playerState.run, totalXp);
+    if (levelsGained > 0) {
+      appState.pendingLevelUps = Math.max(0, (appState.pendingLevelUps ?? 0)) + levelsGained;
+    }
+  }
+}
+
+function checkAndTriggerLevelUp() {
+  if (!systemHud || levelUpModalOpen) {
+    return;
+  }
+  const pending = appState.pendingLevelUps ?? 0;
+  if (pending <= 0) {
+    return;
+  }
+  if (isFloorTransitionActive(floorTransitionState) || isSceneTransitionActive(sceneTransitionState)) {
+    return;
+  }
+  levelUpModalOpen = true;
+  appState.isPaused = true;
+  const newLevel = getRunLevel(appState.playerState);
+  systemHud.showLevelUpModal({ newLevel, remainingCount: pending });
+}
+
+function applyLevelUpStat(statKey) {
+  if (!appState.playerState?.run?.stat_run) {
+    return;
+  }
+  const validKeys = ["vit", "for", "agi", "pow", "tec", "arc"];
+  if (!validKeys.includes(statKey)) {
+    return;
+  }
+  const statRun = appState.playerState.run.stat_run;
+  statRun[statKey] = Math.max(0, (Number.isFinite(statRun[statKey]) ? statRun[statKey] : 0)) + 1;
+
+  // Re-derive player combat stats so maxHp etc. update immediately
+  if (appState.player) {
+    const playerDerived = derivePlayerCombatStats(appState.playerState, PLAYER_SPEED_PX_PER_SEC);
+    appState.player.statTotals = playerDerived.statTotals;
+    const oldMaxHp = appState.player.maxHp;
+    appState.player.maxHp = playerDerived.maxHp;
+    if (playerDerived.maxHp > oldMaxHp) {
+      appState.player.hp = Math.min(appState.player.hp + (playerDerived.maxHp - oldMaxHp), playerDerived.maxHp);
+    }
+    appState.player.moveSpeedPxPerSec = playerDerived.moveSpeedPxPerSec;
+    appState.player.damageMult = playerDerived.damageMult;
+    appState.player.critChance = playerDerived.critChance;
+    appState.player.critMult = playerDerived.critMult;
+    appState.player.ailmentTakenMult = playerDerived.ailmentTakenMult;
+    appState.player.durationMult = playerDerived.durationMult;
+    appState.player.ccDurationMult = playerDerived.ccDurationMult;
+  }
+
+  appState.pendingLevelUps = Math.max(0, (appState.pendingLevelUps ?? 1) - 1);
+  levelUpModalOpen = false;
+
+  if (appState.pendingLevelUps > 0) {
+    // Show next level-up immediately
+    const newLevel = getRunLevel(appState.playerState);
+    systemHud.showLevelUpModal({ newLevel, remainingCount: appState.pendingLevelUps });
+    levelUpModalOpen = true;
+  } else {
+    systemHud.hideLevelUpModal();
+    appState.isPaused = false;
+  }
+
+  syncStatsPanel();
+  syncPlayerStatsWindow();
+  syncSystemHud();
+}
+
 function buildBlockedEnemyTilesFromRuntime(enemies, treasureChests) {
   const blocked = buildBlockedTileSetFromChests(treasureChests);
 
@@ -4700,6 +4836,16 @@ function startDownStairFloorTransition() {
     return;
   }
 
+  // Award floor clear XP and reset room tracking for the new floor
+  if (appState.playerState?.run) {
+    const floorClearXp = calcFloorClearXp(currentFloor);
+    const levelsGained = applyXpGain(appState.playerState.run, floorClearXp);
+    if (levelsGained > 0) {
+      appState.pendingLevelUps = Math.max(0, (appState.pendingLevelUps ?? 0)) + levelsGained;
+    }
+  }
+  clearedRoomIds.clear();
+
   const nextFloor = currentFloor + 1;
   setPointerTarget(appState.player, false, 0, 0);
   pointerDownFeetTileSnapshot = null;
@@ -4955,6 +5101,10 @@ function applySceneTransitionTargetIfNeeded() {
   setSurfaceScreen(SURFACE_SCREEN.HUB);
   setViewMode(VIEW_MODE.SURFACE);
   appState.isPaused = false;
+  appState.pendingLevelUps = 0;
+  clearedRoomIds.clear();
+  levelUpModalOpen = false;
+  systemHud?.hideLevelUpModal?.();
   syncStorageFacilityHud();
 }
 
@@ -5108,9 +5258,11 @@ function stepSimulation(dt) {
   if (playerDamageEventCount > 0) {
     playSeByKey(SE_KEY_PLAYER_GET_DAMAGE, playerDamageEventCount);
   }
-  const defeatedEnemyCount = countNewlyDefeatedEnemies(appState.enemies, aliveEnemyIdsBeforeCombat);
+  const defeatedEnemies = collectDefeatedEnemies(appState.enemies, aliveEnemyIdsBeforeCombat);
+  const defeatedEnemyCount = defeatedEnemies.length;
   if (defeatedEnemyCount > 0) {
     playSeByKey(SE_KEY_ENEMY_DEATH, defeatedEnemyCount);
+    awardXpForDefeatedEnemies(defeatedEnemies);
   }
   const combatEvents = [
     ...playerCombatEvents,
@@ -5157,6 +5309,7 @@ function stepSimulation(dt) {
   syncStatsPanel();
   syncPlayerStatsWindow();
   syncSystemHud();
+  checkAndTriggerLevelUp();
   followPlayerInView();
 }
 
